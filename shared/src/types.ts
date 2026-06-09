@@ -103,11 +103,20 @@ export interface GameView {
   hand: CardInHand[];
   status: 'active' | 'finished';
   log: GameLogEntry[];
+  /** Últimas cartas jogadas (informação pública para os dois lados). */
+  plays: PlayedCard[];
 }
 
 export interface GameLogEntry {
   at: number;
   text: string;
+}
+
+/** Carta jogada (pública) — alimenta a revelação de jogadas do oponente. */
+export interface PlayedCard {
+  seat: number;
+  cardId: string;
+  at: number;
 }
 
 export interface MatchResult {

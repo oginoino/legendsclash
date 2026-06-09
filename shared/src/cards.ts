@@ -21,6 +21,8 @@ export interface CardDef {
   health?: number;
   /** Se a carta exige alvo ao ser jogada */
   target?: 'enemy-creature' | 'friendly-creature' | 'enemy-any' | 'none';
+  /** Palavras-chave de regra (ex.: Provocar — inimigos devem atacá-la primeiro) */
+  keywords?: Array<'taunt'>;
 }
 
 export const CARDS: Record<string, CardDef> = {
@@ -47,8 +49,8 @@ export const CARDS: Record<string, CardDef> = {
   },
   c_golem: {
     id: 'c_golem', art: '🗿', name: 'Golem de Pedra', type: 'creature', cost: 4,
-    attack: 3, health: 6, target: 'none',
-    text: 'Lento, paciente e praticamente indestrutível.',
+    attack: 3, health: 6, target: 'none', keywords: ['taunt'],
+    text: 'Provocar: enquanto estiver na mesa, inimigos precisam atacá-lo primeiro.',
   },
   c_campea: {
     id: 'c_campea', art: '🌟', name: 'Campeã da Aurora', type: 'creature', cost: 5,

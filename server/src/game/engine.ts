@@ -94,6 +94,7 @@ export class Match {
   private result: EngineResult | null = null;
   private readonly startedAt = Date.now();
   private log: GameLogEntry[] = [];
+  private plays: Array<{ seat: number; cardId: string; at: number }> = [];
 
   /** onUpdate: reenvia visões; onFinish: Elo/histórico/notificação. */
   constructor(
@@ -254,6 +255,8 @@ export class Match {
 
     seat.energy -= def.cost;
     seat.hand.splice(handIdx, 1);
+    // jogada concluída é informação pública — alimenta a revelação no cliente
+    this.plays.push({ seat: idx, cardId: def.id, at: Date.now() });
     this.checkEnd();
     this.onUpdate();
   }
@@ -338,6 +341,13 @@ export class Match {
     if (target.seat === idx) throw new GameError('Não é possível atacar a si mesmo.');
     const enemy = this.seats[target.seat];
     if (!enemy || enemy.out) throw new GameError('Alvo inválido.');
+
+    // Provocar: criaturas com a palavra-chave precisam ser atacadas primeiro
+    // (magias ignoram — só o combate físico é provocado).
+    const taunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
+    if (taunts.length > 0 && !(target.iid && taunts.some((c) => c.iid === target.iid))) {
+      throw new GameError('Provocar: ataque primeiro a criatura com Provocar.');
+    }
 
     const power = attacker.attack + seat.attackBonus;
     const attackerName = CARDS[attacker.defId].name;
@@ -495,6 +505,7 @@ export class Match {
       hand,
       status: this.status,
       log: this.log.slice(-30),
+      plays: this.plays.slice(-12),
     };
   }
 

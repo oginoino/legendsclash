@@ -42,6 +42,9 @@ function tone(
 
 export const sfx = {
   click: () => tone(420, 0.05, 'triangle', 0.03),
+  error: () => { tone(140, 0.12, 'square', 0.04); tone(110, 0.16, 'square', 0.035, 0.07); },
+  tick: () => tone(880, 0.04, 'sine', 0.035),
+  reveal: () => { tone(440, 0.08, 'triangle', 0.04); tone(587, 0.1, 'triangle', 0.035, 0.07); },
   draw: () => tone(660, 0.07, 'triangle', 0.03),
   play: () => { tone(520, 0.08); tone(780, 0.1, 'triangle', 0.04, 0.06); },
   summon: () => { tone(330, 0.1, 'triangle', 0.05); tone(495, 0.12, 'triangle', 0.04, 0.08); },

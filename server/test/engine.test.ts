@@ -165,6 +165,62 @@ describe('magias e táticas', () => {
   });
 });
 
+describe('Provocar (palavra-chave)', () => {
+  const taunt = () => ({
+    iid: 'g1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6,
+    canAttack: true, attacked: false,
+  });
+  const wolf = (iid: string) => ({
+    iid, defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2,
+    canAttack: true, attacked: false,
+  });
+
+  it('bloqueia ataque ao comandante enquanto houver criatura com Provocar', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [wolf('a1')];
+    m.seats[1].board = [taunt()];
+    expect(() => m.attack('p0', 'a1', { seat: 1 }))
+      .toThrow('Provocar: ataque primeiro a criatura com Provocar.');
+  });
+
+  it('bloqueia ataque a outra criatura que não tem Provocar', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [wolf('a1')];
+    m.seats[1].board = [taunt(), wolf('b2')];
+    expect(() => m.attack('p0', 'a1', { seat: 1, iid: 'b2' }))
+      .toThrow('Provocar: ataque primeiro a criatura com Provocar.');
+    m.attack('p0', 'a1', { seat: 1, iid: 'g1' }); // no Provocar pode
+    expect(m.seats[1].board.find((c) => c.iid === 'g1')!.health).toBe(3);
+  });
+
+  it('magias ignoram Provocar', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [taunt(), wolf('b2')];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_faisca' }];
+    m.seats[0].energy = 1;
+    m.playCard('p0', 'x1', { seat: 1, iid: 'b2' }); // não lança erro
+    // o lobo (2 de vida) morre com os 2 de dano e sai da mesa
+    expect(m.seats[1].board.some((c) => c.iid === 'b2')).toBe(false);
+    expect(m.seats[1].board.some((c) => c.iid === 'g1')).toBe(true);
+  });
+});
+
+describe('registro público de jogadas (revelação no cliente)', () => {
+  it('expõe as cartas jogadas na visão dos dois lados', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 'c_lobo' }];
+    m.seats[0].energy = 2;
+    m.playCard('p0', 'x1');
+    const viewOpponent = m.viewFor('p1');
+    expect(viewOpponent.plays).toHaveLength(1);
+    expect(viewOpponent.plays[0]).toMatchObject({ seat: 0, cardId: 'c_lobo' });
+  });
+});
+
 describe('condições de vitória (slide "Conceito e condições de vitória")', () => {
   it('abandono: desistência dá vitória ao oponente', () => {
     const { m, result } = makeMatch();

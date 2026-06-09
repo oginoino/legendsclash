@@ -1,13 +1,25 @@
 import { useState } from 'react';
 import { logout, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
+import { RulesModal } from '../components/RulesModal';
+
+/** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
+function leagueProgress(mmr: number): { label: string; pct: number } | null {
+  if (mmr >= 1300) return null; // Ouro: liga máxima
+  const [lo, hi, next] = mmr >= 1100 ? [1100, 1300, 'Ouro'] : [900, 1100, 'Prata'];
+  const pct = Math.max(0, Math.min(100, ((mmr - lo) / (hi - lo)) * 100));
+  return { label: `${hi - mmr} MMR até ${next}`, pct };
+}
 
 export function HomeView() {
   const s = useAppState();
   const [joinCode, setJoinCode] = useState('');
+  const [showRules, setShowRules] = useState(false);
   const p = s.profile;
 
   if (!p) return <div className="centered">Carregando perfil…</div>;
+
+  const progress = leagueProgress(p.mmr);
 
   return (
     <div className="home-screen">
@@ -44,6 +56,18 @@ export function HomeView() {
                 ⚔️ Partida ranqueada
               </button>
               <p className="hint">Matchmaking por MMR: você enfrenta gente do seu nível.</p>
+              {progress && (
+                <div className="league-progress" title={progress.label}>
+                  <div className="league-progress-bar">
+                    <span style={{ width: `${progress.pct}%` }} />
+                  </div>
+                  <span className="hint">{progress.label}</span>
+                </div>
+              )}
+              {!progress && <p className="hint">🥇 Você está na liga máxima — defenda o topo!</p>}
+              <button className="btn ghost" onClick={() => setShowRules(true)}>
+                📖 Como jogar
+              </button>
               <div className="divider">ou jogue com amigos</div>
               <button className="btn" onClick={() => send({ t: 'room:create' })}>
                 Criar sala privada
@@ -108,6 +132,7 @@ export function HomeView() {
           )}
         </section>
       </main>
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
     </div>
   );
 }
