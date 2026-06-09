@@ -69,6 +69,11 @@ export function LoginView() {
             {busy ? 'Entrando…' : 'Entrar e jogar'}
           </button>
           <p className="login-note">Login com Google chega na próxima fase — por enquanto, só o e-mail identifica sua conta.</p>
+          <p className="login-note credits">
+            Arte das cartas: ícones de{' '}
+            <a href="https://game-icons.net" target="_blank" rel="noreferrer">game-icons.net</a>{' '}
+            (CC BY 3.0)
+          </p>
         </form>
       </div>
     </div>

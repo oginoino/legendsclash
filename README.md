@@ -105,6 +105,15 @@ WebSockets. No MVP a persistência é um snapshot JSON local (troca localizada e
 `store.ts` para PostgreSQL) e a infraestrutura Docker/AWS + analytics (Mixpanel/PostHog)
 ficam para o beta fechado (sprint 7).
 
+## Créditos de arte
+
+A arte das cartas usa ícones de fantasia de [game-icons.net](https://game-icons.net)
+(licença [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)), via pacote
+`react-icons`. O mapeamento carta → ícone/paleta fica em
+`client/src/components/CardArt.tsx` — trocar a arte (por exemplo, por ilustrações
+de outro banco de assets livres) é alterar um único arquivo, com fallback de emoji
+para cartas sem arte mapeada.
+
 ## O que fica fora (decisão de produto, não dívida)
 
 Torneios, marketplace/cosméticos, voice chat, mobile, modo espectador e deck builder —

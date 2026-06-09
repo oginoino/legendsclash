@@ -380,7 +380,6 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 @keyframes summon { from { transform: scale(.4); opacity: 0; } }
 .creature:hover { transform: translateY(-3px); }
-.creature-art { font-size: 26px; line-height: 1.1; filter: drop-shadow(0 3px 5px #0009); }
 .creature-name { font-weight: 600; max-width: 110px; text-align: center; line-height: 1.15; }
 .creature-stats { display: flex; gap: 10px; font-size: 14px; }
 .creature .atk { color: var(--gold); }
@@ -446,11 +445,6 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   width: 27px; height: 27px; border-radius: 50%;
   display: grid; place-items: center; border: 2px solid var(--bg);
   box-shadow: 0 0 10px #4d8dff66;
-}
-.card-art {
-  align-self: center; font-size: 34px; line-height: 1.2;
-  filter: drop-shadow(0 4px 6px #000a);
-  margin-top: 2px;
 }
 .card-name { font-weight: 800; font-size: 12px; line-height: 1.15; }
 .card-type { font-size: 9px; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; }
@@ -651,3 +645,22 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .k-spell { color: #7fb1ff; }
 .k-artifact { color: #b8c4d4; }
 .k-tactic { color: var(--purple); }
+
+/* ── Arte das cartas (ícones game-icons.net · CC BY 3.0) ──────── */
+.card-art-frame {
+  display: grid; place-items: center;
+  border: 1px solid #ffffff18;
+  border-radius: 8px;
+  box-shadow: inset 0 0 16px #0008, 0 2px 6px #0006;
+  background: linear-gradient(160deg, #2a3650, #141c2c);
+}
+.card-art-frame svg { filter: drop-shadow(0 2px 4px #000b); }
+.card-art.card-art-frame {
+  width: 100%; height: 56px; font-size: 40px;
+  align-self: center; margin-top: 2px;
+}
+.creature-art.card-art-frame {
+  width: 52px; height: 38px; font-size: 28px;
+}
+.card-reveal .card-art.card-art-frame { height: 56px; }
+.login-note.credits a { color: var(--dim); }

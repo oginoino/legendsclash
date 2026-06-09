@@ -1,4 +1,5 @@
 import { CARDS } from '@legendsclash/shared';
+import { CardArt } from './CardArt';
 
 const TYPE_LABEL: Record<string, string> = {
   creature: 'Criatura',
@@ -43,7 +44,7 @@ export function CardView({ defId, playable, selected, onClick, style, anchorId, 
       onMouseLeave={onMouseLeave}
     >
       <span className="card-cost">{def.cost}</span>
-      <span className="card-art">{def.art}</span>
+      <CardArt defId={defId} className="card-art" />
       <span className="card-name">{def.name}</span>
       <span className="card-type">{TYPE_LABEL[def.type]}</span>
       {def.keywords?.map((k) => (

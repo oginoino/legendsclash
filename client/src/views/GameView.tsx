@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_ENERGY, TURN_SECONDS } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
 import { dismissGameOver, send, useAppState } from '../store';
+import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
 import { LeagueBadge } from '../components/LeagueBadge';
@@ -661,7 +662,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, preview, reta
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >
       {isTaunt && <span className="taunt-badge" title="Provocar">🛡</span>}
-      <span className="creature-art">{def.art}</span>
+      <CardArt defId={c.defId} className="creature-art" />
       <span className="creature-name">{def.name}</span>
       <span className="creature-stats">
         <b className="atk">{c.attack + bonus}</b>
@@ -679,7 +680,7 @@ function GhostCreature({ g }: { g: Ghost }) {
   const def = CARDS[g.creature.defId];
   return (
     <span className="creature ghost">
-      <span className="creature-art">{def.art}</span>
+      <CardArt defId={g.creature.defId} className="creature-art" />
       <span className="creature-name">{def.name}</span>
       <span className="ghost-skull">💀</span>
     </span>
