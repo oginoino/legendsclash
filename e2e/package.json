@@ -1,0 +1,17 @@
+{
+  "name": "@legendsclash/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@legendsclash/shared": "*",
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "ws": "^8.18.0"
+  }
+}

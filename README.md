@@ -27,7 +27,23 @@ privada** e entre na outra janela pelo link de convite (`/room/CÓDIGO`).
 ```bash
 npm test             # testes do motor de jogo, Elo, matchmaking e filtro de chat
 npm run typecheck
+
+# e2e com navegadores reais (na primeira vez: npx playwright install chromium)
+npm run build && npm run test:e2e
 ```
+
+## A partida em imagens
+
+Capturas de **partidas reais** geradas pelos testes e2e (dois navegadores jogando um contra o outro):
+
+| | |
+| --- | --- |
+| ![Login](docs/screenshots/01-login.png) | ![Home](docs/screenshots/02-home.png) |
+| Login com avatar | Home: ranqueada, salas, ranking e progresso de liga |
+| ![Sala](docs/screenshots/03-sala-convite.png) | ![Início](docs/screenshots/04-inicio-partida.png) |
+| Sala privada com convite por link e chat moderado | Início de partida: mãos de 5, 30 de vida |
+| ![Mira](docs/screenshots/05-mira-e-previa.png) | ![Vitória](docs/screenshots/06-fim-de-jogo.png) |
+| Seta de mira com prévia de dano e banner de turno | Vitória por vida zerada: confete e Elo +16 |
 
 ## Escopo do MVP (slide "MVP — 90 dias") → implementação
 
@@ -80,6 +96,8 @@ server/   Node.js + TypeScript
   src/app.ts           Sessões WebSocket, roteamento e ciclo de vida de partidas
   test/                31 testes (motor, Elo, matchmaking, filtro)
 client/   React + TypeScript (Vite) — casca de apresentação, zero regra de jogo
+e2e/      Playwright: fluxos com navegadores reais (login, lobby, partida
+          completa, reconexão) + spec de contrato no nível do WebSocket
 ```
 
 Stack conforme o slide "Riscos, mitigação e arquitetura": React + TypeScript, Node.js,
