@@ -84,6 +84,13 @@ export function Chat() {
         </div>
       )}
 
+      <div className="emote-row">
+        {['👋 olá!', '👍 boa!', '😅 ufa…', '🔥 que jogada!', '🤝 gg'].map((e) => (
+          <button key={e} type="button" className="emote" onClick={() => send({ t: 'chat:send', text: e })}>
+            {e}
+          </button>
+        ))}
+      </div>
       <form className="chat-input" onSubmit={submit}>
         <input
           value={text}
