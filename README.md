@@ -64,6 +64,12 @@ Capturas de **partidas reais** geradas pelos testes e2e (dois navegadores jogand
 - Quatro tipos de carta: **criaturas** (ataque/defesa, enjoo de invocação), **magias**
   (dano, cura, buff), **artefatos** (escudo, bônus passivo de ataque) e **táticas**
   (compra, energia, devolver criatura).
+- **Proteção do comandante** (dinâmica inspirada em Yu-Gi-Oh): enquanto houver
+  criatura inimiga em campo, nem ataques nem magias podem mirar a vida do
+  comandante. Ao destruir a **última** criatura, o **dano excedente** do golpe
+  atravessa e desconta dos pontos de vida (escudo absorve primeiro). Efeitos
+  especiais marcados como dano direto (`pierce`) ignoram a proteção — espaço de
+  design para expansões. **Provocar** define a prioridade entre criaturas.
 - Deck vazio causa **fadiga** crescente — partidas não se arrastam.
 
 ### Fairness por design (slide "Fairness por design")

@@ -99,7 +99,8 @@ export async function playUntilOver(
     watcherReveal?: () => void;
   } = {},
 ): Promise<void> {
-  const maxRounds = opts.maxRounds ?? 30;
+  // a muralha de criaturas (dinâmica Yu-Gi-Oh) alonga as partidas
+  const maxRounds = opts.maxRounds ?? 40;
   for (let round = 0; round < maxRounds; round++) {
     for (const p of [a, b]) {
       if ((await p.locator('.game-over').count()) > 0) return;

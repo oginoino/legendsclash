@@ -23,6 +23,12 @@ export interface CardDef {
   target?: 'enemy-creature' | 'friendly-creature' | 'enemy-any' | 'none';
   /** Palavras-chave de regra (ex.: Provocar — inimigos devem atacá-la primeiro) */
   keywords?: Array<'taunt'>;
+  /**
+   * Efeito especial de dano direto: ignora a proteção das criaturas e pode
+   * mirar o comandante mesmo com a mesa inimiga ocupada. Nenhuma carta do
+   * deck padrão usa o flag — é espaço de design para expansões.
+   */
+  pierce?: boolean;
 }
 
 export const CARDS: Record<string, CardDef> = {

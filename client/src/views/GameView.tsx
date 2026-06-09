@@ -45,6 +45,7 @@ interface CombatPreview {
   targetDmg: number;
   targetDies?: boolean;
   lethal?: boolean; // venceria a partida
+  overflow?: number; // dano excedente que atravessa para o comandante
   selfDmg?: number; // retaliação no atacante
   selfDies?: boolean;
   attackerIid?: string;
@@ -194,7 +195,10 @@ export function GameView() {
     !game.hand.some((c) => CARDS[c.defId].cost <= me.energy) &&
     !me.board.some((c) => c.canAttack);
 
-  // Provocar: se o inimigo tem criatura com a palavra-chave, só ela pode ser alvo de ataque
+  // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
+  // e magias (apenas efeitos especiais "pierce" atravessam).
+  const faceShielded = enemy.board.length > 0;
+  // Provocar: prioridade entre criaturas — a com a palavra-chave vai primeiro
   const enemyTaunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
   const mustHitTaunt = selection?.kind === 'attacker' && enemyTaunts.length > 0;
 
@@ -204,16 +208,21 @@ export function GameView() {
     if (selectedAttacker) {
       const power = selectedAttacker.attack + me!.attackBonus;
       if (target.kind === 'face') {
-        if (mustHitTaunt) return null;
+        if (faceShielded) return null;
         return { targetDmg: power, lethal: power >= enemy.hp + enemy.shield, attackerIid: selectedAttacker.iid };
       }
       const defender = enemy.board.find((c) => c.iid === target.iid);
       if (!defender) return null;
       if (mustHitTaunt && !CARDS[defender.defId].keywords?.includes('taunt')) return null;
       const retaliation = defender.attack + enemy.attackBonus;
+      const dies = defender.health <= power;
+      // dano excedente: só quando a defensora morta era a última criatura
+      const overflow = dies && enemy.board.length === 1 ? Math.max(0, power - defender.health) : 0;
       return {
         targetDmg: power,
-        targetDies: defender.health <= power,
+        targetDies: dies,
+        overflow: overflow > 0 ? overflow : undefined,
+        lethal: overflow > 0 && overflow >= enemy.hp + enemy.shield,
         selfDmg: retaliation,
         selfDies: selectedAttacker.health <= retaliation,
         attackerIid: selectedAttacker.iid,
@@ -222,6 +231,7 @@ export function GameView() {
     if (selectedHandDef && SPELL_DMG[selectedHandDef.id] !== undefined) {
       const dmg = SPELL_DMG[selectedHandDef.id];
       if (target.kind === 'face') {
+        if (faceShielded && !selectedHandDef.pierce) return null;
         return { targetDmg: dmg, lethal: dmg >= enemy.hp + enemy.shield };
       }
       const victim = enemy.board.find((c) => c.iid === target.iid);
@@ -294,6 +304,10 @@ export function GameView() {
   function clickEnemyFace() {
     if (!myTurn) return;
     if (selection?.kind === 'hand' && selectedHandDef?.target === 'enemy-any') {
+      if (faceShielded && !selectedHandDef.pierce) {
+        sfx.error();
+        return; // criaturas protegem o comandante até de magias
+      }
       send({ t: 'game:play', iid: selection.iid, target: { seat: enemySeatIdx } });
       sfx.play();
       setSelection(null);
@@ -301,7 +315,7 @@ export function GameView() {
       return;
     }
     if (selection?.kind === 'attacker') {
-      if (mustHitTaunt) {
+      if (faceShielded) {
         sfx.error();
         return;
       }
@@ -333,6 +347,7 @@ export function GameView() {
 
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
+  const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
 
   return (
     <div
@@ -346,8 +361,8 @@ export function GameView() {
           seatIdx={enemySeatIdx}
           isEnemy
           onFaceClick={clickEnemyFace}
-          targetable={!!targetingEnemy && !mustHitTaunt}
-          blocked={!!targetingEnemy && selection?.kind === 'attacker' && mustHitTaunt}
+          targetable={!!targetingEnemy && (!faceShielded || !!selectedHandDef?.pierce)}
+          blocked={!!targetingEnemy && faceShielded && !selectedHandDef?.pierce}
           lethal={faceLethal}
           preview={hover?.kind === 'face' ? preview : null}
           onHover={(h) => setHover(h ? { kind: 'face' } : null)}
@@ -488,11 +503,15 @@ export function GameView() {
         <div className="target-hint">
           {selection.kind === 'attacker'
             ? mustHitTaunt
-              ? '🛡 Provocar: o Golem protege o comandante — ataque-o primeiro'
-              : 'Escolha o alvo do ataque — passe o mouse para ver a prévia do dano'
+              ? '🛡 Provocar: ataque o Golem antes das outras criaturas'
+              : faceShielded
+                ? '⚔️ As criaturas inimigas protegem o comandante — derrote-as primeiro'
+                : 'Mesa livre: ataque o comandante ou passe o mouse para ver a prévia'
             : selectedHandDef?.target === 'friendly-creature'
               ? 'Escolha uma criatura aliada'
-              : 'Escolha um alvo inimigo — passe o mouse para ver a prévia'}
+              : faceShielded && !selectedHandDef?.pierce
+                ? 'Escolha uma criatura inimiga — elas protegem o comandante'
+                : 'Escolha um alvo inimigo — passe o mouse para ver a prévia'}
           <span className="dim"> · Esc cancela</span>
         </div>
       )}
@@ -501,12 +520,12 @@ export function GameView() {
         <svg className="aim-arrow" width="100%" height="100%">
           <defs>
             <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill={faceLethal ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0'} />
+              <path d="M0,0 L8,4 L0,8 Z" fill={lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0'} />
             </marker>
           </defs>
           <path
             d={`M ${arrow.x1} ${arrow.y1} Q ${(arrow.x1 + arrow.x2) / 2} ${Math.min(arrow.y1, arrow.y2) - 60} ${arrow.x2} ${arrow.y2}`}
-            stroke={faceLethal ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0'}
+            stroke={lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0'}
             strokeWidth="3"
             strokeDasharray="8 6"
             fill="none"
@@ -554,7 +573,10 @@ function PreviewChip({ p, self }: { p: CombatPreview; self?: boolean }) {
   }
   return (
     <span className={`preview-chip ${p.lethal ? 'lethal' : p.targetDies ? 'dies' : ''}`}>
-      −{p.targetDmg}{p.lethal ? ' ☠ LETAL' : p.targetDies ? ' 💀' : ''}
+      −{p.targetDmg}
+      {p.targetDies ? ' 💀' : ''}
+      {p.overflow ? ` ↯${p.overflow}` : ''}
+      {p.lethal ? ' ☠ LETAL' : ''}
     </span>
   );
 }

@@ -281,6 +281,11 @@ export class Match {
         if (!target || target.seat === casterIdx) throw new GameError('Escolha um alvo inimigo.');
         const enemy = this.seats[target.seat];
         if (!enemy || enemy.out) throw new GameError('Alvo inválido.');
+        // A proteção das criaturas vale também para magias; apenas efeitos
+        // especiais marcados como dano direto (pierce) a atravessam.
+        if (!target.iid && enemy.board.length > 0 && !def.pierce) {
+          throw new GameError('As criaturas inimigas protegem o comandante.');
+        }
         if (target.iid) {
           const creature = enemy.board.find((c) => c.iid === target.iid);
           if (!creature) throw new GameError('Alvo inválido.');
@@ -342,10 +347,16 @@ export class Match {
     const enemy = this.seats[target.seat];
     if (!enemy || enemy.out) throw new GameError('Alvo inválido.');
 
-    // Provocar: criaturas com a palavra-chave precisam ser atacadas primeiro
-    // (magias ignoram — só o combate físico é provocado).
+    // Dinâmica Yu-Gi-Oh: criaturas em campo protegem os pontos de vida —
+    // o comandante só pode ser atacado com a mesa inimiga vazia.
+    if (!target.iid && enemy.board.length > 0) {
+      throw new GameError('As criaturas inimigas protegem o comandante — derrote-as primeiro.');
+    }
+
+    // Provocar: define a prioridade entre criaturas — a que tem a
+    // palavra-chave precisa ser atacada antes das demais.
     const taunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
-    if (taunts.length > 0 && !(target.iid && taunts.some((c) => c.iid === target.iid))) {
+    if (target.iid && taunts.length > 0 && !taunts.some((c) => c.iid === target.iid)) {
       throw new GameError('Provocar: ataque primeiro a criatura com Provocar.');
     }
 
@@ -355,12 +366,20 @@ export class Match {
     if (target.iid) {
       const defender = enemy.board.find((c) => c.iid === target.iid);
       if (!defender) throw new GameError('Alvo inválido.');
+      const wasLast = enemy.board.length === 1;
+      const excess = power - defender.health;
       // Combate simultâneo: cada criatura causa seu ataque na outra.
       defender.health -= power;
       attacker.health -= defender.attack + enemy.attackBonus;
       this.addLog(`${attackerName} atacou ${CARDS[defender.defId].name}`);
       this.cleanupBoard(seat);
       this.cleanupBoard(enemy);
+      // Dano excedente: ao destruir a última criatura em campo, o saldo do
+      // golpe (não a retaliação) desconta dos pontos de vida do comandante.
+      if (wasLast && defender.health <= 0 && excess > 0) {
+        this.damagePlayer(enemy, excess);
+        this.addLog(`O dano excedente atingiu ${enemy.player.name} (−${excess})`);
+      }
     } else {
       this.damagePlayer(enemy, power);
       this.addLog(`${attackerName} causou ${power} de dano em ${enemy.player.name}`);

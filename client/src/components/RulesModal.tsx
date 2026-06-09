@@ -32,15 +32,17 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
             <h4>⚔️ Combate</h4>
             <p>
               Criaturas <b>não atacam no turno em que entram</b> e atacam <b>1x por turno</b>.
-              No combate, as duas criaturas se ferem ao mesmo tempo. Mire no
-              comandante para vencer — ou controle a mesa primeiro.
+              No combate, as duas criaturas se ferem ao mesmo tempo.{' '}
+              <b>Criaturas em campo protegem o comandante</b>: enquanto o inimigo
+              tiver criaturas, nem ataques nem magias podem mirar a vida dele.
             </p>
           </section>
           <section>
-            <h4>🛡️ Provocar</h4>
+            <h4>↯ Dano excedente</h4>
             <p>
-              Criaturas com <b>Provocar</b> (como o Golem de Pedra) protegem o
-              comandante: inimigos precisam atacá-las primeiro. Magias ignoram Provocar.
+              Ao destruir a <b>última criatura</b> inimiga, o dano que sobrar do
+              golpe atravessa e desconta da vida do comandante. Com <b>Provocar</b>{' '}
+              em campo (Golem de Pedra), ele deve ser atacado antes das outras criaturas.
             </p>
           </section>
           <section>

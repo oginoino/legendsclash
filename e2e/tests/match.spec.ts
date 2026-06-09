@@ -33,6 +33,10 @@ test.describe('partida real: matchmaking → duelo → fim de jogo', () => {
 
         // interação de mira: seleciona atacante e paira sobre um alvo
         await ready.first().click();
+        if ((await current.locator('.my-row .creature.selected').count()) === 0) {
+          await current.keyboard.press('Escape');
+          return; // seleção não registrou nesta rodada — tenta na próxima
+        }
         const target = current.locator('.enemy-row .creature:not(.blocked):not(.ghost)').first();
         const box = (await target.count())
           ? await target.boundingBox()

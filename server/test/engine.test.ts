@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Match, type EngineResult, type MatchPlayer } from '../src/game/engine.js';
-import { STARTING_HP, RECONNECT_GRACE_MS } from '@legendsclash/shared';
+import { CARDS, STARTING_HP, RECONNECT_GRACE_MS } from '@legendsclash/shared';
 
 function players(n: number): MatchPlayer[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -175,13 +175,13 @@ describe('Provocar (palavra-chave)', () => {
     canAttack: true, attacked: false,
   });
 
-  it('bloqueia ataque ao comandante enquanto houver criatura com Provocar', () => {
+  it('ataque ao comandante com Provocar em campo cai na proteção geral', () => {
     const { m } = makeMatch();
     track(m).start();
     m.seats[0].board = [wolf('a1')];
     m.seats[1].board = [taunt()];
     expect(() => m.attack('p0', 'a1', { seat: 1 }))
-      .toThrow('Provocar: ataque primeiro a criatura com Provocar.');
+      .toThrow('As criaturas inimigas protegem o comandante — derrote-as primeiro.');
   });
 
   it('bloqueia ataque a outra criatura que não tem Provocar', () => {
@@ -205,6 +205,117 @@ describe('Provocar (palavra-chave)', () => {
     // o lobo (2 de vida) morre com os 2 de dano e sai da mesa
     expect(m.seats[1].board.some((c) => c.iid === 'b2')).toBe(false);
     expect(m.seats[1].board.some((c) => c.iid === 'g1')).toBe(true);
+  });
+});
+
+describe('proteção do comandante (dinâmica Yu-Gi-Oh)', () => {
+  const creature = (iid: string, defId: string, attack: number, health: number) => ({
+    iid, defId, attack, health, baseHealth: health, canAttack: true, attacked: false,
+  });
+
+  it('bloqueia ataque ao comandante com qualquer criatura em campo', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_lobo', 3, 2)];
+    m.seats[1].board = [creature('b1', 'c_recruta', 1, 2)]; // sem Provocar
+    expect(() => m.attack('p0', 'a1', { seat: 1 }))
+      .toThrow('As criaturas inimigas protegem o comandante — derrote-as primeiro.');
+  });
+
+  it('libera o ataque ao comandante quando a mesa inimiga está vazia', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_lobo', 3, 2)];
+    m.attack('p0', 'a1', { seat: 1 });
+    expect(m.seats[1].hp).toBe(STARTING_HP - 3);
+  });
+
+  it('magias também são bloqueadas pela proteção das criaturas', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [creature('b1', 'c_recruta', 1, 2)];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_bola_de_fogo' }];
+    m.seats[0].energy = 4;
+    expect(() => m.playCard('p0', 'x1', { seat: 1 }))
+      .toThrow('As criaturas inimigas protegem o comandante.');
+    // em criatura continua válida
+    m.playCard('p0', 'x1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].board).toHaveLength(0);
+  });
+
+  it('efeito especial pierce atravessa a proteção', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [creature('b1', 'c_recruta', 1, 2)];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_faisca' }];
+    m.seats[0].energy = 1;
+    CARDS.s_faisca.pierce = true;
+    try {
+      m.playCard('p0', 'x1', { seat: 1 }); // não lança erro
+      expect(m.seats[1].hp).toBe(STARTING_HP - 2);
+    } finally {
+      delete CARDS.s_faisca.pierce;
+    }
+  });
+});
+
+describe('dano excedente na última criatura', () => {
+  const creature = (iid: string, defId: string, attack: number, health: number) => ({
+    iid, defId, attack, health, baseHealth: health, canAttack: true, attacked: false,
+  });
+
+  it('o saldo do golpe que destrói a última criatura desconta da vida', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_campea', 5, 5)];
+    m.seats[1].board = [creature('b1', 'c_lobo', 3, 2)]; // última criatura
+    m.attack('p0', 'a1', { seat: 1, iid: 'b1' });
+    // 5 de dano - 2 de vida = 3 de excedente no comandante
+    expect(m.seats[1].board).toHaveLength(0);
+    expect(m.seats[1].hp).toBe(STARTING_HP - 3);
+  });
+
+  it('o escudo absorve o dano excedente primeiro', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_campea', 5, 5)];
+    m.seats[1].board = [creature('b1', 'c_lobo', 3, 2)];
+    m.seats[1].shield = 2;
+    m.attack('p0', 'a1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].shield).toBe(0);
+    expect(m.seats[1].hp).toBe(STARTING_HP - 1); // 3 de excedente - 2 de escudo
+  });
+
+  it('não há excedente quando resta outra criatura em campo', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_campea', 5, 5)];
+    m.seats[1].board = [creature('b1', 'c_lobo', 3, 2), creature('b2', 'c_recruta', 1, 2)];
+    m.attack('p0', 'a1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].board).toHaveLength(1);
+    expect(m.seats[1].hp).toBe(STARTING_HP); // excedente se perde
+  });
+
+  it('não há excedente quando a defensora sobrevive', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_lobo', 3, 2)];
+    m.seats[1].board = [creature('b1', 'c_golem', 3, 6)]; // sobrevive com 3
+    m.attack('p0', 'a1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].board[0].health).toBe(3);
+    expect(m.seats[1].hp).toBe(STARTING_HP);
+  });
+
+  it('excedente letal encerra a partida por vida zerada', () => {
+    const { m, result } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_dragao', 7, 7)];
+    m.seats[1].board = [creature('b1', 'c_recruta', 1, 2)];
+    m.seats[1].hp = 5; // 7 - 2 = 5 de excedente
+    m.attack('p0', 'a1', { seat: 1, iid: 'b1' });
+    expect(m.finished).toBe(true);
+    expect(result()!.winnerSeat).toBe(0);
+    expect(result()!.reason).toBe('hp');
   });
 });
 
