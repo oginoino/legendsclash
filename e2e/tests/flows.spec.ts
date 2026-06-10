@@ -2,25 +2,26 @@ import { expect, test } from '@playwright/test';
 import { loginAs, shotPath, uniqueEmail } from './helpers.js';
 
 test.describe('login e onboarding', () => {
-  test('login OTP em 3 passos: e-mail → código → perfil → home', async ({ page }) => {
+  test('login por link: e-mail → enviado → clique no link → perfil → home', async ({ page }) => {
     const email = uniqueEmail('xavier');
     await page.goto('/');
     await expect(page.locator('.login-card')).toBeVisible();
     await page.screenshot({ path: shotPath('01-login.png') });
 
-    // passo 1: e-mail recebe o código
+    // passo 1: e-mail recebe o link de acesso
     await page.fill('input[type=email]', email);
-    await page.click('button:has-text("Receber código")');
-    await expect(page.locator('input[name=code]')).toBeVisible();
-    await expect(page.locator('.login-step-info')).toContainText(email);
+    await page.click('button:has-text("Receber link")');
+    await expect(page.locator('.login-sent')).toBeVisible();
+    await expect(page.locator('.login-sent')).toContainText(email);
+    // reenviar respeita o cooldown de 60s
+    await expect(page.locator('button:has-text("Reenviar link")')).toBeDisabled();
+    await page.screenshot({ path: shotPath('01b-login-enviado.png') });
 
-    // passo 2: código de 6 dígitos (exposto pelo servidor em modo local)
-    const { code } = await (
+    // passo 2: o "clique no e-mail" — em modo local o link vem do servidor
+    const { link } = await (
       await page.request.get(`/api/auth/dev-code?email=${encodeURIComponent(email)}`)
     ).json();
-    await page.fill('input[name=code]', code);
-    await page.screenshot({ path: shotPath('01b-login-codigo.png') });
-    await page.click('button:has-text("Entrar")');
+    await page.goto(link);
 
     // passo 3: primeiro acesso pede nome e avatar
     await expect(page.locator('input[name=name]')).toBeVisible();
@@ -35,6 +36,18 @@ test.describe('login e onboarding', () => {
     // progressão visível: barra até a próxima liga (Bronze < Ouro)
     await expect(page.locator('.league-progress')).toBeVisible();
     await page.screenshot({ path: shotPath('02-home.png') });
+  });
+
+  test('link expirado mostra erro claro e leva de volta ao pedido de link', async ({ page }) => {
+    // formato real do redirect de erro do verificador do Supabase
+    await page.goto(
+      '/auth/callback#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
+    );
+    await expect(page.locator('.login-callback')).toContainText('expirou');
+    await page.click('button:has-text("Pedir um novo link")');
+    await expect(page.locator('input[type=email]')).toBeVisible();
+    // a URL não guarda o fragment de erro no histórico
+    expect(new URL(page.url()).pathname).toBe('/');
   });
 
   test('sessão persiste ao recarregar e relogin não repete o onboarding', async ({ browser }) => {

@@ -159,14 +159,13 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .login-note { color: var(--dim); font-size: 12px; text-align: center; margin: 0; }
 .login-step-info { color: var(--dim); font-size: 14px; margin: 0; text-align: center; }
 .login-step-info strong { color: var(--text); word-break: break-all; }
-.otp-input {
-  text-align: center;
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 12px;
-  font-variant-numeric: tabular-nums;
-}
 .login-links { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+/* "link enviado" e retorno do link (/auth/callback) */
+.login-sent, .login-callback {
+  display: flex; flex-direction: column; gap: 14px; align-items: center;
+}
+.sent-icon { font-size: 44px; }
+.login-callback .spinner { margin: 4px auto; }
 
 /* ── Home ─────────────────────────────────────────────────────── */
 .home-screen { max-width: 1100px; margin: 0 auto; padding: 20px; }

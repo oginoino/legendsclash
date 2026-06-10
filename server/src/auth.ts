@@ -5,20 +5,28 @@ import type { Profile } from '@legendsclash/shared';
 import type { Store } from './store.js';
 
 /**
- * Login por código OTP de 6 dígitos enviado por e-mail.
+ * Login por link mágico (e-mail), com sessões próprias do servidor.
  *
  * O servidor media tudo (o cliente nunca fala com o Supabase):
  *
- *   POST /api/auth/otp     { email }        → Supabase envia o código por e-mail
- *   POST /api/auth/verify  { email, code }  → valida e emite sessão própria
+ *   POST /api/auth/otp     { email }        → Supabase envia o e-mail com o link
+ *   POST /api/auth/link    { accessToken }  → troca o JWT do link por sessão própria
+ *   POST /api/auth/verify  { email, code }  → caminho por código (modo local/SMTP futuro)
  *   POST /api/auth/profile Bearer + {name, avatar} → onboarding do 1º login
  *   POST /api/auth/logout  Bearer           → revoga a sessão
  *
- * Em modo local (sem SUPABASE_* ou LC_LOCAL=1) o código é gerado em memória e
- * impresso no console — desenvolvimento e e2e não dependem de e-mail real.
- * Nesse modo (e fora de produção) GET /api/auth/dev-code?email= expõe o
- * código para os testes Playwright.
+ * O link do e-mail aponta para o verificador do Supabase, que redireciona o
+ * navegador para `APP_BASE_URL/auth/callback#access_token=…`; o cliente envia
+ * esse JWT (vida curta) para /api/auth/link e recebe a sessão de 30 dias.
+ *
+ * Em modo local (sem SUPABASE_* ou LC_LOCAL=1) nada de e-mail: o link de
+ * acesso (com código embutido) é impresso no console e, fora de produção,
+ * exposto em GET /api/auth/dev-code?email= para os testes Playwright.
  */
+
+/** Base pública do app — destino dos links de acesso enviados por e-mail. */
+const APP_BASE_URL = (process.env.APP_BASE_URL ?? 'https://srv1745709.hstgr.cloud').replace(/\/+$/, '');
+const CALLBACK_PATH = '/auth/callback';
 
 export class AuthError extends Error {
   constructor(public status: number, message: string) {
@@ -53,7 +61,14 @@ export class LocalOtpProvider implements OtpProvider {
   async request(email: string): Promise<void> {
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     this.codes.set(email, { code, expiresAt: Date.now() + this.ttlMs, attempts: 0 });
-    console.log(`[auth] código OTP para ${email}: ${code}`);
+    const port = process.env.PORT ?? 8787;
+    console.log(`[auth] link de acesso para ${email}: http://localhost:${port}${this.linkFor(email)}`);
+  }
+
+  /** Link de acesso local (caminho relativo): mesmo callback do link real. */
+  linkFor(email: string): string {
+    const code = this.codes.get(email)?.code ?? '';
+    return `${CALLBACK_PATH}#local_email=${encodeURIComponent(email)}&local_code=${code}`;
   }
 
   async verify(email: string, code: string): Promise<{ authUserId: string | null }> {
@@ -96,7 +111,11 @@ export class SupabaseOtpProvider implements OtpProvider {
   async request(email: string): Promise<void> {
     const { error } = await this.client.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        // o verificador do Supabase redireciona o navegador para cá
+        emailRedirectTo: `${APP_BASE_URL}${CALLBACK_PATH}`,
+      },
     });
     if (error) throw mapSupabaseError(error, 'request');
   }
@@ -109,6 +128,20 @@ export class SupabaseOtpProvider implements OtpProvider {
     });
     if (error) throw mapSupabaseError(error, 'verify');
     return { authUserId: data.user?.id ?? null };
+  }
+
+  /** Valida o JWT que o link mágico entrega no fragment do redirect. */
+  async verifyAccessToken(accessToken: string): Promise<{ authUserId: string; email: string | null }> {
+    const { data, error } = await this.client.auth.getUser(accessToken);
+    if (error) {
+      const e = error as { status?: number; name?: string };
+      if (e.name === 'AuthRetryableFetchError' || (e.status ?? 0) >= 500) {
+        throw mapSupabaseError(error, 'verify');
+      }
+      throw new AuthError(401, 'Link inválido ou expirado. Peça um novo link de acesso.');
+    }
+    if (!data.user) throw new AuthError(401, 'Link inválido ou expirado. Peça um novo link de acesso.');
+    return { authUserId: data.user.id, email: data.user.email ?? null };
   }
 }
 
@@ -193,6 +226,27 @@ export class AuthService {
     };
   }
 
+  /** Login pelo link mágico: troca o JWT do redirect por uma sessão própria. */
+  async loginWithAccessToken(
+    accessTokenRaw: string,
+  ): Promise<{ token: string; profile: Profile; needsProfile: boolean }> {
+    const accessToken = String(accessTokenRaw ?? '').trim();
+    if (!accessToken) throw new AuthError(400, 'Link inválido. Peça um novo link de acesso.');
+    if (!(this.provider instanceof SupabaseOtpProvider)) {
+      // modo local entra pelo link com código embutido (/auth/callback#local_…)
+      throw new AuthError(400, 'Login por link indisponível em modo local — use o link do console.');
+    }
+    const { authUserId, email } = await this.provider.verifyAccessToken(accessToken);
+    if (!email) throw new AuthError(401, 'Link inválido ou expirado. Peça um novo link de acesso.');
+    const { user, isNew } = this.store.findOrCreatePlayerByAuth(email, authUserId);
+    const token = this.store.createSession(user.id);
+    return {
+      token,
+      profile: this.store.profileOf(user),
+      needsProfile: isNew || !user.name,
+    };
+  }
+
   completeProfile(token: string, nameRaw: string, avatarRaw: string): Profile {
     const user = this.store.userBySession(token);
     if (!user) throw new AuthError(401, 'Sessão expirada. Entre novamente.');
@@ -206,15 +260,16 @@ export class AuthService {
     this.store.revokeSession(token);
   }
 
-  /** Código atual de um e-mail — só em modo local e fora de produção. */
-  devCode(email: string): string {
+  /** Código e link de acesso pendentes — só em modo local e fora de produção. */
+  devCode(email: string): { code: string; link: string } {
     const enabled = this.provider.local && process.env.NODE_ENV !== 'production';
     if (!enabled || !(this.provider instanceof LocalOtpProvider)) {
       throw new AuthError(404, 'Não encontrado.');
     }
-    const code = this.provider.peek(String(email ?? '').trim().toLowerCase());
+    const norm = String(email ?? '').trim().toLowerCase();
+    const code = this.provider.peek(norm);
     if (!code) throw new AuthError(404, 'Nenhum código pendente para este e-mail.');
-    return code;
+    return { code, link: this.provider.linkFor(norm) };
   }
 
   private checkLimits(email: string, ip: string): void {
@@ -304,6 +359,12 @@ export async function handleAuthRoute(
         json(res, 200, result);
         return true;
       }
+      case 'POST /api/auth/link': {
+        const body = await readBody(req);
+        const result = await auth.loginWithAccessToken(String(body.accessToken ?? ''));
+        json(res, 200, result);
+        return true;
+      }
       case 'POST /api/auth/profile': {
         const token = bearerToken(req);
         const body = await readBody(req);
@@ -317,8 +378,7 @@ export async function handleAuthRoute(
         return true;
       }
       case 'GET /api/auth/dev-code': {
-        const code = auth.devCode(url.searchParams.get('email') ?? '');
-        json(res, 200, { code });
+        json(res, 200, auth.devCode(url.searchParams.get('email') ?? ''));
         return true;
       }
       default:

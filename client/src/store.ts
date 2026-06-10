@@ -24,6 +24,8 @@ export interface AppState {
   history: MatchHistoryEntry[];
   toast: string | null;
   reportSent: boolean;
+  /** Processamento do link de acesso (/auth/callback): validando ou com erro. */
+  authCallback: { status: 'pending' } | { status: 'error'; message: string } | null;
 }
 
 let state: AppState = {
@@ -40,6 +42,7 @@ let state: AppState = {
   history: [],
   toast: null,
   reportSent: false,
+  authCallback: null,
 };
 
 const listeners = new Set<() => void>();
@@ -155,12 +158,30 @@ function handleServerMsg(msg: ServerMsg): void {
 
 // ─── Convite por link (/room/CODIGO) ────────────────────────────
 
+const PENDING_ROOM_KEY = 'lc_pending_room';
+const PENDING_ROOM_TTL_MS = 30 * 60_000;
+
 let pendingRoomCode: string | null = null;
 {
   const m = location.pathname.match(/^\/room\/([A-Za-z0-9]{4,8})$/);
   if (m) {
     pendingRoomCode = m[1].toUpperCase();
     history.replaceState(null, '', '/');
+  } else {
+    // o convite sobrevive ao desvio para o e-mail (login por link) — com validade
+    try {
+      const saved = JSON.parse(localStorage.getItem(PENDING_ROOM_KEY) ?? 'null') as
+        | { code: string; at: number }
+        | null;
+      if (saved && Date.now() - saved.at < PENDING_ROOM_TTL_MS) pendingRoomCode = saved.code;
+    } catch {
+      // valor corrompido: ignora
+    }
+  }
+  if (pendingRoomCode) {
+    localStorage.setItem(PENDING_ROOM_KEY, JSON.stringify({ code: pendingRoomCode, at: Date.now() }));
+  } else {
+    localStorage.removeItem(PENDING_ROOM_KEY);
   }
 }
 
@@ -169,6 +190,7 @@ function joinPendingRoom(): void {
   if (pendingRoomCode && state.profile?.name) {
     send({ t: 'room:join', code: pendingRoomCode });
     pendingRoomCode = null;
+    localStorage.removeItem(PENDING_ROOM_KEY);
   }
 }
 
@@ -196,12 +218,20 @@ export async function requestOtp(email: string): Promise<void> {
   await postJson('/api/auth/otp', { email });
 }
 
-export async function verifyOtp(email: string, code: string): Promise<{ needsProfile: boolean }> {
-  const body = await postJson('/api/auth/verify', { email, code });
+function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
   localStorage.setItem('lc_token', body.token);
   setState({ token: body.token, profile: body.profile });
   connect();
   return { needsProfile: !!body.needsProfile };
+}
+
+export async function verifyOtp(email: string, code: string): Promise<{ needsProfile: boolean }> {
+  return adoptSession(await postJson('/api/auth/verify', { email, code }));
+}
+
+/** Login pelo link mágico: troca o JWT do redirect por uma sessão própria. */
+export async function loginWithAccessToken(accessToken: string): Promise<{ needsProfile: boolean }> {
+  return adoptSession(await postJson('/api/auth/link', { accessToken }));
 }
 
 export async function completeProfile(name: string, avatar: string): Promise<void> {
@@ -237,3 +267,64 @@ export function dismissGameOver(): void {
 export function clearReportSent(): void {
   setState({ reportSent: false });
 }
+
+export function dismissAuthCallback(): void {
+  setState({ authCallback: null });
+}
+
+// ─── Retorno do link de acesso (/auth/callback) ─────────────────
+// O verificador do Supabase redireciona para cá com o JWT (ou o erro) no
+// fragment; em modo dev o link do console traz e-mail+código locais.
+
+{
+  const frag = new URLSearchParams(location.hash.slice(1));
+  // aceita o retorno também fora de /auth/callback: se o verificador cair no
+  // site_url raiz, o fragment com o token chega em "/" — não pode se perder
+  const isAuthReturn =
+    location.pathname === '/auth/callback' ||
+    frag.has('access_token') ||
+    frag.has('local_email') ||
+    frag.has('error_code') ||
+    frag.has('error');
+  if (isAuthReturn) {
+    history.replaceState(null, '', '/'); // tokens nunca ficam na URL/histórico
+
+    const accessToken = frag.get('access_token');
+    const localEmail = frag.get('local_email');
+    const localCode = frag.get('local_code');
+
+    const finish = (login: Promise<unknown>) => {
+      state = { ...state, authCallback: { status: 'pending' } };
+      login
+        .then(() => setState({ authCallback: null }))
+        .catch((err) =>
+          setState({ authCallback: { status: 'error', message: (err as Error).message } }),
+        );
+    };
+
+    if (accessToken) {
+      finish(loginWithAccessToken(accessToken));
+    } else if (localEmail && localCode) {
+      finish(verifyOtp(localEmail, localCode)); // link do modo dev/testes
+    } else {
+      const expired = frag.get('error_code') === 'otp_expired';
+      state = {
+        ...state,
+        authCallback: {
+          status: 'error',
+          message: expired
+            ? 'Este link de acesso expirou. Peça um novo.'
+            : 'Link de acesso inválido. Peça um novo.',
+        },
+      };
+    }
+  }
+}
+
+// login concluído em outra aba (link aberto lá): esta aba adota a sessão
+window.addEventListener('storage', (e) => {
+  if (e.key === 'lc_token' && e.newValue && !state.token) {
+    setState({ token: e.newValue, authCallback: null });
+    connect();
+  }
+});
