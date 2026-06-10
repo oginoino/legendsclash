@@ -369,9 +369,13 @@ export class Match {
       const wasLast = enemy.board.length === 1;
       const excess = power - defender.health;
       // Combate simultâneo: cada criatura causa seu ataque na outra.
+      const retaliation = defender.attack + enemy.attackBonus;
       defender.health -= power;
-      attacker.health -= defender.attack + enemy.attackBonus;
+      attacker.health -= retaliation;
       this.addLog(`${attackerName} atacou ${CARDS[defender.defId].name}`);
+      if (retaliation > 0) {
+        this.addLog(`${CARDS[defender.defId].name} revidou: ${attackerName} sofreu ${retaliation} de dano`);
+      }
       this.cleanupBoard(seat);
       this.cleanupBoard(enemy);
       // Dano excedente: ao destruir a última criatura em campo, o saldo do

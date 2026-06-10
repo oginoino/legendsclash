@@ -664,3 +664,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .card-reveal .card-art.card-art-frame { height: 56px; }
 .login-note.credits a { color: var(--dim); }
+
+/* criatura clicada que não pode atacar: feedback imediato, nunca silêncio */
+.creature.cant-attack {
+  animation: shake .5s;
+  border-color: var(--red);
+}

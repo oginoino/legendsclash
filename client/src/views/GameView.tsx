@@ -63,6 +63,7 @@ export function GameView() {
   const [hover, setHover] = useState<HoverTarget>(null);
   const [hoverCost, setHoverCost] = useState(0);
   const [energyWarnAt, setEnergyWarnAt] = useState(0);
+  const [cantAttackWarn, setCantAttackWarn] = useState<{ iid: string; at: number } | null>(null);
   const [now, setNow] = useState(Date.now());
   const [fx, setFx] = useState<FloatFx[]>([]);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
@@ -276,6 +277,12 @@ export function GameView() {
       setSelection(
         selection?.kind === 'attacker' && selection.iid === c.iid ? null : { kind: 'attacker', iid: c.iid },
       );
+    } else {
+      // criatura que não pode atacar: limpa a seleção e avisa — nunca deixar
+      // uma seleção antiga ativa em silêncio (o ataque sairia do monstro errado)
+      setSelection(null);
+      setCantAttackWarn({ iid: c.iid, at: Date.now() });
+      sfx.error();
     }
   }
 
@@ -427,6 +434,7 @@ export function GameView() {
               mine
               selected={selection?.kind === 'attacker' && selection.iid === c.iid}
               buffTarget={targetingFriendly}
+              warn={cantAttackWarn?.iid === c.iid && now - cantAttackWarn.at < 600}
               retaliation={preview?.attackerIid === c.iid ? preview : null}
               fx={fxFor(`cr-${c.iid}`)}
               onClick={() => clickMyCreature(c)}
@@ -502,11 +510,13 @@ export function GameView() {
       {selection && (
         <div className="target-hint">
           {selection.kind === 'attacker'
-            ? mustHitTaunt
-              ? '🛡 Provocar: ataque o Golem antes das outras criaturas'
-              : faceShielded
-                ? '⚔️ As criaturas inimigas protegem o comandante — derrote-as primeiro'
-                : 'Mesa livre: ataque o comandante ou passe o mouse para ver a prévia'
+            ? `⚔️ Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
+                mustHitTaunt
+                  ? 'Provocar — ataque o Golem antes das outras criaturas'
+                  : faceShielded
+                    ? 'as criaturas inimigas protegem o comandante — derrote-as primeiro'
+                    : 'mesa livre — ataque o comandante ou veja a prévia no alvo'
+              }`
             : selectedHandDef?.target === 'friendly-creature'
               ? 'Escolha uma criatura aliada'
               : faceShielded && !selectedHandDef?.pierce
@@ -647,13 +657,14 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, preview, retaliation, onHover, fx, onClick }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview, retaliation, onHover, fx, onClick }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
   selected?: boolean;
   buffTarget?: boolean;
   blocked?: boolean;
+  warn?: boolean;
   preview?: CombatPreview | null;
   retaliation?: CombatPreview | null;
   onHover?: (on: boolean) => void;
@@ -670,6 +681,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, preview, reta
     mine && c.canAttack ? 'ready' : '',
     buffTarget && mine ? 'buff-target' : '',
     blocked ? 'blocked' : '',
+    warn ? 'cant-attack' : '',
     isTaunt ? 'taunt' : '',
     c.health < c.baseHealth ? 'wounded' : '',
     hit ? 'hit' : '',
@@ -679,7 +691,13 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, preview, reta
       className={classes}
       data-anchor={`cr-${c.iid}`}
       onClick={onClick}
-      title={blocked ? 'Protegido por Provocar — ataque o Golem primeiro' : def.text}
+      title={
+        blocked
+          ? 'Protegido por Provocar — ataque o Golem primeiro'
+          : mine && !c.canAttack
+            ? 'Essa criatura não pode atacar agora (acabou de entrar ou já atacou neste turno)'
+            : def.text
+      }
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >

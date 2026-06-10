@@ -319,6 +319,49 @@ describe('dano excedente na última criatura', () => {
   });
 });
 
+describe('invariante: criaturas espectadoras nunca sofrem dano', () => {
+  const creature = (iid: string, defId: string, attack: number, health: number) => ({
+    iid, defId, attack, health, baseHealth: health, canAttack: true, attacked: false,
+  });
+
+  it('com dois monstros meus em campo, só o atacante recebe a retaliação', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('m1', 'c_lobo', 3, 2), creature('m2', 'c_golem', 3, 6)];
+    m.seats[1].board = [creature('e1', 'c_cavaleiro', 3, 4)];
+    m.attack('p0', 'm1', { seat: 1, iid: 'e1' });
+    // m1 (2 de vida) morre para a retaliação de 3 do cavaleiro — esperado
+    expect(m.seats[0].board.some((c) => c.iid === 'm1')).toBe(false);
+    // m2 não participou do combate: intocada
+    const m2c = m.seats[0].board.find((c) => c.iid === 'm2');
+    expect(m2c).toBeDefined();
+    expect(m2c!.health).toBe(6);
+  });
+
+  it('espectadores ficam intocados mesmo com bônus de ataque inimigo e overflow', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_campea', 5, 5), creature('a2', 'c_recruta', 1, 2)];
+    m.seats[1].board = [creature('d1', 'c_lobo', 3, 2)];
+    m.seats[1].attackBonus = 1; // estandarte inimigo: retaliação 3+1
+    m.attack('p0', 'a1', { seat: 1, iid: 'd1' });
+    expect(m.seats[0].board.find((c) => c.iid === 'a1')!.health).toBe(1); // 5 - 4
+    const spectator = m.seats[0].board.find((c) => c.iid === 'a2');
+    expect(spectator!.health).toBe(2); // intocada
+    expect(m.seats[1].hp).toBe(STARTING_HP - 3); // overflow 5-2 no comandante
+  });
+
+  it('a retaliação fica explícita no log de eventos', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('m1', 'c_golem', 3, 6)];
+    m.seats[1].board = [creature('e1', 'c_arqueira', 2, 3)];
+    m.attack('p0', 'm1', { seat: 1, iid: 'e1' });
+    const log = m.viewFor('p0').log.map((l) => l.text);
+    expect(log).toContain('Arqueira Élfica revidou: Golem de Pedra sofreu 2 de dano');
+  });
+});
+
 describe('registro público de jogadas (revelação no cliente)', () => {
   it('expõe as cartas jogadas na visão dos dois lados', () => {
     const { m } = makeMatch();
