@@ -1,4 +1,4 @@
-import { useAppState } from './store';
+import { resumeHere, useAppState } from './store';
 import { LoginView } from './views/LoginView';
 import { HomeView } from './views/HomeView';
 import { RoomView } from './views/RoomView';
@@ -18,9 +18,14 @@ export function App() {
     <>
       {view}
       {s.toast && <div className="toast">{s.toast}</div>}
-      {s.token && !s.connected && (
+      {s.token && !s.connected && (s.replaced ? (
+        <div className="conn-banner">
+          O jogo foi aberto em outra aba ou dispositivo.{' '}
+          <button type="button" onClick={resumeHere}>Jogar nesta aba</button>
+        </div>
+      ) : (
         <div className="conn-banner">Reconectando ao servidor…</div>
-      )}
+      ))}
     </>
   );
 }
