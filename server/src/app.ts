@@ -56,6 +56,8 @@ export class App {
   }
 
   private handleMessage(ws: WebSocket, msg: ClientMsg): void {
+    // keepalive: responde antes da exigência de autenticação
+    if (msg.t === 'ping') return this.send(ws, { t: 'pong' });
     if (msg.t === 'hello') return this.handleHello(ws, msg.token);
 
     const userId = this.socketUser.get(ws);
@@ -89,9 +91,11 @@ export class App {
     const user = this.store.userBySession(token);
     if (!user) return this.send(ws, { t: 'error', message: 'Sessão expirada. Entre novamente.' });
 
-    // Uma conexão ativa por usuário: a nova substitui a antiga.
+    // Uma conexão ativa por usuário: a nova substitui a antiga. O código 4001
+    // diz à aba antiga para NÃO reconectar sozinha — senão as duas abas
+    // entram num cabo de guerra infinito de reconexões.
     const old = this.sockets.get(user.id);
-    if (old && old !== ws) old.close();
+    if (old && old !== ws) old.close(4001, 'Conexão substituída por outra aba/dispositivo.');
     this.sockets.set(user.id, ws);
     this.socketUser.set(ws, user.id);
 
@@ -104,8 +108,12 @@ export class App {
       this.send(ws, { t: 'game:state', view: match.viewFor(user.id) });
       return;
     }
+    // Verdade completa pós-(re)conexão: sem isso, quem reconecta após um
+    // restart do servidor fica preso numa batalha/sala/fila fantasma.
+    this.send(ws, { t: 'game:state', view: null });
+    this.send(ws, { t: 'queue:status', inQueue: false, size: this.queue.size });
     const room = this.rooms.roomOf(user.id);
-    if (room) this.send(ws, { t: 'room:state', room: this.rooms.toState(room) });
+    this.send(ws, { t: 'room:state', room: room ? this.rooms.toState(room) : null });
   }
 
   private handleClose(ws: WebSocket): void {

@@ -608,7 +608,10 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ── Mão em leque ─────────────────────────────────────────────── */
 .hand {
-  display: flex; gap: 8px; justify-content: center; align-items: flex-start;
+  /* sem justify-content: center — num scroll container, centralizar o
+     conteúdo transbordante deixa a metade esquerda INALCANÇÁVEL (scrollLeft
+     não vai abaixo de 0); a centralização fica com as margens auto abaixo */
+  display: flex; gap: 8px; align-items: flex-start;
   /* padding lateral/inferior ≥ saliência das gemas (10px): sem overflow fantasma */
   padding: 18px 14px 14px;
   background: linear-gradient(180deg, transparent, #0a101cd9),

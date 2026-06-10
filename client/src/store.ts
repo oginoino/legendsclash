@@ -26,6 +26,8 @@ export interface AppState {
   reportSent: boolean;
   /** Convidado pediu a tela de conta (criar/entrar) sem perder a sessão atual. */
   accountPrompt: boolean;
+  /** Conexão assumida por outra aba/dispositivo — não reconectar sozinho. */
+  replaced: boolean;
 }
 
 let state: AppState = {
@@ -43,6 +45,7 @@ let state: AppState = {
   toast: null,
   reportSent: false,
   accountPrompt: false,
+  replaced: false,
 };
 
 const listeners = new Set<() => void>();
@@ -67,6 +70,7 @@ export function useAppState(): AppState {
 let ws: WebSocket | null = null;
 let reconnectDelay = 1000;
 let toastTimer: number | undefined;
+let lastServerMsgAt = 0; // última mensagem (de qualquer tipo) vinda do servidor
 
 function showToast(message: string): void {
   clearTimeout(toastTimer);
@@ -86,21 +90,71 @@ export function connect(): void {
 
   socket.onopen = () => {
     reconnectDelay = 1000;
+    lastServerMsgAt = Date.now();
+    setState({ replaced: false });
     send({ t: 'hello', token: state.token! });
   };
 
-  socket.onmessage = (ev) => handleServerMsg(JSON.parse(ev.data) as ServerMsg);
+  socket.onmessage = (ev) => {
+    lastServerMsgAt = Date.now();
+    handleServerMsg(JSON.parse(ev.data) as ServerMsg);
+  };
 
-  socket.onclose = () => {
+  socket.onclose = (ev) => {
     if (ws !== socket) return; // conexão substituída (ex.: convidado virou conta)
     ws = null;
     setState({ connected: false });
+    if (ev.code === 4001) {
+      // outra aba/dispositivo assumiu — reconectar aqui geraria um cabo de
+      // guerra infinito entre as duas conexões
+      setState({ replaced: true });
+      return;
+    }
     if (state.token) {
       // reconexão automática — a janela anti-abandono do servidor é de 2 min
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(15_000, reconnectDelay * 2);
     }
   };
+}
+
+// ─── Vivacidade da conexão ──────────────────────────────────────
+// NATs, proxies e redes móveis derrubam conexões ociosas sem avisar: o socket
+// fica "aberto" porém morto e a batalha congela sem nem disparar onclose.
+// Quieto demais → ping; mudo demais → fecha (e a reconexão automática assume).
+
+const PING_IDLE_MS = 25_000;
+const DEAD_AFTER_MS = 65_000;
+
+window.setInterval(() => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const quiet = Date.now() - lastServerMsgAt;
+  if (quiet > DEAD_AFTER_MS) ws.close();
+  else if (quiet > PING_IDLE_MS) send({ t: 'ping' });
+}, 10_000);
+
+/** Rede/aba voltou: reconecta já, sem esperar o backoff. */
+function reconnectNow(): void {
+  if (!state.token || state.replaced) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    // socket aberto mas mudo há tempo demais (aba dormiu?) — está morto
+    if (Date.now() - lastServerMsgAt > DEAD_AFTER_MS) ws.close();
+    return;
+  }
+  reconnectDelay = 1000;
+  connect();
+}
+
+window.addEventListener('online', reconnectNow);
+window.addEventListener('focus', reconnectNow);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') reconnectNow();
+});
+
+/** Retoma a conexão nesta aba (substitui a aba que tinha assumido). */
+export function resumeHere(): void {
+  setState({ replaced: false });
+  reconnectNow();
 }
 
 function handleServerMsg(msg: ServerMsg): void {
@@ -111,6 +165,8 @@ function handleServerMsg(msg: ServerMsg): void {
       send({ t: 'history:get' });
       joinPendingRoom();
       break;
+    case 'pong':
+      break; // o onmessage já registrou o sinal de vida
     case 'error':
       if (msg.message === 'Sessão expirada. Entre novamente.') return logout();
       showToast(msg.message);
@@ -128,6 +184,16 @@ function handleServerMsg(msg: ServerMsg): void {
       });
       break;
     case 'game:state': {
+      if (!msg.view) {
+        // verdade do servidor: não há partida. Destrava a batalha fantasma
+        // que sobra quando o servidor reinicia no meio do jogo — exceto se a
+        // tela de resultado está aberta (o jogador fecha quando quiser).
+        if (state.game && !state.gameOver) {
+          setState({ game: null, chat: [] });
+          showToast('A partida anterior foi encerrada no servidor.');
+        }
+        break;
+      }
       const entering = !state.game || state.game.matchId !== msg.view.matchId;
       setState({
         game: msg.view,
@@ -225,7 +291,7 @@ function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
   setState({
     token: body.token, profile: body.profile, accountPrompt: false,
     connected: false, room: null, game: null, gameOver: null, chat: [],
-    history: [], inQueue: false,
+    history: [], inQueue: false, replaced: false,
   });
   connect();
   return { needsProfile: !!body.needsProfile };
@@ -284,7 +350,7 @@ export function logout(): void {
   setState({
     token: null, profile: null, connected: false, room: null,
     game: null, gameOver: null, chat: [], inQueue: false,
-    history: [], accountPrompt: false,
+    history: [], accountPrompt: false, replaced: false,
   });
   socket?.close();
 }
