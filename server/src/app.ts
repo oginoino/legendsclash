@@ -14,6 +14,11 @@ import { filterText, MAX_CHAT_LENGTH } from './wordfilter.js';
 
 const QUEUE_TICK_MS = 2000;
 
+/** Nome exibido a terceiros — contas com onboarding pendente têm nome vazio. */
+function displayName(u: UserRecord): string {
+  return u.name || 'Jogador';
+}
+
 export class App {
   private sockets = new Map<string, WebSocket>(); // userId → conexão ativa
   private socketUser = new WeakMap<WebSocket, string>();
@@ -80,7 +85,7 @@ export class App {
   }
 
   private handleHello(ws: WebSocket, token: string): void {
-    const user = this.store.userByToken(token);
+    const user = this.store.userBySession(token);
     if (!user) return this.send(ws, { t: 'error', message: 'Sessão expirada. Entre novamente.' });
 
     // Uma conexão ativa por usuário: a nova substitui a antiga.
@@ -145,7 +150,7 @@ export class App {
   // ─── Salas (lobby + convite por link) ───────────────────────────
 
   private asRoomPlayer(u: UserRecord): RoomPlayer {
-    return { id: u.id, name: u.name, avatar: u.avatar, mmr: u.mmr };
+    return { id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr };
   }
 
   private roomCreate(user: UserRecord): void {
@@ -199,7 +204,7 @@ export class App {
 
   private startMatch(users: UserRecord[]): void {
     const players: MatchPlayer[] = users.map((u) => ({
-      id: u.id, name: u.name, avatar: u.avatar, mmr: u.mmr,
+      id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr,
     }));
     let match: Match;
     match = new Match(
@@ -235,7 +240,7 @@ export class App {
 
     const entryFor = (won: boolean, opp: UserRecord, delta: number): MatchHistoryEntry => ({
       matchId: match.id,
-      opponentName: opp.name,
+      opponentName: displayName(opp),
       opponentId: opp.id,
       won,
       reason: result.reason,
@@ -289,7 +294,7 @@ export class App {
     if (!recipients.length) throw new KnownError('Você não está em uma sala ou partida.');
 
     const message = {
-      from: { id: user.id, name: user.name, avatar: user.avatar },
+      from: { id: user.id, name: displayName(user), avatar: user.avatar },
       text,
       at: Date.now(),
     };
@@ -328,7 +333,7 @@ export class App {
 
   private sendLeaderboard(user: UserRecord): void {
     const entries = this.store.leaderboard().map((u) => ({
-      id: u.id, name: u.name, avatar: u.avatar, mmr: u.mmr,
+      id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr,
       league: leagueOf(u.mmr), wins: u.wins, losses: u.losses,
     }));
     this.sendTo(user.id, { t: 'leaderboard', entries });

@@ -17,6 +17,8 @@
 
 * { box-sizing: border-box; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
   margin: 0;
   background:
@@ -26,12 +28,14 @@ body {
   color: var(--text);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
+  min-height: 100dvh; /* barra de endereço móvel não "vaza" o layout */
+  overscroll-behavior-y: none; /* sem pull-to-refresh no meio da partida */
 }
 
 h1, h2, h3 { margin: 0 0 12px; }
 .dim { color: var(--dim); font-size: 13px; }
 .hint { color: var(--dim); font-size: 13px; margin: 8px 0; }
-.centered { display: grid; place-items: center; min-height: 100vh; }
+.centered { display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; }
 
 .logo {
   font-size: 44px;
@@ -59,9 +63,12 @@ h1, h2, h3 { margin: 0 0 12px; }
   padding: 10px 16px;
   font-size: 14px;
   cursor: pointer;
+  touch-action: manipulation; /* sem atraso de double-tap em navegadores móveis */
   transition: filter .15s, transform .08s, box-shadow .15s;
 }
-.btn:hover:not(:disabled) { filter: brightness(1.25); box-shadow: 0 4px 18px #0006; }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled) { filter: brightness(1.25); box-shadow: 0 4px 18px #0006; }
+}
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: .45; cursor: default; }
 .btn.primary {
@@ -85,9 +92,22 @@ h1, h2, h3 { margin: 0 0 12px; }
   50% { box-shadow: 0 0 22px #e3b341aa; filter: brightness(1.25); }
 }
 
+/* ── Toque: alvos confortáveis onde o dedo é o ponteiro ───────── */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .btn.small { min-height: 40px; padding: 8px 14px; }
+  .avatar { min-width: 44px; min-height: 44px; }
+  .emote { min-height: 36px; padding: 6px 12px; }
+  .chat-actions button { min-width: 36px; min-height: 36px; font-size: 16px; }
+}
+/* sem mouse não existe "revelar no hover" — ações ficam sempre visíveis */
+@media (hover: none) {
+  .chat-actions button { opacity: 1; }
+}
+
 /* ── Login ────────────────────────────────────────────────────── */
 .login-screen {
-  display: grid; place-items: center; min-height: 100vh; padding: 20px;
+  display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; padding: 20px;
   position: relative; overflow: hidden;
 }
 .login-screen::before, .login-screen::after {
@@ -118,7 +138,7 @@ input {
   border-radius: 8px;
   color: var(--text);
   padding: 11px 12px;
-  font-size: 14px;
+  font-size: 16px; /* 16px+ evita o zoom automático do iOS ao focar o campo */
 }
 input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #4d8dff22; }
 .avatar-picker { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
@@ -131,10 +151,22 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   cursor: pointer;
   transition: transform .12s, border-color .12s;
 }
-.avatar:hover { transform: translateY(-3px); }
+@media (hover: hover) and (pointer: fine) {
+  .avatar:hover { transform: translateY(-3px); }
+}
 .avatar.selected { border-color: var(--gold); background: #e3b34122; box-shadow: 0 0 14px #e3b34144; }
 .form-error { color: var(--red); font-size: 13px; margin: 0; }
 .login-note { color: var(--dim); font-size: 12px; text-align: center; margin: 0; }
+.login-step-info { color: var(--dim); font-size: 14px; margin: 0; text-align: center; }
+.login-step-info strong { color: var(--text); word-break: break-all; }
+.otp-input {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.login-links { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
 /* ── Home ─────────────────────────────────────────────────────── */
 .home-screen { max-width: 1100px; margin: 0 auto; padding: 20px; }
@@ -230,7 +262,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .chat-msg.mine .chat-author { color: var(--gold); }
 .chat-actions { margin-left: auto; display: flex; gap: 2px; }
 .chat-actions button { background: none; border: none; cursor: pointer; font-size: 13px; opacity: .5; }
-.chat-actions button:hover { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .chat-actions button:hover { opacity: 1; }
+}
 .chat-input { display: flex; gap: 8px; margin-top: 8px; }
 .chat-input input { flex: 1; }
 .emote-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -239,18 +273,27 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   color: var(--text); font-size: 12px; padding: 4px 10px; cursor: pointer;
   transition: transform .1s, border-color .1s;
 }
-.emote:hover { transform: translateY(-2px); border-color: var(--gold-soft); }
+@media (hover: hover) and (pointer: fine) {
+  .emote:hover { transform: translateY(-2px); border-color: var(--gold-soft); }
+}
 .report-box { background: var(--bg-2); border: 1px solid #f8514955; border-radius: 8px; padding: 10px; margin: 8px 0; font-size: 13px; }
 .report-box input { width: 100%; margin: 8px 0; }
 .report-actions { display: flex; gap: 8px; }
 
 /* ── Arena ────────────────────────────────────────────────────── */
 .game-screen {
-  display: grid; grid-template-columns: 1fr 300px; gap: 14px;
-  max-width: 1320px; margin: 0 auto; padding: 14px; min-height: 100vh;
+  /* minmax(0,1fr): a coluna pode encolher abaixo do min-content da mão */
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px;
+  max-width: 1320px; margin: 0 auto; padding: 14px; min-height: 100vh; min-height: 100dvh;
+  /* superfície de jogo: long-press não seleciona texto nem abre menu (iOS) */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
-@media (max-width: 980px) { .game-screen { grid-template-columns: 1fr; } }
+.game-screen input { user-select: text; -webkit-user-select: text; }
+@media (max-width: 980px) { .game-screen { grid-template-columns: minmax(0, 1fr); } }
 .game-board {
+  min-width: 0; /* não herda a largura intrínseca da mão/fileiras */
   display: flex; flex-direction: column; gap: 10px;
   background:
     radial-gradient(60% 50% at 50% 50%, #1c2a4422 0%, transparent 100%),
@@ -262,6 +305,17 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .game-side { display: flex; flex-direction: column; gap: 12px; }
 .side-top { display: flex; justify-content: space-between; }
+/* barra de ações do jogo no celular (log/chat/regras/som/desistir) */
+.mobile-topbar { display: none; }
+.drawer-close { display: none; }
+.unread-badge {
+  position: absolute; top: -6px; right: -6px;
+  background: var(--red); color: #fff;
+  border-radius: 99px; min-width: 18px; height: 18px;
+  font-size: 11px; font-weight: 800;
+  display: grid; place-items: center; padding: 0 4px;
+  border: 2px solid var(--bg);
+}
 .log-panel, .side-chat { padding: 14px; }
 .game-log { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--dim); max-height: 170px; overflow-y: auto; }
 .game-log li { padding: 3px 0; border-bottom: 1px dashed #2d3c5866; animation: msg-in .25s ease; }
@@ -285,6 +339,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   display: grid; place-items: center;
   transition: border-color .15s, box-shadow .15s;
   flex-shrink: 0;
+  touch-action: none; /* alvo de mira: o gesto é nosso, não do navegador */
 }
 .portrait.targetable {
   border-color: var(--red);
@@ -375,11 +430,14 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   border: 2px solid var(--line); border-radius: 12px;
   color: var(--text); padding: 6px 10px 8px; min-width: 96px;
   cursor: pointer; font-size: 12px;
+  touch-action: none; /* arrastar daqui inicia a mira, nunca rolagem */
   animation: summon .3s cubic-bezier(.2, 1.6, .5, 1);
   transition: border-color .12s, box-shadow .12s, transform .12s;
 }
 @keyframes summon { from { transform: scale(.4); opacity: 0; } }
-.creature:hover { transform: translateY(-3px); }
+@media (hover: hover) and (pointer: fine) {
+  .creature:hover { transform: translateY(-3px); }
+}
 .creature-name { font-weight: 600; max-width: 110px; text-align: center; line-height: 1.15; }
 .creature-stats { display: flex; gap: 10px; font-size: 14px; }
 .creature .atk { color: var(--gold); }
@@ -415,27 +473,45 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   padding: 16px 10px 6px;
   background: linear-gradient(180deg, transparent, #0a101c88);
   border-radius: 14px; min-height: 172px;
+  overflow-x: auto; /* mãos cheias rolam na horizontal em telas estreitas */
+  touch-action: pan-x;
+  scrollbar-width: thin;
 }
+/* centraliza quando sobra espaço e ainda permite rolar até a 1ª carta */
+.hand .card:first-child { margin-left: auto; }
+.hand .card:last-child { margin-right: auto; }
 .card {
   position: relative;
   display: flex; flex-direction: column; gap: 3px;
   width: 126px; min-height: 162px;
+  flex-shrink: 0; /* a mão rola; cartas não esmagam */
   background: linear-gradient(180deg, #283655, #16203455);
   border: 2px solid var(--line); border-radius: 12px;
   color: var(--text); padding: 8px; text-align: left;
   font-size: 11px; cursor: default;
+  /* pan-x deixa a rolagem horizontal com o navegador; o arrasto vertical
+     (jogar/mirar) chega aos pointer events sem precisar de preventDefault */
+  touch-action: pan-x;
   transition: transform .18s cubic-bezier(.2, .9, .4, 1.2), border-color .15s, box-shadow .15s;
   animation: card-deal .35s ease;
   transform-origin: 50% 120%;
 }
 @keyframes card-deal { from { transform: translateX(70px) translateY(-14px) rotate(8deg); opacity: 0; } }
 .card.playable { cursor: pointer; border-color: #4d8dff99; box-shadow: 0 0 10px #4d8dff33; }
-.card.playable:hover { transform: translateY(-34px) scale(1.32) !important; z-index: 12; box-shadow: 0 20px 40px #000b; }
+@media (hover: hover) and (pointer: fine) {
+  .card.playable:hover { transform: translateY(-34px) scale(1.32) !important; z-index: 12; box-shadow: 0 20px 40px #000b; }
+}
 .card.selected {
   border-color: var(--gold);
   box-shadow: 0 0 18px #e3b34199;
   transform: translateY(-26px) scale(1.18) !important;
   z-index: 11;
+}
+.card.lifting {
+  transition: none; /* segue o dedo sem atraso */
+  border-color: var(--gold);
+  box-shadow: 0 18px 40px #000b;
+  z-index: 13;
 }
 .card:not(.playable) { opacity: .68; }
 .card-cost {
@@ -500,12 +576,22 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   filter: drop-shadow(0 0 6px #e3b34177);
 }
 .target-hint {
-  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  max-width: calc(100vw - 16px);
   background: var(--panel-2); border: 1px solid var(--gold-soft);
-  border-radius: 99px; padding: 9px 22px; font-size: 13px;
-  z-index: 45; box-shadow: 0 8px 30px #000a;
+  border-radius: 99px; padding: 6px 8px 6px 22px; font-size: 13px;
+  z-index: 46; box-shadow: 0 8px 30px #000a;
   animation: msg-in .2s ease;
+  pointer-events: none; /* não rouba toques da arena… */
 }
+.target-hint .cancel-pill {
+  pointer-events: auto; /* …exceto o próprio botão de cancelar */
+  border-radius: 99px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.target-hint-text { min-width: 0; }
 
 /* ── Fim de partida / overlays ────────────────────────────────── */
 .overlay {
@@ -538,7 +624,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 
 .toast {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   background: var(--panel-2); border: 1px solid var(--gold);
   border-radius: 10px; padding: 12px 20px; font-size: 14px; z-index: 100;
   box-shadow: 0 8px 30px #000a;
@@ -560,6 +646,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   animation: msg-in .15s ease;
 }
 .preview-chip.dies { border-color: var(--red); box-shadow: 0 0 12px #f8514966; }
+/* chip estático: prévia exibida em todos os alvos válidos durante a seleção */
+.preview-chip.static { opacity: .78; animation: none; }
 .preview-chip.lethal {
   border-color: var(--red); background: #2a0c0aee; color: #ff9d96;
   box-shadow: 0 0 18px #f85149aa;
@@ -669,4 +757,131 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .creature.cant-attack {
   animation: shake .5s;
   border-color: var(--red);
+}
+
+/* ══ Mobile: arena em coluna única com gaveta de log/chat ═══════
+   Vale para telas estreitas (retrato) e baixas (paisagem de celular). */
+@media (max-width: 700px), (max-height: 500px) {
+  .game-screen {
+    grid-template-columns: minmax(0, 1fr);
+    /* topbar enxuta em cima; a arena ocupa todo o resto da altura */
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-topbar {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: env(safe-area-inset-top);
+  }
+  .mobile-topbar .btn { position: relative; }
+  .mobile-topbar .btn.active { border-color: var(--gold); color: var(--gold); }
+
+  /* log + chat viram bottom-sheet aberto pelos botões da topbar */
+  .game-side {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 45;
+    gap: 8px;
+    padding: 8px 14px calc(14px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, #1b2538fa, #141c2cfa);
+    border: 1px solid var(--line);
+    border-bottom: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -18px 50px #000c;
+    max-height: 62dvh;
+    transform: translateY(105%);
+    transition: transform .25s ease;
+  }
+  .game-side.open { transform: none; }
+  .game-side .side-top { display: none; } /* ações já estão na topbar */
+  .game-side .log-panel, .game-side .side-chat { display: none; }
+  .game-side.pane-log .log-panel { display: block; }
+  .game-side.pane-chat .side-chat { display: flex; flex-direction: column; min-height: 0; }
+  .game-side .panel { padding: 10px; }
+  .drawer-close { display: block; align-self: center; }
+  .game-side .game-log { max-height: 38dvh; }
+  .game-side .chat-messages { max-height: 30dvh; }
+
+  /* compactação da arena */
+  .hero-plate { padding: 6px 10px; gap: 10px; }
+  .portrait { width: 48px; height: 48px; font-size: 22px; }
+  .hp-orb { min-width: 24px; height: 24px; font-size: 12px; }
+  .hero-name { font-size: 14px; }
+  .hero-meta { gap: 4px; }
+  .meta-chip { font-size: 11px; padding: 3px 7px; }
+  .board-row { min-height: 86px; gap: 6px; padding: 6px; flex-wrap: wrap; }
+  .creature { min-width: clamp(64px, 19vw, 96px); padding: 4px 6px 6px; font-size: 11px; }
+  .creature-name { max-width: 84px; font-size: 10px; }
+  .creature-art.card-art-frame { width: 42px; height: 30px; font-size: 22px; }
+  .board-divider { gap: 8px; }
+  .turn-pill { min-width: 0; flex: 1; padding: 6px 10px; font-size: 12px; }
+  .btn.end-turn { border-radius: 99px; padding: 12px 16px; white-space: nowrap; }
+
+  /* mão compacta com sobreposição (rola na horizontal se precisar) */
+  .hand { min-height: 150px; padding: 12px 8px 6px; gap: 0; }
+  .hand .card:not(:first-child) { margin-left: -30px; }
+  .card { width: clamp(98px, 27vw, 126px); min-height: 140px; }
+  .card-text { font-size: 10px; }
+
+  .turn-banner { font-size: 22px; padding: 12px 30px; max-width: 92vw; }
+  .reveal-stack { right: 6px; top: 11%; transform: scale(.82); transform-origin: top right; }
+  /* a dica de mira sobe para não brigar com a mão */
+  .target-hint {
+    bottom: calc(158px + env(safe-area-inset-bottom));
+    width: calc(100% - 16px);
+    justify-content: space-between;
+  }
+}
+
+/* paisagem de celular: cada pixel de altura conta */
+@media (max-height: 500px) {
+  .game-screen { padding: 6px; gap: 6px; }
+  .mobile-topbar { padding-top: 0; }
+  .hero-plate { padding: 4px 10px; gap: 8px; }
+  .portrait { width: 40px; height: 40px; font-size: 18px; }
+  .board-row { min-height: 64px; padding: 4px; }
+  .creature { min-width: 64px; padding: 3px 5px 4px; font-size: 10px; }
+  .creature-art.card-art-frame { width: 34px; height: 24px; font-size: 18px; }
+  .hand { min-height: 112px; padding: 8px 6px 4px; }
+  .card { width: 96px; min-height: 104px; }
+  .card-text { display: none; }
+  .turn-banner { font-size: 18px; padding: 8px 22px; }
+  .game-side { max-height: calc(100dvh - 52px); }
+  .target-hint { bottom: calc(120px + env(safe-area-inset-bottom)); }
+}
+
+/* ══ Mobile: telas de menu (login, home, sala, modais) ══════════ */
+@media (max-width: 640px) {
+  /* login */
+  .login-card { padding: 26px 18px; }
+  .logo { font-size: 34px; letter-spacing: 2px; }
+
+  /* home */
+  .home-screen { padding: 12px; }
+  .home-header { flex-wrap: wrap; gap: 10px; }
+  .panel { padding: 14px; }
+  .board-table { font-size: 13px; }
+  .board-table td:nth-child(2) {
+    max-width: 34vw;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .history-list li { flex-wrap: wrap; row-gap: 2px; font-size: 13px; }
+
+  /* sala */
+  .room-screen { padding: 14px 12px; gap: 12px; }
+  .room-code { font-size: 30px; letter-spacing: 6px; padding: 10px; }
+  .room-chat { min-height: 300px; }
+
+  /* modais cabem na tela e rolam */
+  .rules-modal { max-height: 92dvh; overflow-y: auto; }
+  .game-over { width: calc(100% - 24px); padding: 26px 18px; }
+  .overlay { padding: 12px; }
+}
+
+@media (max-width: 480px) {
+  .board-table td:nth-child(5) { display: none; } /* V/D sai; MMR fica */
+  .board-table td:nth-child(2) { max-width: 38vw; }
 }

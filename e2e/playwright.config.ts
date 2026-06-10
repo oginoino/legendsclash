@@ -29,7 +29,13 @@ export default defineConfig({
     command: 'npm start',
     cwd: resolve(__dirname, '..'),
     url: 'http://localhost:8787/api/health',
+    // Atenção: com reuseExistingServer, um servidor já aberto na :8787 é
+    // reaproveitado — garanta que ele também rode com LC_LOCAL=1.
     reuseExistingServer: true,
     timeout: 30_000,
+    // Modo local forçado: snapshot JSON + códigos OTP em memória
+    // (/api/auth/dev-code). Os testes nunca tocam o Supabase de produção,
+    // mesmo com o .env da raiz preenchido.
+    env: { ...(process.env as Record<string, string>), LC_LOCAL: '1' },
   },
 });

@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize, dirname } from 'node:path';
@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Store } from './store.js';
 import { App } from './app.js';
+import { createAuthService, handleAuthRoute } from './auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -34,13 +35,7 @@ const MIME: Record<string, string> = {
 
 const store = await Store.create();
 const app = new App(store);
-
-async function readBody(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
-}
+const auth = createAuthService(store);
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -52,15 +47,9 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === '/api/health') return json(res, 200, { ok: true });
 
-    // Login do MVP: e-mail + nome + avatar. Google OAuth está no roadmap Next.
-    if (url.pathname === '/api/auth' && req.method === 'POST') {
-      const body = (await readBody(req)) as { email?: string; name?: string; avatar?: string };
-      const email = String(body.email ?? '').trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return json(res, 400, { error: 'Informe um e-mail válido.' });
-      }
-      const user = store.loginOrRegister(email, String(body.name ?? ''), String(body.avatar ?? ''));
-      return json(res, 200, { token: user.token, profile: store.profileOf(user) });
+    // Login por código OTP via e-mail — rotas em auth.ts.
+    if (url.pathname.startsWith('/api/auth/')) {
+      if (await handleAuthRoute(auth, req, res, url)) return;
     }
 
     if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'Não encontrado.' });
