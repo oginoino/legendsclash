@@ -1,32 +1,28 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomInt } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Profile } from '@legendsclash/shared';
 import type { Store } from './store.js';
 
 /**
- * Login por link mágico (e-mail), com sessões próprias do servidor.
+ * Autenticação com sessões próprias do servidor.
  *
- * O servidor media tudo (o cliente nunca fala com o Supabase):
+ * Jogar não exige cadastro: o convidado escolhe nome/avatar e recebe uma
+ * sessão efêmera. Conta (e-mail + senha, Supabase Auth) guarda o progresso
+ * e coloca o jogador no ranking. O servidor media tudo (o cliente nunca
+ * fala com o Supabase) e nenhum fluxo envia e-mail: o cadastro já nasce
+ * confirmado.
  *
- *   POST /api/auth/otp     { email }        → Supabase envia o e-mail com o link
- *   POST /api/auth/link    { accessToken }  → troca o JWT do link por sessão própria
- *   POST /api/auth/verify  { email, code }  → caminho por código (modo local/SMTP futuro)
- *   POST /api/auth/profile Bearer + {name, avatar} → onboarding do 1º login
- *   POST /api/auth/logout  Bearer           → revoga a sessão
+ *   POST /api/auth/guest    { name, avatar }    → sessão de convidado
+ *   POST /api/auth/register { email, password } → cria a conta e loga;
+ *     com Bearer de convidado, a conta herda o progresso da sessão (promoção)
+ *   POST /api/auth/login    { email, password } → sessão de 30 dias
+ *   POST /api/auth/profile  Bearer + {name, avatar} → onboarding do 1º acesso
+ *   POST /api/auth/logout   Bearer              → revoga a sessão
  *
- * O link do e-mail aponta para o verificador do Supabase, que redireciona o
- * navegador para `APP_BASE_URL/auth/callback#access_token=…`; o cliente envia
- * esse JWT (vida curta) para /api/auth/link e recebe a sessão de 30 dias.
- *
- * Em modo local (sem SUPABASE_* ou LC_LOCAL=1) nada de e-mail: o link de
- * acesso (com código embutido) é impresso no console e, fora de produção,
- * exposto em GET /api/auth/dev-code?email= para os testes Playwright.
+ * Em modo local (sem SUPABASE_* ou LC_LOCAL=1) as contas vivem em memória
+ * (hash scrypt) — suficiente para dev e testes, sem tocar o banco real.
  */
-
-/** Base pública do app — destino dos links de acesso enviados por e-mail. */
-const APP_BASE_URL = (process.env.APP_BASE_URL ?? 'https://srv1745709.hstgr.cloud').replace(/\/+$/, '');
-const CALLBACK_PATH = '/auth/callback';
 
 export class AuthError extends Error {
   constructor(public status: number, message: string) {
@@ -34,71 +30,40 @@ export class AuthError extends Error {
   }
 }
 
-export interface OtpProvider {
-  /** true = códigos locais em memória (dev/testes), sem e-mail real. */
+export interface PasswordProvider {
+  /** true = contas em memória (dev/testes), sem Supabase. */
   readonly local: boolean;
-  request(email: string): Promise<void>;
-  verify(email: string, code: string): Promise<{ authUserId: string | null }>;
+  register(email: string, password: string): Promise<{ authUserId: string | null }>;
+  login(email: string, password: string): Promise<{ authUserId: string | null }>;
 }
 
-// ─── Provider local: dev e testes, sem e-mail ────────────────────
+// ─── Provider local: dev e testes, sem Supabase ──────────────────
 
-interface LocalCode {
-  code: string;
-  expiresAt: number;
-  attempts: number;
-}
-
-const LOCAL_CODE_TTL_MS = 10 * 60_000;
-const LOCAL_MAX_ATTEMPTS = 5;
-
-export class LocalOtpProvider implements OtpProvider {
+export class LocalPasswordProvider implements PasswordProvider {
   readonly local = true;
-  private codes = new Map<string, LocalCode>();
+  private accounts = new Map<string, { salt: Buffer; hash: Buffer }>();
 
-  constructor(private ttlMs = LOCAL_CODE_TTL_MS) {}
-
-  async request(email: string): Promise<void> {
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    this.codes.set(email, { code, expiresAt: Date.now() + this.ttlMs, attempts: 0 });
-    const port = process.env.PORT ?? 8787;
-    console.log(`[auth] link de acesso para ${email}: http://localhost:${port}${this.linkFor(email)}`);
-  }
-
-  /** Link de acesso local (caminho relativo): mesmo callback do link real. */
-  linkFor(email: string): string {
-    const code = this.codes.get(email)?.code ?? '';
-    return `${CALLBACK_PATH}#local_email=${encodeURIComponent(email)}&local_code=${code}`;
-  }
-
-  async verify(email: string, code: string): Promise<{ authUserId: string | null }> {
-    const entry = this.codes.get(email);
-    if (!entry) throw new AuthError(400, 'Solicite um código primeiro.');
-    if (entry.expiresAt <= Date.now()) {
-      this.codes.delete(email);
-      throw new AuthError(400, 'Código expirado. Solicite um novo.');
+  async register(email: string, password: string): Promise<{ authUserId: string | null }> {
+    if (this.accounts.has(email)) {
+      throw new AuthError(409, 'Este e-mail já tem uma conta. Entre com a sua senha.');
     }
-    if (entry.attempts >= LOCAL_MAX_ATTEMPTS) {
-      this.codes.delete(email);
-      throw new AuthError(429, 'Muitas tentativas. Solicite um novo código.');
-    }
-    if (entry.code !== code) {
-      entry.attempts++;
-      throw new AuthError(400, 'Código inválido. Confira os 6 dígitos.');
-    }
-    this.codes.delete(email); // uso único
+    const salt = randomBytes(16);
+    this.accounts.set(email, { salt, hash: scryptSync(password, salt, 32) });
     return { authUserId: null };
   }
 
-  /** Só para o endpoint de dev/testes — nunca exposto em produção. */
-  peek(email: string): string | undefined {
-    return this.codes.get(email)?.code;
+  async login(email: string, password: string): Promise<{ authUserId: string | null }> {
+    const account = this.accounts.get(email);
+    if (!account || !timingSafeEqual(account.hash, scryptSync(password, account.salt, 32))) {
+      throw new AuthError(401, 'E-mail ou senha incorretos.');
+    }
+    return { authUserId: null };
   }
 }
 
 // ─── Provider Supabase Auth (GoTrue) ─────────────────────────────
 
-export class SupabaseOtpProvider implements OtpProvider {
+export class SupabasePasswordProvider implements PasswordProvider {
   readonly local = false;
   private client: SupabaseClient;
 
@@ -108,56 +73,38 @@ export class SupabaseOtpProvider implements OtpProvider {
     });
   }
 
-  async request(email: string): Promise<void> {
-    const { error } = await this.client.auth.signInWithOtp({
+  async register(email: string, password: string): Promise<{ authUserId: string | null }> {
+    // admin.createUser com email_confirm dispensa SMTP: nenhum e-mail é enviado
+    const { data, error } = await this.client.auth.admin.createUser({
       email,
-      options: {
-        shouldCreateUser: true,
-        // o verificador do Supabase redireciona o navegador para cá
-        emailRedirectTo: `${APP_BASE_URL}${CALLBACK_PATH}`,
-      },
+      password,
+      email_confirm: true,
     });
-    if (error) throw mapSupabaseError(error, 'request');
-  }
-
-  async verify(email: string, code: string): Promise<{ authUserId: string | null }> {
-    const { data, error } = await this.client.auth.verifyOtp({
-      email,
-      token: code,
-      type: 'email',
-    });
-    if (error) throw mapSupabaseError(error, 'verify');
+    if (error) throw mapSupabaseError(error, 'register');
     return { authUserId: data.user?.id ?? null };
   }
 
-  /** Valida o JWT que o link mágico entrega no fragment do redirect. */
-  async verifyAccessToken(accessToken: string): Promise<{ authUserId: string; email: string | null }> {
-    const { data, error } = await this.client.auth.getUser(accessToken);
-    if (error) {
-      const e = error as { status?: number; name?: string };
-      if (e.name === 'AuthRetryableFetchError' || (e.status ?? 0) >= 500) {
-        throw mapSupabaseError(error, 'verify');
-      }
-      throw new AuthError(401, 'Link inválido ou expirado. Peça um novo link de acesso.');
-    }
-    if (!data.user) throw new AuthError(401, 'Link inválido ou expirado. Peça um novo link de acesso.');
-    return { authUserId: data.user.id, email: data.user.email ?? null };
+  async login(email: string, password: string): Promise<{ authUserId: string | null }> {
+    const { data, error } = await this.client.auth.signInWithPassword({ email, password });
+    if (error) throw mapSupabaseError(error, 'login');
+    return { authUserId: data.user?.id ?? null };
   }
 }
 
 /** Traduz falhas do GoTrue em erros estáveis e mensagens pt-BR. */
-function mapSupabaseError(error: unknown, phase: 'request' | 'verify'): AuthError {
+function mapSupabaseError(error: unknown, phase: 'register' | 'login'): AuthError {
   const e = error as { status?: number; code?: string; message?: string; name?: string };
-  // código errado e código expirado chegam ambos como otp_expired (403)
-  if (e.code === 'otp_expired') {
-    return new AuthError(400, 'Código inválido ou expirado. Confira os 6 dígitos ou solicite um novo.');
+  if (e.code === 'email_exists' || e.code === 'user_already_exists') {
+    return new AuthError(409, 'Este e-mail já tem uma conta. Entre com a sua senha.');
   }
-  if (e.status === 429 || e.code === 'over_email_send_rate_limit' || e.code === 'over_request_rate_limit') {
-    return new AuthError(429, 'Muitos envios para este e-mail. Aguarde um pouco e tente novamente.');
+  if (e.code === 'invalid_credentials' || e.code === 'email_not_confirmed') {
+    return new AuthError(401, 'E-mail ou senha incorretos.');
   }
-  if (e.code === 'otp_disabled' || e.code === 'signup_disabled' || e.code === 'email_provider_disabled') {
-    console.error('[auth] Supabase Auth mal configurado:', e.code, e.message);
-    return new AuthError(503, 'Login por código indisponível no momento.');
+  if (e.code === 'weak_password') {
+    return new AuthError(400, 'Senha fraca demais. Use pelo menos 8 caracteres.');
+  }
+  if (e.status === 429 || e.code === 'over_request_rate_limit') {
+    return new AuthError(429, 'Muitas tentativas. Aguarde alguns minutos e tente novamente.');
   }
   if (e.name === 'AuthRetryableFetchError' || (e.status ?? 0) >= 500) {
     console.error('[auth] Supabase indisponível:', e.message);
@@ -166,33 +113,38 @@ function mapSupabaseError(error: unknown, phase: 'request' | 'verify'): AuthErro
   console.error(`[auth] falha inesperada no ${phase}:`, e.code, e.message);
   return new AuthError(
     502,
-    phase === 'request'
-      ? 'Não foi possível enviar o código agora. Tente novamente.'
-      : 'Não foi possível validar o código agora. Tente novamente.',
+    phase === 'register'
+      ? 'Não foi possível criar a conta agora. Tente novamente.'
+      : 'Não foi possível entrar agora. Tente novamente.',
   );
 }
 
 // ─── Serviço: validação, rate limit e sessões ────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD = 8;
+const MAX_PASSWORD = 72; // limite do bcrypt no GoTrue
 
 export interface RateLimits {
-  /** Intervalo mínimo entre envios para o mesmo e-mail. */
-  emailCooldownMs: number;
-  /** Máximo de envios por IP dentro da janela. */
+  /** Máximo de tentativas de login/registro/convidado por IP na janela. */
   ipMax: number;
   ipWindowMs: number;
 }
 
-const DEFAULT_LIMITS: RateLimits = { emailCooldownMs: 60_000, ipMax: 10, ipWindowMs: 3600_000 };
+const DEFAULT_LIMITS: RateLimits = { ipMax: 30, ipWindowMs: 15 * 60_000 };
+
+export interface SessionResult {
+  token: string;
+  profile: Profile;
+  needsProfile: boolean;
+}
 
 export class AuthService {
-  private lastSendByEmail = new Map<string, number>();
-  private sendsByIp = new Map<string, number[]>();
+  private attemptsByIp = new Map<string, number[]>();
 
   constructor(
     private store: Store,
-    private provider: OtpProvider,
+    private provider: PasswordProvider,
     private limits: RateLimits | 'off' = DEFAULT_LIMITS,
   ) {}
 
@@ -200,50 +152,52 @@ export class AuthService {
     return this.provider.local;
   }
 
-  async requestOtp(emailRaw: string, ip: string): Promise<void> {
-    const email = String(emailRaw ?? '').trim().toLowerCase();
-    if (!EMAIL_RE.test(email)) throw new AuthError(400, 'Informe um e-mail válido.');
-    this.checkLimits(email, ip);
-    await this.provider.request(email);
+  /** Entrar como convidado: nome/avatar e pronto — sem cadastro. */
+  guest(nameRaw: string, avatarRaw: string, ip: string): SessionResult {
+    this.checkLimits(ip);
+    const name = String(nameRaw ?? '').trim().slice(0, 24);
+    if (!name) throw new AuthError(400, 'Escolha um nome de 1 a 24 caracteres.');
+    const avatar = String(avatarRaw ?? '').trim().slice(0, 8);
+    const user = this.store.createGuest(name, avatar);
+    const token = this.store.createSession(user.id);
+    return { token, profile: this.store.profileOf(user), needsProfile: false };
   }
 
-  async verifyCode(
+  /**
+   * Cria a conta. Se vier a sessão de convidado da mesma pessoa
+   * (`guestToken`), a conta nova herda o progresso da sessão — promoção.
+   */
+  async register(
     emailRaw: string,
-    codeRaw: string,
-  ): Promise<{ token: string; profile: Profile; needsProfile: boolean }> {
-    const email = String(emailRaw ?? '').trim().toLowerCase();
-    if (!EMAIL_RE.test(email)) throw new AuthError(400, 'Informe um e-mail válido.');
-    const code = String(codeRaw ?? '').trim();
-    if (!/^\d{6}$/.test(code)) throw new AuthError(400, 'Informe o código de 6 dígitos.');
-
-    const { authUserId } = await this.provider.verify(email, code);
-    const { user, isNew } = this.store.findOrCreatePlayerByAuth(email, authUserId);
-    const token = this.store.createSession(user.id);
-    return {
-      token,
-      profile: this.store.profileOf(user),
-      needsProfile: isNew || !user.name,
-    };
+    passwordRaw: string,
+    ip: string,
+    guestToken?: string,
+  ): Promise<SessionResult> {
+    const { email, password } = this.checkCredentials(emailRaw, passwordRaw, ip);
+    if (password.length < MIN_PASSWORD) {
+      throw new AuthError(400, `A senha precisa de pelo menos ${MIN_PASSWORD} caracteres.`);
+    }
+    const { authUserId } = await this.provider.register(email, password);
+    return this.sessionFor(email, authUserId, guestToken);
   }
 
-  /** Login pelo link mágico: troca o JWT do redirect por uma sessão própria. */
-  async loginWithAccessToken(
-    accessTokenRaw: string,
-  ): Promise<{ token: string; profile: Profile; needsProfile: boolean }> {
-    const accessToken = String(accessTokenRaw ?? '').trim();
-    if (!accessToken) throw new AuthError(400, 'Link inválido. Peça um novo link de acesso.');
-    if (!(this.provider instanceof SupabaseOtpProvider)) {
-      // modo local entra pelo link com código embutido (/auth/callback#local_…)
-      throw new AuthError(400, 'Login por link indisponível em modo local — use o link do console.');
-    }
-    const { authUserId, email } = await this.provider.verifyAccessToken(accessToken);
-    if (!email) throw new AuthError(401, 'Link inválido ou expirado. Peça um novo link de acesso.');
+  async login(emailRaw: string, passwordRaw: string, ip: string): Promise<SessionResult> {
+    const { email, password } = this.checkCredentials(emailRaw, passwordRaw, ip);
+    const { authUserId } = await this.provider.login(email, password);
+    // login em conta existente não herda nada: o progresso dela prevalece
+    return this.sessionFor(email, authUserId);
+  }
+
+  /** Conta autenticada → jogador (vinculando contas legadas) → sessão. */
+  private sessionFor(email: string, authUserId: string | null, guestToken?: string): SessionResult {
     const { user, isNew } = this.store.findOrCreatePlayerByAuth(email, authUserId);
+    // só uma conta recém-nascida herda do convidado (nunca sobrescreve progresso real)
+    if (isNew && guestToken) this.store.adoptGuestProgress(user.id, guestToken);
     const token = this.store.createSession(user.id);
     return {
       token,
       profile: this.store.profileOf(user),
-      needsProfile: isNew || !user.name,
+      needsProfile: !user.name, // promoção herda o nome → onboarding dispensado
     };
   }
 
@@ -260,37 +214,32 @@ export class AuthService {
     this.store.revokeSession(token);
   }
 
-  /** Código e link de acesso pendentes — só em modo local e fora de produção. */
-  devCode(email: string): { code: string; link: string } {
-    const enabled = this.provider.local && process.env.NODE_ENV !== 'production';
-    if (!enabled || !(this.provider instanceof LocalOtpProvider)) {
-      throw new AuthError(404, 'Não encontrado.');
+  private checkCredentials(
+    emailRaw: string,
+    passwordRaw: string,
+    ip: string,
+  ): { email: string; password: string } {
+    const email = String(emailRaw ?? '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) throw new AuthError(400, 'Informe um e-mail válido.');
+    const password = String(passwordRaw ?? '');
+    if (!password || password.length > MAX_PASSWORD) {
+      throw new AuthError(400, 'Informe a senha.');
     }
-    const norm = String(email ?? '').trim().toLowerCase();
-    const code = this.provider.peek(norm);
-    if (!code) throw new AuthError(404, 'Nenhum código pendente para este e-mail.');
-    return { code, link: this.provider.linkFor(norm) };
+    this.checkLimits(ip);
+    return { email, password };
   }
 
-  private checkLimits(email: string, ip: string): void {
+  private checkLimits(ip: string): void {
     if (this.limits === 'off') return;
     const now = Date.now();
-
-    const lastSend = this.lastSendByEmail.get(email) ?? 0;
-    if (now - lastSend < this.limits.emailCooldownMs) {
-      throw new AuthError(429, 'Aguarde um momento para reenviar o código.');
-    }
-
-    const sends = (this.sendsByIp.get(ip) ?? []).filter(
+    const attempts = (this.attemptsByIp.get(ip) ?? []).filter(
       (at) => now - at < (this.limits as RateLimits).ipWindowMs,
     );
-    if (sends.length >= this.limits.ipMax) {
-      throw new AuthError(429, 'Limite de solicitações atingido. Tente novamente mais tarde.');
+    if (attempts.length >= this.limits.ipMax) {
+      throw new AuthError(429, 'Muitas tentativas. Aguarde alguns minutos e tente novamente.');
     }
-
-    this.lastSendByEmail.set(email, now);
-    sends.push(now);
-    this.sendsByIp.set(ip, sends);
+    attempts.push(now);
+    this.attemptsByIp.set(ip, attempts);
   }
 }
 
@@ -301,11 +250,11 @@ export function createAuthService(store: Store): AuthService {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const useSupabase = !!(url && key) && process.env.LC_LOCAL !== '1';
   if (useSupabase) {
-    console.log('[auth] OTP via Supabase Auth (códigos por e-mail)');
-    return new AuthService(store, new SupabaseOtpProvider(url!, key!));
+    console.log('[auth] contas via Supabase Auth (e-mail + senha, sem envio de e-mail)');
+    return new AuthService(store, new SupabasePasswordProvider(url!, key!));
   }
-  console.log('[auth] OTP local — códigos impressos no console (modo dev/teste)');
-  return new AuthService(store, new LocalOtpProvider(), 'off');
+  console.log('[auth] contas locais em memória (modo dev/teste)');
+  return new AuthService(store, new LocalPasswordProvider(), 'off');
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -330,6 +279,11 @@ function bearerToken(req: IncomingMessage): string {
   return m[1];
 }
 
+/** Bearer opcional — o register o usa para promover a sessão de convidado. */
+function optionalBearerToken(req: IncomingMessage): string | undefined {
+  return /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+}
+
 function clientIp(req: IncomingMessage): string {
   // atrás do Caddy o IP real vem no x-forwarded-for
   const fwd = req.headers['x-forwarded-for'];
@@ -347,21 +301,30 @@ export async function handleAuthRoute(
   const route = `${req.method} ${url.pathname}`;
   try {
     switch (route) {
-      case 'POST /api/auth/otp': {
+      case 'POST /api/auth/guest': {
         const body = await readBody(req);
-        await auth.requestOtp(String(body.email ?? ''), clientIp(req));
-        json(res, 200, { ok: true });
-        return true;
-      }
-      case 'POST /api/auth/verify': {
-        const body = await readBody(req);
-        const result = await auth.verifyCode(String(body.email ?? ''), String(body.code ?? ''));
+        const result = auth.guest(String(body.name ?? ''), String(body.avatar ?? ''), clientIp(req));
         json(res, 200, result);
         return true;
       }
-      case 'POST /api/auth/link': {
+      case 'POST /api/auth/register': {
         const body = await readBody(req);
-        const result = await auth.loginWithAccessToken(String(body.accessToken ?? ''));
+        const result = await auth.register(
+          String(body.email ?? ''),
+          String(body.password ?? ''),
+          clientIp(req),
+          optionalBearerToken(req), // sessão de convidado → promoção
+        );
+        json(res, 200, result);
+        return true;
+      }
+      case 'POST /api/auth/login': {
+        const body = await readBody(req);
+        const result = await auth.login(
+          String(body.email ?? ''),
+          String(body.password ?? ''),
+          clientIp(req),
+        );
         json(res, 200, result);
         return true;
       }
@@ -375,10 +338,6 @@ export async function handleAuthRoute(
       case 'POST /api/auth/logout': {
         auth.logout(bearerToken(req));
         json(res, 200, { ok: true });
-        return true;
-      }
-      case 'GET /api/auth/dev-code': {
-        json(res, 200, auth.devCode(url.searchParams.get('email') ?? ''));
         return true;
       }
       default:

@@ -24,8 +24,8 @@ export interface AppState {
   history: MatchHistoryEntry[];
   toast: string | null;
   reportSent: boolean;
-  /** Processamento do link de acesso (/auth/callback): validando ou com erro. */
-  authCallback: { status: 'pending' } | { status: 'error'; message: string } | null;
+  /** Convidado pediu a tela de conta (criar/entrar) sem perder a sessão atual. */
+  accountPrompt: boolean;
 }
 
 let state: AppState = {
@@ -42,7 +42,7 @@ let state: AppState = {
   history: [],
   toast: null,
   reportSent: false,
-  authCallback: null,
+  accountPrompt: false,
 };
 
 const listeners = new Set<() => void>();
@@ -81,16 +81,18 @@ export function send(msg: ClientMsg): void {
 export function connect(): void {
   if (!state.token || (ws && ws.readyState <= WebSocket.OPEN)) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const socket = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = socket;
 
-  ws.onopen = () => {
+  socket.onopen = () => {
     reconnectDelay = 1000;
     send({ t: 'hello', token: state.token! });
   };
 
-  ws.onmessage = (ev) => handleServerMsg(JSON.parse(ev.data) as ServerMsg);
+  socket.onmessage = (ev) => handleServerMsg(JSON.parse(ev.data) as ServerMsg);
 
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (ws !== socket) return; // conexão substituída (ex.: convidado virou conta)
     ws = null;
     setState({ connected: false });
     if (state.token) {
@@ -168,7 +170,7 @@ let pendingRoomCode: string | null = null;
     pendingRoomCode = m[1].toUpperCase();
     history.replaceState(null, '', '/');
   } else {
-    // o convite sobrevive ao desvio para o e-mail (login por link) — com validade
+    // o convite sobrevive à tela de entrada (convidado ou conta) — com validade
     try {
       const saved = JSON.parse(localStorage.getItem(PENDING_ROOM_KEY) ?? 'null') as
         | { code: string; at: number }
@@ -194,7 +196,7 @@ function joinPendingRoom(): void {
   }
 }
 
-// ─── Autenticação (OTP por e-mail; o servidor media o Supabase) ──
+// ─── Autenticação (convidado ou e-mail+senha; o servidor media o Supabase) ──
 
 async function postJson(
   path: string,
@@ -214,24 +216,50 @@ async function postJson(
   return data;
 }
 
-export async function requestOtp(email: string): Promise<void> {
-  await postJson('/api/auth/otp', { email });
-}
-
 function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
+  // troca de identidade (ex.: convidado virou conta): derruba a conexão antiga
+  const oldWs = ws;
+  ws = null;
+  oldWs?.close();
   localStorage.setItem('lc_token', body.token);
-  setState({ token: body.token, profile: body.profile });
+  setState({
+    token: body.token, profile: body.profile, accountPrompt: false,
+    connected: false, room: null, game: null, gameOver: null, chat: [],
+    history: [], inQueue: false,
+  });
   connect();
   return { needsProfile: !!body.needsProfile };
 }
 
-export async function verifyOtp(email: string, code: string): Promise<{ needsProfile: boolean }> {
-  return adoptSession(await postJson('/api/auth/verify', { email, code }));
+/** Jogar sem cadastro: sessão de convidado com nome e avatar. */
+export async function loginAsGuest(name: string, avatar: string): Promise<void> {
+  await adoptSession(await postJson('/api/auth/guest', { name, avatar }));
 }
 
-/** Login pelo link mágico: troca o JWT do redirect por uma sessão própria. */
-export async function loginWithAccessToken(accessToken: string): Promise<{ needsProfile: boolean }> {
-  return adoptSession(await postJson('/api/auth/link', { accessToken }));
+export async function registerAccount(
+  email: string,
+  password: string,
+): Promise<{ needsProfile: boolean }> {
+  // a sessão de convidado vai junto: a conta nova herda o progresso (promoção)
+  return adoptSession(
+    await postJson('/api/auth/register', { email, password }, state.token ?? undefined),
+  );
+}
+
+export async function loginAccount(
+  email: string,
+  password: string,
+): Promise<{ needsProfile: boolean }> {
+  return adoptSession(await postJson('/api/auth/login', { email, password }));
+}
+
+/** Abre/fecha a tela de conta por cima da sessão de convidado. */
+export function openAccountPrompt(): void {
+  setState({ accountPrompt: true });
+}
+
+export function closeAccountPrompt(): void {
+  setState({ accountPrompt: false });
 }
 
 export async function completeProfile(name: string, avatar: string): Promise<void> {
@@ -256,6 +284,7 @@ export function logout(): void {
   setState({
     token: null, profile: null, connected: false, room: null,
     game: null, gameOver: null, chat: [], inQueue: false,
+    history: [], accountPrompt: false,
   });
   socket?.close();
 }
@@ -268,63 +297,10 @@ export function clearReportSent(): void {
   setState({ reportSent: false });
 }
 
-export function dismissAuthCallback(): void {
-  setState({ authCallback: null });
-}
-
-// ─── Retorno do link de acesso (/auth/callback) ─────────────────
-// O verificador do Supabase redireciona para cá com o JWT (ou o erro) no
-// fragment; em modo dev o link do console traz e-mail+código locais.
-
-{
-  const frag = new URLSearchParams(location.hash.slice(1));
-  // aceita o retorno também fora de /auth/callback: se o verificador cair no
-  // site_url raiz, o fragment com o token chega em "/" — não pode se perder
-  const isAuthReturn =
-    location.pathname === '/auth/callback' ||
-    frag.has('access_token') ||
-    frag.has('local_email') ||
-    frag.has('error_code') ||
-    frag.has('error');
-  if (isAuthReturn) {
-    history.replaceState(null, '', '/'); // tokens nunca ficam na URL/histórico
-
-    const accessToken = frag.get('access_token');
-    const localEmail = frag.get('local_email');
-    const localCode = frag.get('local_code');
-
-    const finish = (login: Promise<unknown>) => {
-      state = { ...state, authCallback: { status: 'pending' } };
-      login
-        .then(() => setState({ authCallback: null }))
-        .catch((err) =>
-          setState({ authCallback: { status: 'error', message: (err as Error).message } }),
-        );
-    };
-
-    if (accessToken) {
-      finish(loginWithAccessToken(accessToken));
-    } else if (localEmail && localCode) {
-      finish(verifyOtp(localEmail, localCode)); // link do modo dev/testes
-    } else {
-      const expired = frag.get('error_code') === 'otp_expired';
-      state = {
-        ...state,
-        authCallback: {
-          status: 'error',
-          message: expired
-            ? 'Este link de acesso expirou. Peça um novo.'
-            : 'Link de acesso inválido. Peça um novo.',
-        },
-      };
-    }
-  }
-}
-
-// login concluído em outra aba (link aberto lá): esta aba adota a sessão
+// login concluído em outra aba: esta aba adota a sessão
 window.addEventListener('storage', (e) => {
   if (e.key === 'lc_token' && e.newValue && !state.token) {
-    setState({ token: e.newValue, authCallback: null });
+    setState({ token: e.newValue });
     connect();
   }
 });

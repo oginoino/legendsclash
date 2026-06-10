@@ -27,27 +27,19 @@ async function post(path: string, body: unknown, token?: string) {
   });
 }
 
-/** Código OTP pendente — o servidor dos testes roda em modo local. */
-async function devCode(email: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/auth/dev-code?email=${encodeURIComponent(email)}`);
-  expect(res.ok).toBe(true);
-  return (await res.json()).code;
-}
+const PASSWORD = 'senha-e2e-12345';
 
-/** Login OTP completo via HTTP: otp → dev-code → verify → profile. */
+/** Conta completa via HTTP: register (e-mail+senha) → profile. */
 async function auth(email: string, name: string, avatar: string) {
-  const otp = await post('/api/auth/otp', { email });
-  expect(otp.ok).toBe(true);
+  const reg = await post('/api/auth/register', { email, password: PASSWORD });
+  expect(reg.ok).toBe(true);
+  const registered = await reg.json();
+  expect(registered.needsProfile).toBe(true); // conta nova nasce sem nome
 
-  const verify = await post('/api/auth/verify', { email, code: await devCode(email) });
-  expect(verify.ok).toBe(true);
-  const verified = await verify.json();
-  expect(verified.needsProfile).toBe(true); // conta nova nasce sem nome
-
-  const prof = await post('/api/auth/profile', { name, avatar }, verified.token);
+  const prof = await post('/api/auth/profile', { name, avatar }, registered.token);
   expect(prof.ok).toBe(true);
   const { profile } = await prof.json();
-  return { token: verified.token as string, profile };
+  return { token: registered.token as string, profile };
 }
 
 function connect(token: string): Promise<WsClient> {
@@ -159,19 +151,17 @@ test('contrato completo: login → sala → chat filtrado → partida → Elo �
   cb.close();
 });
 
-test('autenticação: código errado é rejeitado e token inválido derruba o WS', async () => {
+test('autenticação: senha errada é rejeitada e token revogado derruba o WS', async () => {
   const email = uniqueEmail('seguranca');
-  expect((await post('/api/auth/otp', { email })).ok).toBe(true);
+  expect((await post('/api/auth/register', { email, password: PASSWORD })).ok).toBe(true);
 
-  // código errado (derivado do verdadeiro para nunca colidir) → 400 em pt-BR
-  const real = await devCode(email);
-  const wrong = String((Number(real[0]) + 1) % 10) + real.slice(1);
-  const bad = await post('/api/auth/verify', { email, code: wrong });
-  expect(bad.status).toBe(400);
-  expect((await bad.json()).error).toContain('Código inválido');
+  // senha errada → 401 em pt-BR, sem revelar se a conta existe
+  const bad = await post('/api/auth/login', { email, password: 'senha-errada-99' });
+  expect(bad.status).toBe(401);
+  expect((await bad.json()).error).toContain('E-mail ou senha incorretos');
 
-  // o código continua válido para a tentativa correta
-  const good = await post('/api/auth/verify', { email, code: real });
+  // com a senha certa, entra
+  const good = await post('/api/auth/login', { email, password: PASSWORD });
   expect(good.ok).toBe(true);
   const { token } = await good.json();
 
@@ -181,6 +171,83 @@ test('autenticação: código errado é rejeitado e token inválido derruba o WS
   const err = await c.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
   expect(err.message).toBe('Sessão expirada. Entre novamente.');
   c.close();
+});
+
+test('convidado: joga e conversa sem cadastro; criar conta herda o progresso da sessão', async () => {
+  test.setTimeout(30_000);
+  const reg = await post('/api/auth/guest', { name: 'Visitante', avatar: '🐺' });
+  expect(reg.ok).toBe(true);
+  const guest = await reg.json();
+  expect(guest.profile.guest).toBe(true);
+
+  const conta = await auth(uniqueEmail('anfitria'), 'Anfitriã', '🔮');
+  const cg = await connect(guest.token);
+  const ch = await connect(conta.token);
+  await cg.waitFor((m: { t: string }) => m.t === 'hello:ok');
+  await ch.waitFor((m: { t: string }) => m.t === 'hello:ok');
+
+  // convidado entra na sala de quem tem conta — jogar é livre
+  ch.send({ t: 'room:create' });
+  const roomMsg = await ch.waitFor<{ t: string; room: { code: string } | null }>(
+    (m) => m.t === 'room:state' && !!m.room,
+  );
+  cg.send({ t: 'room:join', code: roomMsg.room!.code });
+  await ch.waitFor<{ t: string; room: { members: unknown[] } | null }>(
+    (m) => m.t === 'room:state' && m.room?.members.length === 2,
+  );
+
+  // chat de sala/partida é efêmero: convidado conversa, com o mesmo filtro
+  cg.send({ t: 'chat:send', text: 'oi, seu idiota' });
+  const chat = await ch.waitFor<{ t: string; message: { text: string } }>(
+    (m) => m.t === 'chat:message',
+  );
+  expect(chat.message.text).not.toContain('idiota');
+  expect(chat.message.text).toContain('*');
+
+  // partida real: a anfitriã desiste e o convidado vence
+  ch.send({ t: 'room:start' });
+  await cg.waitFor((m: { t: string }) => m.t === 'game:state');
+  ch.send({ t: 'game:surrender' });
+  const over = await cg.waitFor<{ t: string; result: { winnerId: string; mmr: Record<string, { after: number }> } }>(
+    (m) => m.t === 'game:over',
+  );
+  expect(over.result.winnerId).toBe(guest.profile.id);
+  expect(over.result.mmr[guest.profile.id].after).toBe(1016);
+
+  // o progresso vive na sessão: histórico em memória, mas fora do ranking
+  cg.send({ t: 'history:get' });
+  const hist = await cg.waitFor<{ t: string; entries: Array<{ won: boolean }> }>(
+    (m) => m.t === 'history' && m.entries.length > 0,
+  );
+  expect(hist.entries[0].won).toBe(true);
+  cg.send({ t: 'leaderboard:get' });
+  const lb = await cg.waitFor<{ t: string; entries: Array<{ id: string }> }>(
+    (m) => m.t === 'leaderboard',
+  );
+  expect(lb.entries.map((e) => e.id)).not.toContain(guest.profile.id);
+
+  // promoção: registro com o Bearer do convidado herda tudo — sem onboarding
+  const promo = await post(
+    '/api/auth/register',
+    { email: uniqueEmail('promovido'), password: PASSWORD },
+    guest.token,
+  );
+  expect(promo.ok).toBe(true);
+  const promoted = await promo.json();
+  expect(promoted.needsProfile).toBe(false);
+  expect(promoted.profile.guest).toBe(false);
+  expect(promoted.profile.name).toBe('Visitante');
+  expect(promoted.profile.mmr).toBe(1016);
+  expect(promoted.profile.wins).toBe(1);
+
+  // a sessão de convidado morreu junto com a promoção
+  const dead = await connect(guest.token);
+  const err = await dead.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
+  expect(err.message).toBe('Sessão expirada. Entre novamente.');
+
+  dead.close();
+  cg.close();
+  ch.close();
 });
 
 test('matchmaking pareia dois jogadores da fila', async () => {

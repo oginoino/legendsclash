@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { logout, send, useAppState } from '../store';
+import { logout, openAccountPrompt, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
 
@@ -30,11 +30,14 @@ export function HomeView() {
         <div className="profile-chip">
           <span className="avatar-lg">{p.avatar}</span>
           <div>
-            <strong>{p.name}</strong>
+            <strong>{p.name}</strong> {p.guest && <span className="guest-badge">convidado</span>}
             <div className="profile-sub">
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
             </div>
           </div>
+          {p.guest && (
+            <button className="btn primary" onClick={openAccountPrompt}>Criar conta</button>
+          )}
           <button className="btn ghost" onClick={logout}>Sair</button>
         </div>
       </header>
@@ -93,6 +96,13 @@ export function HomeView() {
 
         <section className="panel">
           <h2>Ranking · Ligas</h2>
+          {p.guest && (
+            <p className="account-cta">
+              🔒 Convidados não pontuam no ranking.{' '}
+              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+              para disputar as ligas.
+            </p>
+          )}
           {s.leaderboard.length === 0 ? (
             <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
           ) : (
@@ -114,6 +124,13 @@ export function HomeView() {
 
         <section className="panel">
           <h2>Histórico de partidas</h2>
+          {p.guest && (
+            <p className="account-cta">
+              ⏳ Histórico de convidado vale só nesta sessão.{' '}
+              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+              para levar seu progresso com você.
+            </p>
+          )}
           {s.history.length === 0 ? (
             <p className="hint">Suas partidas aparecerão aqui.</p>
           ) : (

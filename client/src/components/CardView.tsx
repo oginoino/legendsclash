@@ -12,6 +12,13 @@ const KEYWORD_LABEL: Record<string, string> = {
   taunt: '🛡 Provocar',
 };
 
+const RARITY_LABEL: Record<string, string> = {
+  common: 'Comum',
+  rare: 'Rara',
+  epic: 'Épica',
+  legendary: 'Lendária',
+};
+
 interface Props {
   defId: string;
   playable?: boolean;
@@ -21,7 +28,7 @@ interface Props {
   onClick?: () => void;
   style?: React.CSSProperties;
   anchorId?: string;
-  onMouseEnter?: () => void;
+  onMouseEnter?: (e: React.MouseEvent) => void;
   onMouseLeave?: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
 }
@@ -32,6 +39,7 @@ export function CardView({ defId, playable, selected, lifting, onClick, style, a
   const classes = [
     'card',
     `card-${def.type}`,
+    `rarity-${def.rarity}`,
     playable ? 'playable' : '',
     selected ? 'selected' : '',
     lifting ? 'lifting' : '',
@@ -51,17 +59,21 @@ export function CardView({ defId, playable, selected, lifting, onClick, style, a
       <span className="card-cost">{def.cost}</span>
       <CardArt defId={defId} className="card-art" />
       <span className="card-name">{def.name}</span>
+      <span className="card-ornament" title={`Raridade: ${RARITY_LABEL[def.rarity]}`}>
+        <i className="rarity-gem" />
+      </span>
       <span className="card-type">{TYPE_LABEL[def.type]}</span>
       {def.keywords?.map((k) => (
         <span key={k} className="keyword-chip">{KEYWORD_LABEL[k] ?? k}</span>
       ))}
       <span className="card-text">{def.text}</span>
       {def.type === 'creature' && (
-        <span className="card-stats">
-          <b className="atk">⚔ {def.attack}</b>
-          <b className="hp">❤ {def.health}</b>
-        </span>
+        <>
+          <span className="stat-gem atk">{def.attack}</span>
+          <span className="stat-gem hp">{def.health}</span>
+        </>
       )}
+      <span className="card-shine" aria-hidden />
     </button>
   );
 }
