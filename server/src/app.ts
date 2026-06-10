@@ -80,6 +80,7 @@ export class App {
       case 'game:surrender': return this.withMatch(user, (m) => m.surrender(user.id));
       case 'leaderboard:get': return this.sendLeaderboard(user);
       case 'history:get':
+        // convidado vê o histórico da sessão (em memória); conta, o persistido
         return this.sendTo(user.id, { t: 'history', entries: user.history });
     }
   }
@@ -283,6 +284,7 @@ export class App {
   // ─── Chat (filtro, mute e report — slide "MVP — 90 dias") ───────
 
   private chatSend(user: UserRecord, rawText: string): void {
+    // chat é restrito à sala/partida (efêmero) — convidados participam normalmente
     const text = filterText(String(rawText).slice(0, MAX_CHAT_LENGTH).trim());
     if (!text) return;
 

@@ -47,7 +47,7 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === '/api/health') return json(res, 200, { ok: true });
 
-    // Login por código OTP via e-mail — rotas em auth.ts.
+    // Convidado, e-mail+senha, perfil e logout — rotas em auth.ts.
     if (url.pathname.startsWith('/api/auth/')) {
       if (await handleAuthRoute(auth, req, res, url)) return;
     }

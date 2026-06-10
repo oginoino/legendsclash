@@ -23,12 +23,18 @@ import { BASE_MMR, leagueOf } from './elo.js';
 
 export interface UserRecord {
   id: string;
+  /** Vazio em convidados. */
   email: string;
   /** Vazio = onboarding pendente: o jogador ainda não escolheu nome/avatar. */
   name: string;
   avatar: string;
-  /** Vínculo com auth.users do Supabase (login OTP). Null em contas legadas/modo local. */
+  /** Vínculo com auth.users do Supabase (login por senha). Null em convidados/contas legadas/modo local. */
   authUserId: string | null;
+  /**
+   * Convidado: existe só em memória (nunca persiste, não entra no ranking,
+   * não acumula histórico). Some quando a sessão expira ou no restart.
+   */
+  guest: boolean;
   mmr: number;
   wins: number;
   losses: number;
@@ -85,10 +91,11 @@ class JsonPersistence implements Persistence {
     if (existsSync(this.path)) {
       this.db = JSON.parse(readFileSync(this.path, 'utf8'));
     }
-    // Shape legado (pré-OTP): preenche os campos novos e descarta o token eterno.
+    // Shape legado: preenche os campos novos e descarta o token eterno.
     this.db.sessions ??= [];
     for (const u of this.db.users) {
       u.authUserId ??= null;
+      u.guest = false; // só contas persistem; convidados vivem em memória
       delete (u as { token?: string }).token;
     }
     // o Store muta este mesmo objeto; o snapshot sempre grava o estado atual
@@ -182,6 +189,7 @@ class SupabasePersistence implements Persistence {
       name: p.name,
       avatar: p.avatar,
       authUserId: p.auth_user_id ?? null,
+      guest: false,
       mmr: p.mmr,
       wins: p.wins,
       losses: p.losses,
@@ -288,6 +296,8 @@ class SupabasePersistence implements Persistence {
 
 /** Vida de uma sessão; renovada (deslizante) a cada uso espaçado. */
 const SESSION_TTL_MS = 30 * 24 * 3600_000;
+/** Convidados são efêmeros: sessão mais curta, só em memória. */
+const GUEST_SESSION_TTL_MS = 24 * 3600_000;
 /** Renovação grava no banco no máximo 1x/hora por sessão. */
 const SESSION_TOUCH_MS = 3600_000;
 
@@ -326,18 +336,19 @@ export class Store {
 
   /** Cria uma sessão para o jogador e retorna o token bruto (vai só ao cliente). */
   createSession(playerId: string): string {
+    const guest = this.byId.get(playerId)?.guest ?? false;
     const raw = randomBytes(32).toString('hex');
     const now = Date.now();
     const session: SessionRecord = {
       tokenHash: Store.hashToken(raw),
       playerId,
       createdAt: now,
-      expiresAt: now + SESSION_TTL_MS,
+      expiresAt: now + (guest ? GUEST_SESSION_TTL_MS : SESSION_TTL_MS),
       lastSeenAt: now,
     };
     this.db.sessions.push(session);
     this.sessions.set(session.tokenHash, session);
-    this.persistence.saveSession(session);
+    if (!guest) this.persistence.saveSession(session);
     return raw;
   }
 
@@ -350,28 +361,42 @@ export class Store {
       this.dropSession(session.tokenHash);
       return undefined;
     }
+    const user = this.byId.get(session.playerId);
     if (now - session.lastSeenAt > SESSION_TOUCH_MS) {
       session.lastSeenAt = now;
-      session.expiresAt = now + SESSION_TTL_MS;
-      this.persistence.saveSession(session);
+      session.expiresAt = now + (user?.guest ? GUEST_SESSION_TTL_MS : SESSION_TTL_MS);
+      if (!user?.guest) this.persistence.saveSession(session);
     }
-    return this.byId.get(session.playerId);
+    return user;
   }
 
   revokeSession(rawToken: string): void {
     this.dropSession(Store.hashToken(rawToken));
   }
 
-  private dropSession(tokenHash: string): void {
-    if (!this.sessions.delete(tokenHash)) return;
+  /** Remove a sessão dos índices em memória (sem efeitos colaterais). */
+  private removeSessionRecord(tokenHash: string): boolean {
+    if (!this.sessions.delete(tokenHash)) return false;
     this.db.sessions = this.db.sessions.filter((s) => s.tokenHash !== tokenHash);
+    return true;
+  }
+
+  private dropSession(tokenHash: string): void {
+    const session = this.sessions.get(tokenHash);
+    if (!this.removeSessionRecord(tokenHash)) return;
+    const user = session && this.byId.get(session.playerId);
+    if (user?.guest) {
+      // convidado sem sessão é inalcançável: libera a memória
+      this.byId.delete(user.id);
+      return;
+    }
     this.persistence.deleteSession(tokenHash);
   }
 
-  // ─── Contas ─────────────────────────────────────────────────────
+  // ─── Contas e convidados ────────────────────────────────────────
 
   /**
-   * Localiza (ou cria) o jogador dono do e-mail verificado por OTP.
+   * Localiza (ou cria) o jogador dono do e-mail autenticado no Supabase.
    * Contas legadas (sem auth_user_id) são vinculadas no primeiro login.
    * Conta nova nasce com nome vazio = onboarding pendente (needsProfile).
    */
@@ -394,6 +419,7 @@ export class Store {
       name: '',
       avatar: '🛡️',
       authUserId,
+      guest: false,
       mmr: BASE_MMR,
       wins: 0,
       losses: 0,
@@ -407,13 +433,64 @@ export class Store {
     return { user, isNew: true };
   }
 
+  /**
+   * Convidado: joga sem cadastro. Vive só em `byId` (fora de `db.users`),
+   * então nunca persiste nem aparece no ranking; some com a sessão.
+   */
+  createGuest(name: string, avatar: string): UserRecord {
+    const user: UserRecord = {
+      id: randomBytes(8).toString('hex'),
+      email: '',
+      name: name.trim().slice(0, 24),
+      avatar: avatar || '🛡️',
+      authUserId: null,
+      guest: true,
+      mmr: BASE_MMR,
+      wins: 0,
+      losses: 0,
+      muted: [],
+      history: [],
+      createdAt: Date.now(),
+    };
+    this.byId.set(user.id, user);
+    return user;
+  }
+
   updateProfile(userId: string, name: string, avatar: string): UserRecord | undefined {
     const u = this.byId.get(userId);
     if (!u) return undefined;
     u.name = name.trim().slice(0, 24);
     if (avatar) u.avatar = avatar;
-    this.persistence.saveUser(u);
+    if (!u.guest) this.persistence.saveUser(u);
     return u;
+  }
+
+  /**
+   * Promoção: a conta recém-criada herda a identidade e o progresso da
+   * sessão de convidado (nome, avatar, MMR, V/D, histórico, silenciados) —
+   * agora persistidos. A sessão do convidado é revogada; o registro dele só
+   * fica em memória até expirar, caso uma partida ainda o referencie.
+   */
+  adoptGuestProgress(targetId: string, guestToken: string): boolean {
+    const guest = this.userBySession(guestToken);
+    if (!guest?.guest) return false;
+    const target = this.byId.get(targetId);
+    if (!target || target.guest || target.id === guest.id) return false;
+
+    target.name = guest.name;
+    target.avatar = guest.avatar;
+    target.mmr = guest.mmr;
+    target.wins = guest.wins;
+    target.losses = guest.losses;
+    target.muted = [...guest.muted];
+    target.history = [...guest.history];
+    this.persistence.saveUser(target);
+    // partidas da sessão entram no histórico persistido, em ordem cronológica
+    for (let i = target.history.length - 1; i >= 0; i--) {
+      this.persistence.saveMatch(target.id, target.history[i]);
+    }
+    this.removeSessionRecord(Store.hashToken(guestToken));
+    return true;
   }
 
   userById(id: string): UserRecord | undefined {
@@ -423,10 +500,12 @@ export class Store {
   recordMatch(userId: string, entry: MatchHistoryEntry, newMmr: number, won: boolean): void {
     const u = this.byId.get(userId);
     if (!u) return;
-    u.history.unshift(entry);
-    u.history = u.history.slice(0, 50);
     u.mmr = newMmr;
     if (won) u.wins++; else u.losses++;
+    u.history.unshift(entry);
+    u.history = u.history.slice(0, 50);
+    // convidado acumula só em memória: vira conta (promoção) ou se perde
+    if (u.guest) return;
     this.persistence.saveUser(u);
     this.persistence.saveMatch(userId, entry);
   }
@@ -436,7 +515,7 @@ export class Store {
     if (!u) return;
     if (muted && !u.muted.includes(targetId)) u.muted.push(targetId);
     if (!muted) u.muted = u.muted.filter((id) => id !== targetId);
-    this.persistence.saveUser(u);
+    if (!u.guest) this.persistence.saveUser(u);
   }
 
   addReport(report: ReportRecord): void {
@@ -457,6 +536,7 @@ export class Store {
       name: u.name,
       email: u.email,
       avatar: u.avatar,
+      guest: u.guest,
       mmr: u.mmr,
       league: leagueOf(u.mmr) as League,
       wins: u.wins,

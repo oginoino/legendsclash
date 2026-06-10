@@ -15,12 +15,13 @@ export function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@e2e.test`;
 }
 
+export const E2E_PASSWORD = 'senha-e2e-12345';
+
 /**
- * Faz o login por link completo num contexto novo e espera a home carregar.
- * O servidor dos testes roda em modo local (LC_LOCAL=1) e expõe o link de
- * acesso em /api/auth/dev-code — nenhum e-mail real é enviado; navegar até o
- * link equivale ao clique no e-mail.
- * `ctxOpts` permite contextos especiais (ex.: viewport mobile com touch).
+ * Cria uma conta (e-mail + senha) num contexto novo e espera a home carregar.
+ * O servidor dos testes roda em modo local (LC_LOCAL=1): contas em memória,
+ * sem tocar o Supabase. `ctxOpts` permite contextos especiais (ex.: viewport
+ * mobile com touch).
  */
 export async function loginAs(
   browser: Browser,
@@ -31,24 +32,39 @@ export async function loginAs(
   const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
   page.on('dialog', (d) => d.accept());
-  const email = uniqueEmail(name.toLowerCase());
   await page.goto('/');
 
-  // passo 1: e-mail → envio do link de acesso
-  await page.fill('input[type=email]', email);
-  await page.click('button:has-text("Receber link")');
-  await page.waitForSelector('.login-sent');
+  // passo 1: da boas-vindas para a tela de conta, no modo "criar"
+  await page.click('button:has-text("Entrar ou criar conta")');
+  await page.click('button:has-text("Criar conta nova")');
+  await page.fill('input[type=email]', uniqueEmail(name.toLowerCase()));
+  await page.fill('input[type=password]', E2E_PASSWORD);
+  await page.click('button:has-text("Criar conta")');
 
-  // passo 2: o "clique no e-mail" — segue o link exposto pelo modo local
-  const res = await page.request.get(`/api/auth/dev-code?email=${encodeURIComponent(email)}`);
-  const { link } = (await res.json()) as { link: string };
-  await page.goto(link);
-
-  // passo 3: perfil do primeiro acesso
+  // passo 2: perfil do primeiro acesso
+  await page.waitForSelector('input[name=name]');
   await page.fill('input[name=name]', name);
   await page.click(`.avatar-picker button:has-text("${avatar}")`);
   await page.click('button:has-text("Começar a jogar")');
 
+  await page.waitForSelector('.home-main');
+  return page;
+}
+
+/** Entra como convidado (sem cadastro) e espera a home carregar. */
+export async function guestAs(
+  browser: Browser,
+  name: string,
+  avatar: string,
+  ctxOpts: BrowserContextOptions = {},
+): Promise<Page> {
+  const ctx = await browser.newContext(ctxOpts);
+  const page = await ctx.newPage();
+  page.on('dialog', (d) => d.accept());
+  await page.goto('/');
+  await page.fill('input[name=name]', name);
+  await page.click(`.avatar-picker button:has-text("${avatar}")`);
+  await page.click('button:has-text("Jogar agora")');
   await page.waitForSelector('.home-main');
   return page;
 }

@@ -1,41 +1,38 @@
 import { useEffect, useState } from 'react';
-import { completeProfile, dismissAuthCallback, requestOtp, useAppState } from '../store';
+import {
+  closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
+  registerAccount, useAppState,
+} from '../store';
 
 const AVATARS = ['🛡️', '⚔️', '🐺', '🐉', '🏹', '🔮', '🦅', '🌙'];
 
 /**
- * Login por link mágico: e-mail → "link enviado" (o clique no e-mail volta
- * em /auth/callback) → perfil (apenas no primeiro acesso). Sem senha.
+ * Porta de entrada: jogar é imediato (convidado escolhe nome e avatar).
+ * Conta por e-mail + senha é opcional: guarda o progresso e entra no
+ * ranking. Convidado que cria conta herda a sessão (promoção) e pula o
+ * onboarding; `profile` é só para conta criada do zero.
  */
-type Step = 'email' | 'sent' | 'profile';
-
-const RESEND_COOLDOWN_MS = 60_000;
+type Mode = 'welcome' | 'signin' | 'signup' | 'profile';
 
 export function LoginView() {
   const s = useAppState();
   const needsProfile = !!(s.token && s.profile && !s.profile.name);
-  const [step, setStep] = useState<Step>(needsProfile ? 'profile' : 'email');
-  const [email, setEmail] = useState('');
+  const fromGuest = !!(s.accountPrompt && s.profile);
+
+  const [mode, setMode] = useState<Mode>(
+    needsProfile ? 'profile' : s.accountPrompt ? 'signup' : 'welcome',
+  );
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState(AVATARS[0]);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [resendAt, setResendAt] = useState(0);
-  const [now, setNow] = useState(Date.now());
 
   // sessão restaurada com perfil incompleto: cai direto no passo final
   useEffect(() => {
-    if (needsProfile) setStep('profile');
+    if (needsProfile) setMode('profile');
   }, [needsProfile]);
-
-  // relógio do botão "Reenviar link"
-  useEffect(() => {
-    if (step !== 'sent') return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [step]);
-
-  const resendIn = Math.max(0, Math.ceil((resendAt - now) / 1000));
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -49,21 +46,17 @@ export function LoginView() {
     }
   }
 
-  function submitEmail(e: React.FormEvent) {
+  function submitGuest(e: React.FormEvent) {
     e.preventDefault();
-    run(async () => {
-      await requestOtp(email);
-      setResendAt(Date.now() + RESEND_COOLDOWN_MS);
-      setNow(Date.now());
-      setStep('sent');
-    });
+    run(() => loginAsGuest(name, avatar));
   }
 
-  function resendLink() {
+  function submitAccount(e: React.FormEvent) {
+    e.preventDefault();
     run(async () => {
-      await requestOtp(email);
-      setResendAt(Date.now() + RESEND_COOLDOWN_MS);
-      setNow(Date.now());
+      if (mode === 'signup') await registerAccount(email, password);
+      else await loginAccount(email, password);
+      // conta nova segue para o perfil via needsProfile; conta antiga vai à home
     });
   }
 
@@ -72,7 +65,25 @@ export function LoginView() {
     run(() => completeProfile(name, avatar));
   }
 
-  const cb = s.authCallback;
+  function switchMode(next: Mode) {
+    setError(null);
+    setMode(next);
+  }
+
+  const avatarPicker = (
+    <div className="avatar-picker">
+      {AVATARS.map((a) => (
+        <button
+          key={a}
+          type="button"
+          className={a === avatar ? 'avatar selected' : 'avatar'}
+          onClick={() => setAvatar(a)}
+        >
+          {a}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="login-screen">
@@ -82,48 +93,39 @@ export function LoginView() {
         </h1>
         <p className="tagline">Duelo de cartas em tempo real — partidas de ~10 minutos, justas e sociais.</p>
 
-        {cb?.status === 'pending' && (
-          <div className="login-callback">
-            <div className="spinner" />
-            <p className="login-step-info">Validando seu link de acesso…</p>
-          </div>
-        )}
-
-        {cb?.status === 'error' && (
-          <div className="login-callback">
-            <div className="sent-icon">⛓️‍💥</div>
-            <p className="form-error">{cb.message}</p>
-            <button
-              className="btn primary"
-              onClick={() => {
-                dismissAuthCallback();
-                setError(null);
-                setStep('email');
-              }}
-            >
-              Pedir um novo link
-            </button>
-          </div>
-        )}
-
-        {!cb && step === 'email' && (
-          <form onSubmit={submitEmail}>
+        {mode === 'welcome' && (
+          <form onSubmit={submitGuest}>
             <label>
-              E-mail
+              Nome de jogador
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="voce@exemplo.com"
+                type="text"
+                name="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Como quer ser chamado?"
+                maxLength={24}
                 autoFocus
                 required
               />
             </label>
+            {avatarPicker}
             {error && <p className="form-error">{error}</p>}
-            <button className="btn primary" disabled={busy}>
-              {busy ? 'Enviando…' : 'Receber link de acesso'}
+            <button className="btn primary big" disabled={busy || !name.trim()}>
+              {busy ? 'Entrando…' : '🎮 Jogar agora'}
             </button>
-            <p className="login-note">Sem senha: enviamos um link mágico para o seu e-mail a cada login.</p>
+            <p className="login-note">Sem cadastro: você entra como convidado e já pode duelar.</p>
+            <div className="divider">já é uma lenda?</div>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => switchMode('signin')}
+            >
+              Entrar ou criar conta
+            </button>
+            <p className="login-note">
+              Conta guarda seu progresso entre sessões e coloca você no ranking.
+            </p>
             <p className="login-note credits">
               Arte das cartas: ícones de{' '}
               <a href="https://game-icons.net" target="_blank" rel="noreferrer">game-icons.net</a>{' '}
@@ -132,39 +134,65 @@ export function LoginView() {
           </form>
         )}
 
-        {!cb && step === 'sent' && (
-          <div className="login-sent">
-            <div className="sent-icon">📨</div>
+        {(mode === 'signin' || mode === 'signup') && (
+          <form onSubmit={submitAccount}>
             <p className="login-step-info">
-              Enviamos um link de acesso para <strong>{email}</strong>.
+              {mode === 'signup'
+                ? fromGuest
+                  ? 'Crie sua conta: o progresso desta sessão vai junto — histórico, MMR e ranking.'
+                  : 'Crie sua conta: progresso salvo e vaga no ranking.'
+                : 'Bem-vindo de volta! Entre com seu e-mail e senha.'}
             </p>
-            <p className="login-note">
-              Abra seu e-mail neste dispositivo e toque no link para entrar. Ele vale por 10 minutos.
-            </p>
+            <label>
+              E-mail
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="voce@exemplo.com"
+                autoComplete="email"
+                autoFocus
+                required
+              />
+            </label>
+            <label>
+              Senha
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === 'signup' ? 'Mínimo de 8 caracteres' : 'Sua senha'}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                minLength={mode === 'signup' ? 8 : undefined}
+                required
+              />
+            </label>
             {error && <p className="form-error">{error}</p>}
+            <button className="btn primary" disabled={busy}>
+              {busy ? 'Aguarde…' : mode === 'signup' ? 'Criar conta' : 'Entrar'}
+            </button>
             <div className="login-links">
+              {mode === 'signup' ? (
+                <button type="button" className="btn small ghost" onClick={() => switchMode('signin')}>
+                  Já tenho conta
+                </button>
+              ) : (
+                <button type="button" className="btn small ghost" onClick={() => switchMode('signup')}>
+                  Criar conta nova
+                </button>
+              )}
               <button
                 type="button"
                 className="btn small ghost"
-                disabled={busy || resendIn > 0}
-                onClick={resendLink}
+                onClick={() => (fromGuest ? closeAccountPrompt() : switchMode('welcome'))}
               >
-                {resendIn > 0 ? `Reenviar link (${resendIn}s)` : 'Reenviar link'}
-              </button>
-              <button
-                type="button"
-                className="btn small ghost"
-                disabled={busy}
-                onClick={() => { setError(null); setStep('email'); }}
-              >
-                Trocar e-mail
+                {fromGuest ? '← Voltar ao jogo' : '← Jogar sem conta'}
               </button>
             </div>
-            <p className="login-note">Não chegou? Confira a caixa de spam.</p>
-          </div>
+          </form>
         )}
 
-        {!cb && step === 'profile' && (
+        {mode === 'profile' && (
           <form onSubmit={submitProfile}>
             <p className="login-step-info">Quase lá! Escolha como você aparece na arena.</p>
             <label>
@@ -180,18 +208,7 @@ export function LoginView() {
                 required
               />
             </label>
-            <div className="avatar-picker">
-              {AVATARS.map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  className={a === avatar ? 'avatar selected' : 'avatar'}
-                  onClick={() => setAvatar(a)}
-                >
-                  {a}
-                </button>
-              ))}
-            </div>
+            {avatarPicker}
             {error && <p className="form-error">{error}</p>}
             <button className="btn primary" disabled={busy || !name.trim()}>
               {busy ? 'Salvando…' : 'Começar a jogar'}

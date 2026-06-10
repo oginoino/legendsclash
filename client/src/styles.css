@@ -1171,6 +1171,43 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   .board-table td:nth-child(2) { max-width: 38vw; }
 }
 
+/* ── Convidado: selo e convites para criar conta ──────────────── */
+.guest-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--bg-2);
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
+.account-cta {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-btn:hover { color: var(--gold-2); }
+
 /* ── Acessibilidade: sem animação decorativa contínua ─────────── */
 @media (prefers-reduced-motion: reduce) {
   .card.playable .card-shine::after,
