@@ -80,7 +80,8 @@ export class App {
       case 'game:surrender': return this.withMatch(user, (m) => m.surrender(user.id));
       case 'leaderboard:get': return this.sendLeaderboard(user);
       case 'history:get':
-        return this.sendTo(user.id, { t: 'history', entries: user.history });
+        // convidado não acumula histórico (benefício de conta) — lista vazia
+        return this.sendTo(user.id, { t: 'history', entries: user.guest ? [] : user.history });
     }
   }
 
@@ -283,6 +284,8 @@ export class App {
   // ─── Chat (filtro, mute e report — slide "MVP — 90 dias") ───────
 
   private chatSend(user: UserRecord, rawText: string): void {
+    // convidados leem o chat, mas enviar exige conta (moderação responsabilizável)
+    if (user.guest) throw new KnownError('Crie uma conta para enviar mensagens no chat.');
     const text = filterText(String(rawText).slice(0, MAX_CHAT_LENGTH).trim());
     if (!text) return;
 

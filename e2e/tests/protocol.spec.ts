@@ -27,27 +27,19 @@ async function post(path: string, body: unknown, token?: string) {
   });
 }
 
-/** Código OTP pendente — o servidor dos testes roda em modo local. */
-async function devCode(email: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/auth/dev-code?email=${encodeURIComponent(email)}`);
-  expect(res.ok).toBe(true);
-  return (await res.json()).code;
-}
+const PASSWORD = 'senha-e2e-12345';
 
-/** Login OTP completo via HTTP: otp → dev-code → verify → profile. */
+/** Conta completa via HTTP: register (e-mail+senha) → profile. */
 async function auth(email: string, name: string, avatar: string) {
-  const otp = await post('/api/auth/otp', { email });
-  expect(otp.ok).toBe(true);
+  const reg = await post('/api/auth/register', { email, password: PASSWORD });
+  expect(reg.ok).toBe(true);
+  const registered = await reg.json();
+  expect(registered.needsProfile).toBe(true); // conta nova nasce sem nome
 
-  const verify = await post('/api/auth/verify', { email, code: await devCode(email) });
-  expect(verify.ok).toBe(true);
-  const verified = await verify.json();
-  expect(verified.needsProfile).toBe(true); // conta nova nasce sem nome
-
-  const prof = await post('/api/auth/profile', { name, avatar }, verified.token);
+  const prof = await post('/api/auth/profile', { name, avatar }, registered.token);
   expect(prof.ok).toBe(true);
   const { profile } = await prof.json();
-  return { token: verified.token as string, profile };
+  return { token: registered.token as string, profile };
 }
 
 function connect(token: string): Promise<WsClient> {
@@ -159,19 +151,17 @@ test('contrato completo: login → sala → chat filtrado → partida → Elo �
   cb.close();
 });
 
-test('autenticação: código errado é rejeitado e token inválido derruba o WS', async () => {
+test('autenticação: senha errada é rejeitada e token revogado derruba o WS', async () => {
   const email = uniqueEmail('seguranca');
-  expect((await post('/api/auth/otp', { email })).ok).toBe(true);
+  expect((await post('/api/auth/register', { email, password: PASSWORD })).ok).toBe(true);
 
-  // código errado (derivado do verdadeiro para nunca colidir) → 400 em pt-BR
-  const real = await devCode(email);
-  const wrong = String((Number(real[0]) + 1) % 10) + real.slice(1);
-  const bad = await post('/api/auth/verify', { email, code: wrong });
-  expect(bad.status).toBe(400);
-  expect((await bad.json()).error).toContain('Código inválido');
+  // senha errada → 401 em pt-BR, sem revelar se a conta existe
+  const bad = await post('/api/auth/login', { email, password: 'senha-errada-99' });
+  expect(bad.status).toBe(401);
+  expect((await bad.json()).error).toContain('E-mail ou senha incorretos');
 
-  // o código continua válido para a tentativa correta
-  const good = await post('/api/auth/verify', { email, code: real });
+  // com a senha certa, entra
+  const good = await post('/api/auth/login', { email, password: PASSWORD });
   expect(good.ok).toBe(true);
   const { token } = await good.json();
 
@@ -181,6 +171,50 @@ test('autenticação: código errado é rejeitado e token inválido derruba o WS
   const err = await c.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
   expect(err.message).toBe('Sessão expirada. Entre novamente.');
   c.close();
+});
+
+test('convidado: joga sem cadastro, mas chat e histórico exigem conta', async () => {
+  test.setTimeout(30_000);
+  const reg = await post('/api/auth/guest', { name: 'Visitante', avatar: '🐺' });
+  expect(reg.ok).toBe(true);
+  const guest = await reg.json();
+  expect(guest.profile.guest).toBe(true);
+
+  const conta = await auth(uniqueEmail('anfitria'), 'Anfitriã', '🔮');
+  const cg = await connect(guest.token);
+  const ch = await connect(conta.token);
+  await cg.waitFor((m: { t: string }) => m.t === 'hello:ok');
+  await ch.waitFor((m: { t: string }) => m.t === 'hello:ok');
+
+  // convidado entra na sala de quem tem conta — jogar é livre
+  ch.send({ t: 'room:create' });
+  const roomMsg = await ch.waitFor<{ t: string; room: { code: string } | null }>(
+    (m) => m.t === 'room:state' && !!m.room,
+  );
+  cg.send({ t: 'room:join', code: roomMsg.room!.code });
+  await ch.waitFor<{ t: string; room: { members: unknown[] } | null }>(
+    (m) => m.t === 'room:state' && m.room?.members.length === 2,
+  );
+
+  // enviar chat é benefício de conta…
+  cg.send({ t: 'chat:send', text: 'oi!' });
+  const err = await cg.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
+  expect(err.message).toContain('Crie uma conta');
+
+  // …e o convidado continua lendo o que a conta envia
+  ch.send({ t: 'chat:send', text: 'bem-vinda!' });
+  const chat = await cg.waitFor<{ t: string; message: { text: string } }>(
+    (m) => m.t === 'chat:message',
+  );
+  expect(chat.message.text).toBe('bem-vinda!');
+
+  // histórico de convidado é sempre vazio (nada é guardado)
+  cg.send({ t: 'history:get' });
+  const hist = await cg.waitFor<{ t: string; entries: unknown[] }>((m) => m.t === 'history');
+  expect(hist.entries).toHaveLength(0);
+
+  cg.close();
+  ch.close();
 });
 
 test('matchmaking pareia dois jogadores da fila', async () => {

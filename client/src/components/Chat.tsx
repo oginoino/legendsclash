@@ -14,6 +14,8 @@ export function Chat() {
   const endRef = useRef<HTMLDivElement>(null);
   const myId = s.profile?.id;
   const muted = s.profile?.muted ?? [];
+  // convidado lê o chat, mas enviar exige conta (o servidor também barra)
+  const guest = !!s.profile?.guest;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -84,22 +86,28 @@ export function Chat() {
         </div>
       )}
 
-      <div className="emote-row">
-        {['👋 olá!', '👍 boa!', '😅 ufa…', '🔥 que jogada!', '🤝 gg'].map((e) => (
-          <button key={e} type="button" className="emote" onClick={() => send({ t: 'chat:send', text: e })}>
-            {e}
-          </button>
-        ))}
-      </div>
-      <form className="chat-input" onSubmit={submit}>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Mensagem…"
-          maxLength={240}
-        />
-        <button className="btn small" disabled={!text.trim()}>Enviar</button>
-      </form>
+      {guest ? (
+        <p className="chat-locked">🔒 Crie uma conta para enviar mensagens no chat.</p>
+      ) : (
+        <>
+          <div className="emote-row">
+            {['👋 olá!', '👍 boa!', '😅 ufa…', '🔥 que jogada!', '🤝 gg'].map((e) => (
+              <button key={e} type="button" className="emote" onClick={() => send({ t: 'chat:send', text: e })}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <form className="chat-input" onSubmit={submit}>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Mensagem…"
+              maxLength={240}
+            />
+            <button className="btn small" disabled={!text.trim()}>Enviar</button>
+          </form>
+        </>
+      )}
     </div>
   );
 }

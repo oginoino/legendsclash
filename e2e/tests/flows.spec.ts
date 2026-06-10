@@ -1,53 +1,69 @@
 import { expect, test } from '@playwright/test';
-import { loginAs, shotPath, uniqueEmail } from './helpers.js';
+import { E2E_PASSWORD, guestAs, loginAs, shotPath, uniqueEmail } from './helpers.js';
 
-test.describe('login e onboarding', () => {
-  test('login por link: e-mail → enviado → clique no link → perfil → home', async ({ page }) => {
-    const email = uniqueEmail('xavier');
+test.describe('entrada: convidado e conta', () => {
+  test('convidado: nome + avatar → home, com convites para criar conta', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.login-card')).toBeVisible();
     await page.screenshot({ path: shotPath('01-login.png') });
 
-    // passo 1: e-mail recebe o link de acesso
-    await page.fill('input[type=email]', email);
-    await page.click('button:has-text("Receber link")');
-    await expect(page.locator('.login-sent')).toBeVisible();
-    await expect(page.locator('.login-sent')).toContainText(email);
-    // reenviar respeita o cooldown de 60s
-    await expect(page.locator('button:has-text("Reenviar link")')).toBeDisabled();
-    await page.screenshot({ path: shotPath('01b-login-enviado.png') });
-
-    // passo 2: o "clique no e-mail" — em modo local o link vem do servidor
-    const { link } = await (
-      await page.request.get(`/api/auth/dev-code?email=${encodeURIComponent(email)}`)
-    ).json();
-    await page.goto(link);
-
-    // passo 3: primeiro acesso pede nome e avatar
-    await expect(page.locator('input[name=name]')).toBeVisible();
+    // jogar é imediato: nome, avatar e pronto
     await page.fill('input[name=name]', 'Xavier');
     await page.click('.avatar-picker button:has-text("🐺")');
-    await page.click('button:has-text("Começar a jogar")');
+    await page.click('button:has-text("Jogar agora")');
 
     await expect(page.locator('.home-main')).toBeVisible();
     await expect(page.locator('.profile-chip')).toContainText('Xavier');
-    await expect(page.locator('.profile-chip .league-badge')).toContainText('Bronze');
+    await expect(page.locator('.profile-chip .guest-badge')).toContainText('convidado');
     await expect(page.locator('button:has-text("Partida ranqueada")')).toBeVisible();
-    // progressão visível: barra até a próxima liga (Bronze < Ouro)
-    await expect(page.locator('.league-progress')).toBeVisible();
+    // os benefícios de conta ficam visíveis, não escondidos
+    await expect(page.locator('.account-cta')).toHaveCount(2); // ranking + histórico
     await page.screenshot({ path: shotPath('02-home.png') });
   });
 
-  test('link expirado mostra erro claro e leva de volta ao pedido de link', async ({ page }) => {
-    // formato real do redirect de erro do verificador do Supabase
-    await page.goto(
-      '/auth/callback#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
-    );
-    await expect(page.locator('.login-callback')).toContainText('expirou');
-    await page.click('button:has-text("Pedir um novo link")');
-    await expect(page.locator('input[type=email]')).toBeVisible();
-    // a URL não guarda o fragment de erro no histórico
-    expect(new URL(page.url()).pathname).toBe('/');
+  test('conta: criar → perfil → home; senha errada e duplicata têm erro claro', async ({ page }) => {
+    const email = uniqueEmail('lenda');
+    await page.goto('/');
+    await page.click('button:has-text("Entrar ou criar conta")');
+    await page.click('button:has-text("Criar conta nova")');
+    await page.fill('input[type=email]', email);
+    await page.fill('input[type=password]', E2E_PASSWORD);
+    await page.screenshot({ path: shotPath('01b-criar-conta.png') });
+    await page.click('button:has-text("Criar conta")');
+
+    // primeiro acesso pede nome e avatar
+    await expect(page.locator('input[name=name]')).toBeVisible();
+    await page.fill('input[name=name]', 'Lenda');
+    await page.click('.avatar-picker button:has-text("🦅")');
+    await page.click('button:has-text("Começar a jogar")');
+
+    await expect(page.locator('.home-main')).toBeVisible();
+    await expect(page.locator('.profile-chip')).toContainText('Lenda');
+    await expect(page.locator('.profile-chip .guest-badge')).toHaveCount(0); // conta, não convidado
+    await expect(page.locator('.profile-chip .league-badge')).toContainText('Bronze');
+    // progressão visível: barra até a próxima liga (Bronze < Ouro)
+    await expect(page.locator('.league-progress')).toBeVisible();
+
+    // sair e errar a senha → mensagem clara, sem vazar se a conta existe
+    await page.click('button:has-text("Sair")');
+    await page.click('button:has-text("Entrar ou criar conta")');
+    await page.fill('input[type=email]', email);
+    await page.fill('input[type=password]', 'senha-errada-123');
+    await page.click('form button:has-text("Entrar")');
+    await expect(page.locator('.form-error')).toContainText('E-mail ou senha incorretos');
+
+    // registrar o mesmo e-mail de novo → conflito honesto
+    await page.click('button:has-text("Criar conta nova")');
+    await page.fill('input[type=password]', E2E_PASSWORD);
+    await page.click('button:has-text("Criar conta")');
+    await expect(page.locator('.form-error')).toContainText('já tem uma conta');
+
+    // com a senha certa, entra sem repetir o onboarding
+    await page.click('button:has-text("Já tenho conta")');
+    await page.fill('input[type=password]', E2E_PASSWORD);
+    await page.click('form button:has-text("Entrar")');
+    await expect(page.locator('.home-main')).toBeVisible();
+    await expect(page.locator('.profile-chip')).toContainText('Lenda');
   });
 
   test('sessão persiste ao recarregar e relogin não repete o onboarding', async ({ browser }) => {
@@ -56,6 +72,28 @@ test.describe('login e onboarding', () => {
     await expect(home.locator('.home-main')).toBeVisible(); // sessão sobreviveu
     await expect(home.locator('.profile-chip')).toContainText('Tenaz');
     await home.context().close();
+  });
+
+  test('convidado vira conta sem sair do jogo: nome e avatar pré-preenchidos', async ({ browser }) => {
+    const page = await guestAs(browser, 'Promovida', '🔮');
+    await page.click('.profile-chip button:has-text("Criar conta")');
+
+    // a tela de conta abre por cima da sessão; dá para voltar sem perder nada
+    await expect(page.locator('button:has-text("← Voltar ao jogo")')).toBeVisible();
+    await page.click('button:has-text("← Voltar ao jogo")');
+    await expect(page.locator('.profile-chip')).toContainText('Promovida');
+
+    await page.click('.profile-chip button:has-text("Criar conta")');
+    await page.fill('input[type=email]', uniqueEmail('promovida'));
+    await page.fill('input[type=password]', E2E_PASSWORD);
+    await page.click('button:has-text("Criar conta")');
+
+    // onboarding reaproveita a identidade do convidado
+    await expect(page.locator('input[name=name]')).toHaveValue('Promovida');
+    await page.click('button:has-text("Começar a jogar")');
+    await expect(page.locator('.home-main')).toBeVisible();
+    await expect(page.locator('.profile-chip .guest-badge')).toHaveCount(0); // agora é conta
+    await page.context().close();
   });
 
   test('modal "Como jogar" explica as regras em uma tela', async ({ browser }) => {
@@ -77,15 +115,15 @@ test.describe('lobby: sala privada e convite por link', () => {
     const code = (await host.locator('.room-code').textContent())!.trim();
     expect(code).toMatch(/^[A-Z0-9]{6}$/);
 
-    // a alavanca de viralidade: o convidado entra navegando direto pelo link
-    const guest = await loginAs(browser, 'Aline', '🔮');
-    await guest.goto(`/room/${code}`);
-    await expect(guest.locator('.member-list')).toContainText('Xavier');
+    // quem tem conta entra navegando direto pelo link
+    const amiga = await loginAs(browser, 'Aline', '🔮');
+    await amiga.goto(`/room/${code}`);
+    await expect(amiga.locator('.member-list')).toContainText('Xavier');
     await expect(host.locator('.member-list')).toContainText('Aline');
 
     // chat com filtro de palavras server-side
-    await guest.fill('.chat-input input', 'gg, seu idiota');
-    await guest.click('.chat-input button');
+    await amiga.fill('.chat-input input', 'gg, seu idiota');
+    await amiga.click('.chat-input button');
     const msg = host.locator('.chat-msg .chat-text').last();
     await expect(msg).not.toContainText('idiota');
     await expect(msg).toContainText('***');
@@ -99,6 +137,32 @@ test.describe('lobby: sala privada e convite por link', () => {
 
     await host.screenshot({ path: shotPath('03-sala-convite.png') });
     await host.context().close();
-    await guest.context().close();
+    await amiga.context().close();
+  });
+
+  test('convidado entra pelo link sem cadastro — e o chat fica só leitura', async ({ browser }) => {
+    const host = await loginAs(browser, 'Xavier', '🐺');
+    await host.click('button:has-text("Criar sala privada")');
+    const code = (await host.locator('.room-code').textContent())!.trim();
+
+    // a alavanca de viralidade, agora sem atrito: o link leva ao jogo na hora
+    const ctx = await browser.newContext();
+    const visitor = await ctx.newPage();
+    await visitor.goto(`/room/${code}`);
+    await visitor.fill('input[name=name]', 'Curiosa');
+    await visitor.click('button:has-text("Jogar agora")');
+    await expect(visitor.locator('.member-list')).toContainText('Xavier');
+    await expect(host.locator('.member-list')).toContainText('Curiosa');
+
+    // convidado lê o chat, mas o envio pede conta
+    await expect(visitor.locator('.chat-locked')).toBeVisible();
+    await expect(visitor.locator('.chat-input')).toHaveCount(0);
+    await host.fill('.chat-input input', 'boas-vindas!');
+    await host.click('.chat-input button');
+    await expect(visitor.locator('.chat-msg .chat-text').last()).toContainText('boas-vindas');
+    await visitor.screenshot({ path: shotPath('03b-sala-convidado.png') });
+
+    await host.context().close();
+    await ctx.close();
   });
 });
