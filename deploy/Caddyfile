@@ -1,0 +1,20 @@
+# Legends Clash — proxy reverso (Caddy).
+#
+# Sem domínio: serve HTTP na porta 80 e encaminha tudo para o servidor Node
+# (porta interna 8787). O upgrade de WebSocket em /ws é tratado automaticamente
+# pelo reverse_proxy — não precisa de configuração extra.
+#
+# Para habilitar HTTPS com domínio, troque ":80" pelo seu domínio, por exemplo:
+#
+#     legendsclash.cutia.tech {
+#         encode zstd gzip
+#         reverse_proxy localhost:8787
+#     }
+#
+# O Caddy emite e renova o certificado TLS (Let's Encrypt) automaticamente, e o
+# cliente passa a usar wss:// sozinho (detecta https em client/src/store.ts).
+
+:80 {
+	encode zstd gzip
+	reverse_proxy localhost:8787
+}

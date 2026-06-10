@@ -7,3 +7,5 @@ data/
 e2e/screenshots/
 e2e/test-results/
 e2e/playwright-report/
+supabase/.temp/
+.claude/

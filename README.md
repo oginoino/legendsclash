@@ -20,6 +20,21 @@ npm run dev:server   # API + WebSocket em :8787
 npm run dev:client   # Vite em :5173 (proxy para :8787)
 ```
 
+### Backend / persistência (Supabase)
+
+O servidor é autoritativo e persiste em **PostgreSQL no Supabase** via *write-through*
+assíncrono — clientes nunca tocam o banco (anti-cheat). Configure o `.env` na raiz a
+partir do `.env.example`:
+
+```bash
+SUPABASE_URL=https://<projeto>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role>   # somente o servidor usa a service role
+```
+
+O schema vive em `supabase/migrations/`; aplique com `supabase db push` (ou pelo SQL
+Editor). Sem essas variáveis, o servidor cai automaticamente num snapshot JSON local,
+ideal para desenvolvimento e testes.
+
 Para jogar uma partida: abra duas janelas (uma anônima), entre com dois e-mails diferentes e
 use **Partida ranqueada** nas duas — o matchmaking pareia em até 2 s — ou crie uma **sala
 privada** e entre na outra janela pelo link de convite (`/room/CÓDIGO`).
@@ -98,18 +113,18 @@ server/   Node.js + TypeScript
   src/rooms.ts         Salas/lobby com código de convite
   src/elo.ts           Rating Elo (K=32) e ligas Bronze/Prata/Ouro
   src/wordfilter.ts    Filtro de chat (acentos + leet speak)
-  src/store.ts         Persistência (snapshot JSON; produção → PostgreSQL)
+  src/store.ts         Persistência write-through (PostgreSQL/Supabase; fallback JSON)
   src/app.ts           Sessões WebSocket, roteamento e ciclo de vida de partidas
-  test/                31 testes (motor, Elo, matchmaking, filtro)
+  test/                47 testes (motor, Elo, matchmaking, filtro)
 client/   React + TypeScript (Vite) — casca de apresentação, zero regra de jogo
 e2e/      Playwright: fluxos com navegadores reais (login, lobby, partida
           completa, reconexão) + spec de contrato no nível do WebSocket
 ```
 
 Stack conforme o slide "Riscos, mitigação e arquitetura": React + TypeScript, Node.js,
-WebSockets. No MVP a persistência é um snapshot JSON local (troca localizada em
-`store.ts` para PostgreSQL) e a infraestrutura Docker/AWS + analytics (Mixpanel/PostHog)
-ficam para o beta fechado (sprint 7).
+WebSockets. A persistência é **PostgreSQL no Supabase** (write-through assíncrono, com
+fallback para snapshot JSON local quando o `.env` não está configurado); a infraestrutura
+Docker/AWS + analytics (Mixpanel/PostHog) ficam para o beta fechado (sprint 7).
 
 ## Créditos de arte
 

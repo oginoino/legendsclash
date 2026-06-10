@@ -8,6 +8,16 @@ import { Store } from './store.js';
 import { App } from './app.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Carrega o .env da raiz do repositório (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+// PORT) sem dependências externas. É opcional: na ausência do arquivo, usa o
+// ambiente do host (produção) ou cai no snapshot JSON local — ver store.ts.
+try {
+  process.loadEnvFile(join(__dirname, '..', '..', '.env'));
+} catch {
+  // .env ausente: segue com process.env como está.
+}
+
 const PORT = Number(process.env.PORT ?? 8787);
 const CLIENT_DIST = join(__dirname, '..', '..', 'client', 'dist');
 

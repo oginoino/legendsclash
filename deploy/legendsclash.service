@@ -1,0 +1,31 @@
+[Unit]
+Description=Legends Clash — servidor autoritativo (Node + WebSocket)
+Documentation=https://github.com/oginoino/legendsclash
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=legendsclash
+Group=legendsclash
+WorkingDirectory=/opt/legendsclash
+Environment=NODE_ENV=production
+# Node instalado em /usr/local/bin (tarball); garante o PATH para npm -> node.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Variáveis do Supabase (opcional: sem elas, o servidor cai no snapshot JSON local).
+# Crie /etc/legendsclash/legendsclash.env a partir de deploy/legendsclash.env.example.
+EnvironmentFile=-/etc/legendsclash/legendsclash.env
+ExecStart=/usr/bin/env npm start
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=legendsclash
+# Endurecimento básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
