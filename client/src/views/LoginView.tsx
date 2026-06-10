@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { completeProfile, requestOtp, useAppState, verifyOtp } from '../store';
+import { completeProfile, dismissAuthCallback, requestOtp, useAppState } from '../store';
 
 const AVATARS = ['🛡️', '⚔️', '🐺', '🐉', '🏹', '🔮', '🦅', '🌙'];
 
 /**
- * Login por código OTP em três passos: e-mail → código de 6 dígitos →
- * perfil (apenas no primeiro acesso). Sem senha: o e-mail é a conta.
+ * Login por link mágico: e-mail → "link enviado" (o clique no e-mail volta
+ * em /auth/callback) → perfil (apenas no primeiro acesso). Sem senha.
  */
-type Step = 'email' | 'code' | 'profile';
+type Step = 'email' | 'sent' | 'profile';
 
 const RESEND_COOLDOWN_MS = 60_000;
 
@@ -16,7 +16,6 @@ export function LoginView() {
   const needsProfile = !!(s.token && s.profile && !s.profile.name);
   const [step, setStep] = useState<Step>(needsProfile ? 'profile' : 'email');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState(AVATARS[0]);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +28,9 @@ export function LoginView() {
     if (needsProfile) setStep('profile');
   }, [needsProfile]);
 
-  // relógio do botão "Reenviar código"
+  // relógio do botão "Reenviar link"
   useEffect(() => {
-    if (step !== 'code') return;
+    if (step !== 'sent') return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [step]);
@@ -54,14 +53,13 @@ export function LoginView() {
     e.preventDefault();
     run(async () => {
       await requestOtp(email);
-      setCode('');
       setResendAt(Date.now() + RESEND_COOLDOWN_MS);
       setNow(Date.now());
-      setStep('code');
+      setStep('sent');
     });
   }
 
-  function resendCode() {
+  function resendLink() {
     run(async () => {
       await requestOtp(email);
       setResendAt(Date.now() + RESEND_COOLDOWN_MS);
@@ -69,19 +67,12 @@ export function LoginView() {
     });
   }
 
-  function submitCode(e: React.FormEvent) {
-    e.preventDefault();
-    run(async () => {
-      const result = await verifyOtp(email, code);
-      if (result.needsProfile) setStep('profile');
-      // senão o App troca de tela sozinho (token + perfil completos)
-    });
-  }
-
   function submitProfile(e: React.FormEvent) {
     e.preventDefault();
     run(() => completeProfile(name, avatar));
   }
+
+  const cb = s.authCallback;
 
   return (
     <div className="login-screen">
@@ -91,7 +82,31 @@ export function LoginView() {
         </h1>
         <p className="tagline">Duelo de cartas em tempo real — partidas de ~10 minutos, justas e sociais.</p>
 
-        {step === 'email' && (
+        {cb?.status === 'pending' && (
+          <div className="login-callback">
+            <div className="spinner" />
+            <p className="login-step-info">Validando seu link de acesso…</p>
+          </div>
+        )}
+
+        {cb?.status === 'error' && (
+          <div className="login-callback">
+            <div className="sent-icon">⛓️‍💥</div>
+            <p className="form-error">{cb.message}</p>
+            <button
+              className="btn primary"
+              onClick={() => {
+                dismissAuthCallback();
+                setError(null);
+                setStep('email');
+              }}
+            >
+              Pedir um novo link
+            </button>
+          </div>
+        )}
+
+        {!cb && step === 'email' && (
           <form onSubmit={submitEmail}>
             <label>
               E-mail
@@ -106,9 +121,9 @@ export function LoginView() {
             </label>
             {error && <p className="form-error">{error}</p>}
             <button className="btn primary" disabled={busy}>
-              {busy ? 'Enviando…' : 'Receber código'}
+              {busy ? 'Enviando…' : 'Receber link de acesso'}
             </button>
-            <p className="login-note">Sem senha: você recebe um código de 6 dígitos por e-mail a cada login.</p>
+            <p className="login-note">Sem senha: enviamos um link mágico para o seu e-mail a cada login.</p>
             <p className="login-note credits">
               Arte das cartas: ícones de{' '}
               <a href="https://game-icons.net" target="_blank" rel="noreferrer">game-icons.net</a>{' '}
@@ -117,39 +132,24 @@ export function LoginView() {
           </form>
         )}
 
-        {step === 'code' && (
-          <form onSubmit={submitCode}>
+        {!cb && step === 'sent' && (
+          <div className="login-sent">
+            <div className="sent-icon">📨</div>
             <p className="login-step-info">
-              Enviamos um código de 6 dígitos para <strong>{email}</strong>.
+              Enviamos um link de acesso para <strong>{email}</strong>.
             </p>
-            <label>
-              Código
-              <input
-                className="otp-input"
-                name="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="······"
-                autoFocus
-                required
-              />
-            </label>
+            <p className="login-note">
+              Abra seu e-mail neste dispositivo e toque no link para entrar. Ele vale por 10 minutos.
+            </p>
             {error && <p className="form-error">{error}</p>}
-            <button className="btn primary" disabled={busy || code.length !== 6}>
-              {busy ? 'Validando…' : 'Entrar'}
-            </button>
             <div className="login-links">
               <button
                 type="button"
                 className="btn small ghost"
                 disabled={busy || resendIn > 0}
-                onClick={resendCode}
+                onClick={resendLink}
               >
-                {resendIn > 0 ? `Reenviar código (${resendIn}s)` : 'Reenviar código'}
+                {resendIn > 0 ? `Reenviar link (${resendIn}s)` : 'Reenviar link'}
               </button>
               <button
                 type="button"
@@ -160,11 +160,11 @@ export function LoginView() {
                 Trocar e-mail
               </button>
             </div>
-            <p className="login-note">Não chegou? Veja a caixa de spam — o código vale por 10 minutos.</p>
-          </form>
+            <p className="login-note">Não chegou? Confira a caixa de spam.</p>
+          </div>
         )}
 
-        {step === 'profile' && (
+        {!cb && step === 'profile' && (
           <form onSubmit={submitProfile}>
             <p className="login-step-info">Quase lá! Escolha como você aparece na arena.</p>
             <label>

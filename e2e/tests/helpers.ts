@@ -16,9 +16,10 @@ export function uniqueEmail(prefix: string): string {
 }
 
 /**
- * Faz o login OTP completo num contexto novo e espera a home carregar.
- * O servidor dos testes roda em modo local (LC_LOCAL=1) e expõe o código
- * em /api/auth/dev-code — nenhum e-mail real é enviado.
+ * Faz o login por link completo num contexto novo e espera a home carregar.
+ * O servidor dos testes roda em modo local (LC_LOCAL=1) e expõe o link de
+ * acesso em /api/auth/dev-code — nenhum e-mail real é enviado; navegar até o
+ * link equivale ao clique no e-mail.
  * `ctxOpts` permite contextos especiais (ex.: viewport mobile com touch).
  */
 export async function loginAs(
@@ -33,16 +34,15 @@ export async function loginAs(
   const email = uniqueEmail(name.toLowerCase());
   await page.goto('/');
 
-  // passo 1: e-mail → envio do código
+  // passo 1: e-mail → envio do link de acesso
   await page.fill('input[type=email]', email);
-  await page.click('button:has-text("Receber código")');
-  await page.waitForSelector('input[name=code]');
+  await page.click('button:has-text("Receber link")');
+  await page.waitForSelector('.login-sent');
 
-  // passo 2: código de 6 dígitos → sessão
+  // passo 2: o "clique no e-mail" — segue o link exposto pelo modo local
   const res = await page.request.get(`/api/auth/dev-code?email=${encodeURIComponent(email)}`);
-  const { code } = (await res.json()) as { code: string };
-  await page.fill('input[name=code]', code);
-  await page.click('button:has-text("Entrar")');
+  const { link } = (await res.json()) as { link: string };
+  await page.goto(link);
 
   // passo 3: perfil do primeiro acesso
   await page.fill('input[name=name]', name);

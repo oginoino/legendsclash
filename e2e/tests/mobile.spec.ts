@@ -142,7 +142,13 @@ test.describe('gestos: arrastar para mirar (pointer events)', () => {
       }
 
       const playable = a.locator('.hand .card.playable.card-creature');
-      if ((await playable.count()) > 0) await playable.first().click();
+      if ((await playable.count()) > 0) {
+        // espera o estado autoritativo voltar: o tabuleiro re-centraliza e as
+        // posições mudam — só então vale capturar boundingBox para o arrasto
+        const before = await a.locator('.my-row .creature').count();
+        await playable.first().click();
+        await expect(a.locator('.my-row .creature')).toHaveCount(before + 1);
+      }
 
       const ready = a.locator('.my-row .creature.ready');
       if ((await ready.count()) === 0) {

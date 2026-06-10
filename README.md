@@ -39,28 +39,39 @@ ideal para desenvolvimento e testes.
 > `npm run dev:server`) ignora o Supabase — snapshot JSON + códigos OTP no console —
 > para desenvolver sem tocar o banco de produção. Os testes e2e já rodam assim.
 
-### Login por código (OTP) e sessões
+### Login por link mágico e sessões
 
-O login é **sem senha**: o jogador informa o e-mail, recebe um **código de 6 dígitos**
-(Supabase Auth) e troca o código por uma **sessão do servidor** — token opaco de 32
-bytes guardado como sha-256 na tabela `sessions`, com expiração deslizante de 30 dias,
-multi-dispositivo e revogação no logout. O cliente nunca fala com o Supabase: o
-servidor media o envio/validação (`/api/auth/otp`, `/verify`, `/profile`, `/logout`)
-com rate-limit por e-mail (60 s) e por IP.
+O login é **sem senha**: o jogador informa o e-mail e recebe um **link de acesso**
+(Supabase Auth). O link passa pelo verificador do Supabase e volta para
+**`APP_BASE_URL/auth/callback`** com um JWT de vida curta no fragment; o cliente
+troca esse JWT em `POST /api/auth/link` por uma **sessão do servidor** — token opaco
+de 32 bytes guardado como sha-256 na tabela `sessions`, com expiração deslizante de
+30 dias, multi-dispositivo e revogação no logout. O cliente nunca fala com o
+Supabase: o servidor media tudo (`/api/auth/otp`, `/link`, `/verify`, `/profile`,
+`/logout`) com rate-limit por e-mail (60 s) e por IP. O caminho por **código de 6
+dígitos** (`/verify`) continua aceito pela API — o e-mail passa a exibi-lo quando
+houver SMTP próprio com template customizado.
 
-Configuração no Supabase (uma vez, no dashboard ou via Management API):
+- **`APP_BASE_URL`** define o destino do link (padrão:
+  `https://srv1745709.hstgr.cloud`); em dev com Supabase real use
+  `http://localhost:8787`.
+- No modo local (`LC_LOCAL=1`) nada de e-mail: o **link de acesso aparece no
+  console** do servidor (com código embutido) e, fora de produção,
+  `GET /api/auth/dev-code?email=...` o expõe para os testes.
 
-1. **Auth → Email Templates → Magic Link**: o corpo precisa conter `{{ .Token }}`
-   para o e-mail entregar o código (sem isso vai um link). Sugestão de assunto:
-   "Seu código de acesso — Legends Clash".
+Configuração no Supabase (já aplicada via Management API; para reproduzir):
+
+1. **Auth → URL Configuration**: `Site URL = https://srv1745709.hstgr.cloud` e
+   *Redirect URLs* com `https://srv1745709.hstgr.cloud/auth/callback` (+ as
+   variantes `http://localhost:8787/...` e `:5173/...` para dev).
 2. **Auth → Providers → Email**: habilitado, com signups permitidos.
-3. (Recomendado) Expiração do OTP: 600 s.
+3. Expiração do OTP/link: 600 s; código com 6 dígitos.
 
-> **SMTP próprio é pré-requisito de lançamento:** o remetente embutido do Supabase é
-> limitado a poucos e-mails por hora (só para testes). Configure um SMTP (ex.: Resend)
-> em *Project Settings → Auth → SMTP* antes de abrir para jogadores reais. O modo
-> local (`LC_LOCAL=1`) não envia e-mail nenhum — o código aparece no console e, fora
-> de produção, em `GET /api/auth/dev-code?email=...` (usado pelos testes).
+> **SMTP próprio (ex.: Resend) é recomendado para o lançamento:** o remetente
+> embutido do Supabase é limitado a poucos e-mails por hora e o template padrão é
+> em inglês (não customizável no plano free sem SMTP). O fluxo por link **funciona
+> com o template padrão**; com SMTP dá para traduzir o e-mail e incluir também o
+> código de 6 dígitos como alternativa.
 
 Para jogar uma partida: abra duas janelas (uma anônima), entre com dois e-mails diferentes e
 use **Partida ranqueada** nas duas — o matchmaking pareia em até 2 s — ou crie uma **sala
@@ -80,8 +91,8 @@ Capturas de **partidas reais** geradas pelos testes e2e (dois navegadores jogand
 
 | | |
 | --- | --- |
-| ![Login](docs/screenshots/01-login.png) | ![Código](docs/screenshots/01b-login-codigo.png) |
-| Login sem senha: e-mail… | …e código de 6 dígitos (OTP via Supabase Auth) |
+| ![Login](docs/screenshots/01-login.png) | ![Link enviado](docs/screenshots/01b-login-enviado.png) |
+| Login sem senha: e-mail… | …e um link mágico chega na caixa de entrada |
 | ![Home](docs/screenshots/02-home.png) | ![Sala](docs/screenshots/03-sala-convite.png) |
 | Home: ranqueada, salas, ranking e progresso de liga | Sala privada com convite por link e chat moderado |
 | ![Início](docs/screenshots/04-inicio-partida.png) | ![Mira](docs/screenshots/05-mira-e-previa.png) |
@@ -93,7 +104,7 @@ Capturas de **partidas reais** geradas pelos testes e2e (dois navegadores jogand
 
 | Proposta | Implementação |
 | --- | --- |
-| **Login e perfil** | **OTP por e-mail** (código de 6 dígitos via Supabase Auth) + sessões revogáveis de 30 dias; perfil (nome + avatar) no primeiro acesso, com MMR, liga, V/D e histórico. Google OAuth é fase *Next* (o vínculo `auth_user_id` já existe). |
+| **Login e perfil** | **Link mágico por e-mail** (Supabase Auth) + sessões revogáveis de 30 dias; perfil (nome + avatar) no primeiro acesso, com MMR, liga, V/D e histórico. Google OAuth é fase *Next* (o vínculo `auth_user_id` já existe). |
 | **Lobby** | Criar sala, entrar por código e **convidar por link** (`/room/CÓDIGO`) — a alavanca de viralidade. |
 | **Matchmaking** | Fila por **MMR (Elo)** com janela de pareamento que expande com a espera — novatos nunca enfrentam veteranos de cara. |
 | **Gameplay core** | Deck padrão de 30 cartas, turnos em 5 fases, **motor de regras autoritativo no servidor**, vitória por vida zerada / abandono / timeout. |

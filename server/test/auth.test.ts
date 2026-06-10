@@ -116,6 +116,22 @@ describe('auth · fluxo OTP', () => {
     );
   });
 
+  it('modo local expõe o link de acesso com código embutido (mesmo callback do link real)', async () => {
+    const { auth } = await makeAuth();
+    await auth.requestOtp('Link@Exemplo.com', '127.0.0.1');
+    const { code, link } = auth.devCode('link@exemplo.com');
+    expect(code).toMatch(/^\d{6}$/);
+    expect(link).toBe(`/auth/callback#local_email=${encodeURIComponent('link@exemplo.com')}&local_code=${code}`);
+  });
+
+  it('login por accessToken (link mágico) é bloqueado em modo local', async () => {
+    const { auth } = await makeAuth();
+    await expect(auth.loginWithAccessToken('jwt-qualquer')).rejects.toThrow(
+      'Login por link indisponível em modo local',
+    );
+    await expect(auth.loginWithAccessToken('')).rejects.toThrow('Link inválido');
+  });
+
   it('perfil exige sessão válida e nome não-vazio', async () => {
     const { provider, auth } = await makeAuth();
     const { token } = await loginNew(auth, provider, 'cad@exemplo.com');
