@@ -153,7 +153,8 @@ function mapSupabaseError(error: unknown, phase: 'request' | 'verify'): AuthErro
     return new AuthError(400, 'Código inválido ou expirado. Confira os 6 dígitos ou solicite um novo.');
   }
   if (e.status === 429 || e.code === 'over_email_send_rate_limit' || e.code === 'over_request_rate_limit') {
-    return new AuthError(429, 'Muitos envios para este e-mail. Aguarde um pouco e tente novamente.');
+    // cobre tanto o intervalo por endereço quanto o teto horário do remetente
+    return new AuthError(429, 'Limite temporário de envio de e-mails atingido. Aguarde alguns minutos e tente novamente.');
   }
   if (e.code === 'otp_disabled' || e.code === 'signup_disabled' || e.code === 'email_provider_disabled') {
     console.error('[auth] Supabase Auth mal configurado:', e.code, e.message);
