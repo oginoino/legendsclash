@@ -49,7 +49,13 @@ export function CardArt({ defId, className }: { defId: string; className?: strin
     return <span className={`card-art-frame ${className ?? ''}`}>{CARDS[defId]?.art}</span>;
   }
   return (
-    <span className={`card-art-frame ${className ?? ''}`} style={{ background: art.bg }}>
+    <span
+      className={`card-art-frame ${className ?? ''}`}
+      // luz de palco atrás do ícone + halo na cor da arte dão profundidade à vinheta
+      style={{
+        background: `radial-gradient(80% 75% at 50% 38%, ${art.fg}2e 0%, transparent 70%), ${art.bg}`,
+      }}
+    >
       <art.Icon style={{ color: art.fg }} aria-hidden />
     </span>
   );
