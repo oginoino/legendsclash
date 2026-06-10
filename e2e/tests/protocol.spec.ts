@@ -16,14 +16,38 @@ interface WsClient {
   close: () => void;
 }
 
-async function auth(email: string, name: string, avatar: string) {
-  const res = await fetch(`${BASE}/api/auth`, {
+async function post(path: string, body: unknown, token?: string) {
+  return fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, name, avatar }),
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
   });
+}
+
+/** Código OTP pendente — o servidor dos testes roda em modo local. */
+async function devCode(email: string): Promise<string> {
+  const res = await fetch(`${BASE}/api/auth/dev-code?email=${encodeURIComponent(email)}`);
   expect(res.ok).toBe(true);
-  return res.json();
+  return (await res.json()).code;
+}
+
+/** Login OTP completo via HTTP: otp → dev-code → verify → profile. */
+async function auth(email: string, name: string, avatar: string) {
+  const otp = await post('/api/auth/otp', { email });
+  expect(otp.ok).toBe(true);
+
+  const verify = await post('/api/auth/verify', { email, code: await devCode(email) });
+  expect(verify.ok).toBe(true);
+  const verified = await verify.json();
+  expect(verified.needsProfile).toBe(true); // conta nova nasce sem nome
+
+  const prof = await post('/api/auth/profile', { name, avatar }, verified.token);
+  expect(prof.ok).toBe(true);
+  const { profile } = await prof.json();
+  return { token: verified.token as string, profile };
 }
 
 function connect(token: string): Promise<WsClient> {
@@ -133,6 +157,30 @@ test('contrato completo: login → sala → chat filtrado → partida → Elo �
 
   ca.close();
   cb.close();
+});
+
+test('autenticação: código errado é rejeitado e token inválido derruba o WS', async () => {
+  const email = uniqueEmail('seguranca');
+  expect((await post('/api/auth/otp', { email })).ok).toBe(true);
+
+  // código errado (derivado do verdadeiro para nunca colidir) → 400 em pt-BR
+  const real = await devCode(email);
+  const wrong = String((Number(real[0]) + 1) % 10) + real.slice(1);
+  const bad = await post('/api/auth/verify', { email, code: wrong });
+  expect(bad.status).toBe(400);
+  expect((await bad.json()).error).toContain('Código inválido');
+
+  // o código continua válido para a tentativa correta
+  const good = await post('/api/auth/verify', { email, code: real });
+  expect(good.ok).toBe(true);
+  const { token } = await good.json();
+
+  // logout revoga a sessão: o WS recusa o token revogado
+  expect((await post('/api/auth/logout', {}, token)).ok).toBe(true);
+  const c = await connect(token);
+  const err = await c.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
+  expect(err.message).toBe('Sessão expirada. Entre novamente.');
+  c.close();
 });
 
 test('matchmaking pareia dois jogadores da fila', async () => {

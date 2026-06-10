@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Browser, Page } from '@playwright/test';
+import type { Browser, BrowserContextOptions, Page } from '@playwright/test';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const SHOTS_DIR = resolve(__dirname, '..', 'screenshots');
@@ -15,20 +15,40 @@ export function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@e2e.test`;
 }
 
-/** Faz login num contexto novo e espera a home carregar. */
+/**
+ * Faz o login OTP completo num contexto novo e espera a home carregar.
+ * O servidor dos testes roda em modo local (LC_LOCAL=1) e expõe o código
+ * em /api/auth/dev-code — nenhum e-mail real é enviado.
+ * `ctxOpts` permite contextos especiais (ex.: viewport mobile com touch).
+ */
 export async function loginAs(
   browser: Browser,
   name: string,
   avatar: string,
+  ctxOpts: BrowserContextOptions = {},
 ): Promise<Page> {
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
   page.on('dialog', (d) => d.accept());
+  const email = uniqueEmail(name.toLowerCase());
   await page.goto('/');
-  await page.fill('input[type=email]', uniqueEmail(name.toLowerCase()));
-  await page.fill('input[type=text]', name);
+
+  // passo 1: e-mail → envio do código
+  await page.fill('input[type=email]', email);
+  await page.click('button:has-text("Receber código")');
+  await page.waitForSelector('input[name=code]');
+
+  // passo 2: código de 6 dígitos → sessão
+  const res = await page.request.get(`/api/auth/dev-code?email=${encodeURIComponent(email)}`);
+  const { code } = (await res.json()) as { code: string };
+  await page.fill('input[name=code]', code);
+  await page.click('button:has-text("Entrar")');
+
+  // passo 3: perfil do primeiro acesso
+  await page.fill('input[name=name]', name);
   await page.click(`.avatar-picker button:has-text("${avatar}")`);
-  await page.click('button:has-text("Entrar e jogar")');
+  await page.click('button:has-text("Começar a jogar")');
+
   await page.waitForSelector('.home-main');
   return page;
 }

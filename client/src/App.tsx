@@ -8,7 +8,8 @@ export function App() {
   const s = useAppState();
 
   let view;
-  if (!s.token) view = <LoginView />;
+  // nome vazio = onboarding pendente: volta ao login para completar o perfil
+  if (!s.token || (s.profile && !s.profile.name)) view = <LoginView />;
   else if (s.game) view = <GameView />;
   else if (s.room) view = <RoomView />;
   else view = <HomeView />;

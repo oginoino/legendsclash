@@ -35,6 +35,33 @@ O schema vive em `supabase/migrations/`; aplique com `supabase db push` (ou pelo
 Editor). Sem essas variáveis, o servidor cai automaticamente num snapshot JSON local,
 ideal para desenvolvimento e testes.
 
+> **Modo local forçado:** com o `.env` preenchido, `LC_LOCAL=1 npm start` (ou
+> `npm run dev:server`) ignora o Supabase — snapshot JSON + códigos OTP no console —
+> para desenvolver sem tocar o banco de produção. Os testes e2e já rodam assim.
+
+### Login por código (OTP) e sessões
+
+O login é **sem senha**: o jogador informa o e-mail, recebe um **código de 6 dígitos**
+(Supabase Auth) e troca o código por uma **sessão do servidor** — token opaco de 32
+bytes guardado como sha-256 na tabela `sessions`, com expiração deslizante de 30 dias,
+multi-dispositivo e revogação no logout. O cliente nunca fala com o Supabase: o
+servidor media o envio/validação (`/api/auth/otp`, `/verify`, `/profile`, `/logout`)
+com rate-limit por e-mail (60 s) e por IP.
+
+Configuração no Supabase (uma vez, no dashboard ou via Management API):
+
+1. **Auth → Email Templates → Magic Link**: o corpo precisa conter `{{ .Token }}`
+   para o e-mail entregar o código (sem isso vai um link). Sugestão de assunto:
+   "Seu código de acesso — Legends Clash".
+2. **Auth → Providers → Email**: habilitado, com signups permitidos.
+3. (Recomendado) Expiração do OTP: 600 s.
+
+> **SMTP próprio é pré-requisito de lançamento:** o remetente embutido do Supabase é
+> limitado a poucos e-mails por hora (só para testes). Configure um SMTP (ex.: Resend)
+> em *Project Settings → Auth → SMTP* antes de abrir para jogadores reais. O modo
+> local (`LC_LOCAL=1`) não envia e-mail nenhum — o código aparece no console e, fora
+> de produção, em `GET /api/auth/dev-code?email=...` (usado pelos testes).
+
 Para jogar uma partida: abra duas janelas (uma anônima), entre com dois e-mails diferentes e
 use **Partida ranqueada** nas duas — o matchmaking pareia em até 2 s — ou crie uma **sala
 privada** e entre na outra janela pelo link de convite (`/room/CÓDIGO`).
@@ -53,18 +80,20 @@ Capturas de **partidas reais** geradas pelos testes e2e (dois navegadores jogand
 
 | | |
 | --- | --- |
-| ![Login](docs/screenshots/01-login.png) | ![Home](docs/screenshots/02-home.png) |
-| Login com avatar | Home: ranqueada, salas, ranking e progresso de liga |
-| ![Sala](docs/screenshots/03-sala-convite.png) | ![Início](docs/screenshots/04-inicio-partida.png) |
-| Sala privada com convite por link e chat moderado | Início de partida: mãos de 5, 30 de vida |
-| ![Mira](docs/screenshots/05-mira-e-previa.png) | ![Vitória](docs/screenshots/06-fim-de-jogo.png) |
-| Seta de mira com prévia de dano e banner de turno | Vitória por vida zerada: confete e Elo +16 |
+| ![Login](docs/screenshots/01-login.png) | ![Código](docs/screenshots/01b-login-codigo.png) |
+| Login sem senha: e-mail… | …e código de 6 dígitos (OTP via Supabase Auth) |
+| ![Home](docs/screenshots/02-home.png) | ![Sala](docs/screenshots/03-sala-convite.png) |
+| Home: ranqueada, salas, ranking e progresso de liga | Sala privada com convite por link e chat moderado |
+| ![Início](docs/screenshots/04-inicio-partida.png) | ![Mira](docs/screenshots/05-mira-e-previa.png) |
+| Início de partida: mãos de 5, 30 de vida | Arrasto de mira com prévia de dano em cada alvo |
+| ![Vitória](docs/screenshots/06-fim-de-jogo.png) | ![Mobile](docs/screenshots/08-mobile-home.png) |
+| Vitória por vida zerada: confete e Elo +16 | **Mobile de primeira classe**: responsivo + jogabilidade por toque |
 
 ## Escopo do MVP (slide "MVP — 90 dias") → implementação
 
 | Proposta | Implementação |
 | --- | --- |
-| **Login e perfil** | E-mail + nome + avatar (`/api/auth`); perfil com MMR, liga, V/D e histórico de partidas. Google OAuth é fase *Next*. |
+| **Login e perfil** | **OTP por e-mail** (código de 6 dígitos via Supabase Auth) + sessões revogáveis de 30 dias; perfil (nome + avatar) no primeiro acesso, com MMR, liga, V/D e histórico. Google OAuth é fase *Next* (o vínculo `auth_user_id` já existe). |
 | **Lobby** | Criar sala, entrar por código e **convidar por link** (`/room/CÓDIGO`) — a alavanca de viralidade. |
 | **Matchmaking** | Fila por **MMR (Elo)** com janela de pareamento que expande com a espera — novatos nunca enfrentam veteranos de cara. |
 | **Gameplay core** | Deck padrão de 30 cartas, turnos em 5 fases, **motor de regras autoritativo no servidor**, vitória por vida zerada / abandono / timeout. |
@@ -137,6 +166,9 @@ para cartas sem arte mapeada.
 
 ## O que fica fora (decisão de produto, não dívida)
 
-Torneios, marketplace/cosméticos, voice chat, mobile, modo espectador e deck builder —
-cada exclusão protege o foco de validar **D7 Retention ≥ 20%** (métrica norte). Gates de
-evidência condicionam as fases *Next* (2v2, deck builder) e *Later* (mobile, FFA 3–4).
+Torneios, marketplace/cosméticos, voice chat, **app mobile nativo**, modo espectador e
+deck builder — cada exclusão protege o foco de validar **D7 Retention ≥ 20%** (métrica
+norte). Gates de evidência condicionam as fases *Next* (2v2, deck builder) e *Later*
+(app nativo, FFA 3–4). A **web mobile**, porém, é primeira classe: layout responsivo
+e jogabilidade por toque (arrastar para mirar estilo Hearthstone, tap-tap, prévia de
+dano em todos os alvos) já fazem parte do MVP — testadas por e2e em viewport de celular.

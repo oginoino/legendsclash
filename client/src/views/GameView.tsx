@@ -57,6 +57,33 @@ const GHOST_TTL = 700;
 const REVEAL_TTL = 1700;
 const SPELL_DMG: Record<string, number> = { s_faisca: 2, s_bola_de_fogo: 5 };
 
+/** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
+const DRAG_THRESHOLD_PX = 8;
+/** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
+const PLAY_LIFT_PX = 48;
+
+/**
+ * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
+ * `pending` ainda pode virar clique; `target` mira com a seta; `lift` levanta
+ * uma carta sem alvo para jogá-la; `dead` consome o gesto sem ação (feedback
+ * de erro já dado).
+ */
+interface DragState {
+  pointerId: number;
+  kind: 'hand' | 'creature';
+  iid: string;
+  defId: string;
+  startX: number;
+  startY: number;
+  mode: 'pending' | 'target' | 'lift' | 'dead';
+}
+
+/** Alvo sob o cursor/dedo, resolvido pelos data-anchor já presentes no DOM. */
+type AimTarget =
+  | { kind: 'face' }
+  | { kind: 'enemy-creature'; c: CreatureOnBoard }
+  | { kind: 'my-creature'; c: CreatureOnBoard };
+
 export function GameView() {
   const s = useAppState();
   const [selection, setSelection] = useState<Selection>(null);
@@ -72,7 +99,23 @@ export function GameView() {
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [sound, setSound] = useState(soundOn());
   const [showRules, setShowRules] = useState(false);
+  // carta sem alvo sendo "levantada" pelo gesto de arrasto (solta ≥48px acima = joga)
+  const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
+  // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
+  const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
+  const [chatSeen, setChatSeen] = useState(0);
   const prevRef = useRef<GameViewState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  // após um arrasto real, o clique sintético do mouse não deve disparar ações
+  const suppressClickRef = useRef(false);
+  // entrega aos listeners de window (registrados uma vez) o fechamento mais
+  // recente do componente — estado fresco do jogo a cada render
+  const dragApiRef = useRef<{
+    begin: (drag: DragState) => void;
+    move: (drag: DragState, x: number, y: number) => void;
+    finish: (drag: DragState, x: number, y: number) => void;
+    cancel: (drag: DragState) => void;
+  } | null>(null);
 
   const game = s.game;
 
@@ -93,6 +136,52 @@ export function GameView() {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelection(null);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Arrasto para mirar/jogar: listeners na window unificam mouse e toque
+  // (no toque o pointer é capturado pelo elemento de origem; na window os
+  // eventos chegam igual e o alvo real vem de elementFromPoint).
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
+      if (drag.mode === 'pending') {
+        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
+        dragApiRef.current.begin(drag);
+      }
+      dragApiRef.current.move(drag, e.clientX, e.clientY);
+    };
+    const onUp = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) {
+        // tap sem arrasto no toque: a seta não pode ficar congelada na tela
+        if (e.pointerType === 'touch') setMouse(null);
+        return;
+      }
+      dragRef.current = null;
+      if (drag.mode === 'pending') {
+        if (e.pointerType === 'touch') setMouse(null);
+        return; // foi um toque: o click nativo decide a ação
+      }
+      // o mouse sintetiza um click após o arrasto — não pode virar ação
+      suppressClickRef.current = true;
+      setTimeout(() => { suppressClickRef.current = false; }, 400);
+      dragApiRef.current.finish(drag, e.clientX, e.clientY);
+    };
+    const onCancel = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
+      dragRef.current = null;
+      dragApiRef.current.cancel(drag);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+    };
   }, []);
 
   // ── Game feel: diff do estado autoritativo → efeitos visuais/sonoros ──
@@ -156,6 +245,11 @@ export function GameView() {
       setHover(null);
     }
   }, [game]);
+
+  // gaveta de chat aberta = mensagens consideradas lidas (badge zera)
+  useEffect(() => {
+    if (sidePane === 'chat') setChatSeen(s.chat.length);
+  }, [sidePane, s.chat.length]);
 
   // fanfarra de fim de partida
   const overSig = s.gameOver?.matchId;
@@ -244,8 +338,38 @@ export function GameView() {
   const preview = previewFor(hover);
 
   // ── Ações ───────────────────────────────────────────────────────
+  // Núcleo parametrizado, compartilhado pelo clique-clique e pelo arrasto
+  // (Pointer Events): validações de Provocar/escudo/energia num lugar só.
 
-  function clickHandCard(iid: string, defId: string) {
+  function clearAim() {
+    setSelection(null);
+    setHover(null);
+    setMouse(null);
+  }
+
+  /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
+  function performAttack(attacker: CreatureOnBoard, t: AimTarget): void {
+    if (!myTurn || !attacker.canAttack) return;
+    if (t.kind === 'my-creature') return; // sem fogo amigo
+    if (t.kind === 'face') {
+      if (faceShielded) {
+        sfx.error();
+        return;
+      }
+      send({ t: 'game:attack', attackerIid: attacker.iid, target: { seat: enemySeatIdx } });
+    } else {
+      if (enemyTaunts.length > 0 && !CARDS[t.c.defId].keywords?.includes('taunt')) {
+        sfx.error();
+        return; // alvo bloqueado por Provocar — o visual já explica
+      }
+      send({ t: 'game:attack', attackerIid: attacker.iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
+    }
+    sfx.attack();
+    clearAim();
+  }
+
+  /** Joga a carta da mão (com ou sem alvo); silencioso em alvo incompatível. */
+  function performPlay(iid: string, defId: string, t: AimTarget | null): void {
     if (!myTurn) return;
     const def = CARDS[defId];
     if (def.cost > me!.energy) {
@@ -254,10 +378,41 @@ export function GameView() {
       sfx.error();
       return;
     }
-    if (def.target === 'none' || !def.target) {
+    const wants = def.target ?? 'none';
+    if (wants === 'none') {
       send({ t: 'game:play', iid });
-      if (def.type === 'creature') sfx.summon(); else sfx.play();
-      setSelection(null);
+    } else if (!t) {
+      return;
+    } else if (wants === 'friendly-creature') {
+      if (t.kind !== 'my-creature') return;
+      send({ t: 'game:play', iid, target: { seat: game!.yourSeat, iid: t.c.iid } });
+    } else if (t.kind === 'enemy-creature') {
+      if (wants !== 'enemy-creature' && wants !== 'enemy-any') return;
+      send({ t: 'game:play', iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
+    } else if (t.kind === 'face') {
+      if (wants !== 'enemy-any') return;
+      if (faceShielded && !def.pierce) {
+        sfx.error();
+        return; // criaturas protegem o comandante até de magias
+      }
+      send({ t: 'game:play', iid, target: { seat: enemySeatIdx } });
+    } else {
+      return;
+    }
+    if (def.type === 'creature') sfx.summon(); else sfx.play();
+    clearAim();
+  }
+
+  function clickHandCard(iid: string, defId: string) {
+    if (!myTurn) return;
+    const def = CARDS[defId];
+    if (def.cost > me!.energy) {
+      setEnergyWarnAt(Date.now());
+      sfx.error();
+      return;
+    }
+    if (def.target === 'none' || !def.target) {
+      performPlay(iid, defId, null);
     } else {
       sfx.click();
       setSelection(selection?.kind === 'hand' && selection.iid === iid ? null : { kind: 'hand', iid });
@@ -266,10 +421,8 @@ export function GameView() {
 
   function clickMyCreature(c: CreatureOnBoard) {
     if (!myTurn) return;
-    if (selectedHandDef?.target === 'friendly-creature' && selection?.kind === 'hand') {
-      send({ t: 'game:play', iid: selection.iid, target: { seat: game!.yourSeat, iid: c.iid } });
-      sfx.play();
-      setSelection(null);
+    if (selection?.kind === 'hand' && selectedHandDef?.target === 'friendly-creature') {
+      performPlay(selection.iid, selectedHandDef.id, { kind: 'my-creature', c });
       return;
     }
     if (c.canAttack) {
@@ -288,50 +441,127 @@ export function GameView() {
 
   function clickEnemyCreature(c: CreatureOnBoard) {
     if (!myTurn) return;
-    if (selection?.kind === 'hand' && selectedHandDef &&
-        (selectedHandDef.target === 'enemy-creature' || selectedHandDef.target === 'enemy-any')) {
-      send({ t: 'game:play', iid: selection.iid, target: { seat: enemySeatIdx, iid: c.iid } });
-      sfx.play();
-      setSelection(null);
-      setHover(null);
-      return;
-    }
-    if (selection?.kind === 'attacker') {
-      if (mustHitTaunt && !CARDS[c.defId].keywords?.includes('taunt')) {
-        sfx.error();
-        return; // alvo bloqueado por Provocar — o visual já explica
-      }
-      send({ t: 'game:attack', attackerIid: selection.iid, target: { seat: enemySeatIdx, iid: c.iid } });
-      sfx.attack();
-      setSelection(null);
-      setHover(null);
+    if (selection?.kind === 'hand' && selectedHandDef) {
+      performPlay(selection.iid, selectedHandDef.id, { kind: 'enemy-creature', c });
+    } else if (selection?.kind === 'attacker' && selectedAttacker) {
+      performAttack(selectedAttacker, { kind: 'enemy-creature', c });
     }
   }
 
   function clickEnemyFace() {
     if (!myTurn) return;
-    if (selection?.kind === 'hand' && selectedHandDef?.target === 'enemy-any') {
-      if (faceShielded && !selectedHandDef.pierce) {
-        sfx.error();
-        return; // criaturas protegem o comandante até de magias
-      }
-      send({ t: 'game:play', iid: selection.iid, target: { seat: enemySeatIdx } });
-      sfx.play();
-      setSelection(null);
-      setHover(null);
-      return;
-    }
-    if (selection?.kind === 'attacker') {
-      if (faceShielded) {
-        sfx.error();
-        return;
-      }
-      send({ t: 'game:attack', attackerIid: selection.iid, target: { seat: enemySeatIdx } });
-      sfx.attack();
-      setSelection(null);
-      setHover(null);
+    if (selection?.kind === 'hand' && selectedHandDef) {
+      performPlay(selection.iid, selectedHandDef.id, { kind: 'face' });
+    } else if (selection?.kind === 'attacker' && selectedAttacker) {
+      performAttack(selectedAttacker, { kind: 'face' });
     }
   }
+
+  // ── Arrasto para mirar/jogar (mouse e toque via Pointer Events) ──
+
+  /** Resolve o alvo sob o ponteiro pelos data-anchor já presentes no DOM. */
+  function resolveTargetAt(x: number, y: number): AimTarget | null {
+    const anchor = document.elementFromPoint(x, y)?.closest('[data-anchor]')?.getAttribute('data-anchor');
+    if (!anchor || !game || !me) return null;
+    if (anchor === `face-${enemySeatIdx}`) return { kind: 'face' };
+    if (anchor.startsWith('cr-')) {
+      const iid = anchor.slice(3);
+      const ec = enemy.board.find((c) => c.iid === iid);
+      if (ec) return { kind: 'enemy-creature', c: ec };
+      const mc = me.board.find((c) => c.iid === iid);
+      if (mc) return { kind: 'my-creature', c: mc };
+    }
+    return null;
+  }
+
+  function aimTargetToHover(t: AimTarget | null): HoverTarget {
+    if (!t) return null;
+    if (t.kind === 'face') return { kind: 'face' };
+    return { kind: 'creature', iid: t.c.iid };
+  }
+
+  /** Início de gesto numa carta da mão ou criatura própria. */
+  function onTargetPointerDown(e: React.PointerEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
+    if (!myTurn || !e.isPrimary || e.button !== 0) return;
+    dragRef.current = {
+      pointerId: e.pointerId,
+      ...origin,
+      startX: e.clientX,
+      startY: e.clientY,
+      mode: 'pending',
+    };
+  }
+
+  // fechamento fresco deste render para os listeners de window
+  dragApiRef.current = {
+    begin(drag) {
+      if (drag.kind === 'creature') {
+        const c = me?.board.find((x) => x.iid === drag.iid);
+        if (!c || !myTurn) {
+          drag.mode = 'dead';
+        } else if (!c.canAttack) {
+          setSelection(null);
+          setCantAttackWarn({ iid: c.iid, at: Date.now() });
+          sfx.error();
+          drag.mode = 'dead';
+        } else {
+          sfx.click();
+          setSelection({ kind: 'attacker', iid: drag.iid });
+          drag.mode = 'target';
+        }
+        return;
+      }
+      const def = CARDS[drag.defId];
+      if (!def || !myTurn) {
+        drag.mode = 'dead';
+      } else if (def.cost > me!.energy) {
+        setEnergyWarnAt(Date.now());
+        sfx.error();
+        drag.mode = 'dead';
+      } else if (def.target && def.target !== 'none') {
+        sfx.click();
+        setSelection({ kind: 'hand', iid: drag.iid });
+        drag.mode = 'target';
+      } else {
+        setSelection(null);
+        drag.mode = 'lift';
+      }
+    },
+    move(drag, x, y) {
+      if (drag.mode === 'target') {
+        setMouse({ x, y });
+        setHover(aimTargetToHover(resolveTargetAt(x, y)));
+      } else if (drag.mode === 'lift') {
+        setLift({ iid: drag.iid, dy: Math.min(0, y - drag.startY) });
+      }
+    },
+    finish(drag, x, y) {
+      if (drag.mode === 'target') {
+        const t = resolveTargetAt(x, y);
+        if (drag.kind === 'creature') {
+          const attacker = me?.board.find((c) => c.iid === drag.iid);
+          if (attacker && t) performAttack(attacker, t);
+          else clearAim(); // soltou no vazio: cancela a mira
+        } else if (t) {
+          performPlay(drag.iid, drag.defId, t);
+        } else {
+          clearAim();
+        }
+        // alvo bloqueado (Provocar/escudo) mantém a seleção para o tap-tap,
+        // mas a seta não deve ficar congelada no ponto do último toque
+        setMouse(null);
+        setHover(null);
+      } else if (drag.mode === 'lift') {
+        if (drag.startY - y >= PLAY_LIFT_PX) performPlay(drag.iid, drag.defId, null);
+        setLift(null);
+      }
+    },
+    cancel(drag) {
+      // navegador tomou o gesto (rolagem da mão, gesto de sistema): limpa tudo
+      if (drag.mode === 'target') clearAim();
+      setLift(null);
+    },
+  };
 
   const targetingEnemy =
     selection?.kind === 'attacker' ||
@@ -355,14 +585,62 @@ export function GameView() {
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
   const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
+  const unreadChat = Math.max(0, s.chat.length - chatSeen);
+
+  // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
+  // informada sem depender de hover (essencial no toque)
+  const staticFacePreview = targetingEnemy && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
 
   return (
     <div
       className="game-screen"
-      onMouseMove={selection ? (e) => setMouse({ x: e.clientX, y: e.clientY }) : undefined}
+      onPointerMove={selection ? (e) => setMouse({ x: e.clientX, y: e.clientY }) : undefined}
       onContextMenu={selection ? (e) => { e.preventDefault(); setSelection(null); } : undefined}
+      onClickCapture={(e) => {
+        if (suppressClickRef.current) {
+          suppressClickRef.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
     >
-      <div className="game-board">
+      <div className="mobile-topbar">
+        <button
+          className={`btn small ghost ${sidePane === 'log' ? 'active' : ''}`}
+          onClick={() => setSidePane(sidePane === 'log' ? null : 'log')}
+          title="Eventos"
+        >
+          📜
+        </button>
+        <button
+          className={`btn small ghost ${sidePane === 'chat' ? 'active' : ''}`}
+          onClick={() => setSidePane(sidePane === 'chat' ? null : 'chat')}
+          title="Chat"
+        >
+          💬
+          {unreadChat > 0 && sidePane !== 'chat' && <span className="unread-badge">{unreadChat}</span>}
+        </button>
+        <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar">📖</button>
+        <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som">
+          {sound ? '🔊' : '🔇'}
+        </button>
+        <button
+          className="btn small ghost danger"
+          onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
+          title="Desistir"
+        >
+          🏳️
+        </button>
+      </div>
+      <div
+        className="game-board"
+        onClick={(e) => {
+          // toque em área vazia da arena cancela a mira (equivalente do Esc)
+          if (selection && !(e.target as Element).closest('[data-anchor], button, .hand')) {
+            setSelection(null);
+          }
+        }}
+      >
         <HeroPlate
           seat={enemy}
           seatIdx={enemySeatIdx}
@@ -370,8 +648,9 @@ export function GameView() {
           onFaceClick={clickEnemyFace}
           targetable={!!targetingEnemy && (!faceShielded || !!selectedHandDef?.pierce)}
           blocked={!!targetingEnemy && faceShielded && !selectedHandDef?.pierce}
-          lethal={faceLethal}
-          preview={hover?.kind === 'face' ? preview : null}
+          lethal={faceLethal || !!staticFacePreview?.lethal}
+          preview={hover?.kind === 'face' ? preview : staticFacePreview}
+          previewDim={hover?.kind !== 'face' && !!staticFacePreview}
           onHover={(h) => setHover(h ? { kind: 'face' } : null)}
           fx={fxFor(`face-${enemySeatIdx}`)}
         />
@@ -380,13 +659,19 @@ export function GameView() {
           {enemy.board.map((c) => {
             const isTaunt = CARDS[c.defId].keywords?.includes('taunt');
             const blocked = !!mustHitTaunt && !isTaunt;
+            const hovered = hover?.kind === 'creature' && hover.iid === c.iid;
+            // chip estático em cada alvo válido enquanto algo está selecionado
+            const staticPv = !hovered && targetingEnemy && !blocked
+              ? previewFor({ kind: 'creature', iid: c.iid })
+              : null;
             return (
               <Creature
                 key={c.iid}
                 c={c}
                 bonus={enemy.attackBonus}
                 blocked={blocked}
-                preview={hover?.kind === 'creature' && hover.iid === c.iid ? preview : null}
+                preview={hovered ? preview : staticPv}
+                previewDim={!hovered && !!staticPv}
                 onHover={(on) => setHover(on ? { kind: 'creature', iid: c.iid } : null)}
                 fx={fxFor(`cr-${c.iid}`)}
                 onClick={() => clickEnemyCreature(c)}
@@ -438,6 +723,7 @@ export function GameView() {
               retaliation={preview?.attackerIid === c.iid ? preview : null}
               fx={fxFor(`cr-${c.iid}`)}
               onClick={() => clickMyCreature(c)}
+              onPointerDown={(e) => onTargetPointerDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
             />
           ))}
           {ghostsFor(game.yourSeat).map((g) => <GhostCreature key={g.id} g={g} />)}
@@ -449,7 +735,7 @@ export function GameView() {
         <HeroPlate
           seat={me}
           seatIdx={game.yourSeat}
-          pendingCost={hoverCost}
+          pendingCost={selection?.kind === 'hand' && selectedHandDef ? selectedHandDef.cost : hoverCost}
           energyWarn={energyWarn}
           fx={fxFor(`face-${game.yourSeat}`)}
         />
@@ -459,6 +745,7 @@ export function GameView() {
             const off = i - (game.hand.length - 1) / 2;
             const isSelected = selection?.kind === 'hand' && selection.iid === c.iid;
             const affordable = CARDS[c.defId].cost <= me.energy;
+            const lifting = lift?.iid === c.iid;
             return (
               <CardView
                 key={c.iid}
@@ -466,10 +753,16 @@ export function GameView() {
                 anchorId={`hand-${c.iid}`}
                 playable={myTurn && affordable}
                 selected={isSelected}
+                lifting={lifting}
                 onClick={() => clickHandCard(c.iid, c.defId)}
+                onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
                 onMouseEnter={() => myTurn && affordable && setHoverCost(CARDS[c.defId].cost)}
                 onMouseLeave={() => setHoverCost(0)}
-                style={isSelected ? undefined : {
+                style={lifting ? {
+                  // a carta segue o dedo na vertical; soltar bem acima joga
+                  transform: `translateY(${lift!.dy}px) scale(1.12)`,
+                  zIndex: 13,
+                } : isSelected ? undefined : {
                   transform: `rotate(${off * 2.5}deg) translateY(${Math.abs(off) * 5}px)`,
                 }}
               />
@@ -478,7 +771,10 @@ export function GameView() {
         </div>
       </div>
 
-      <aside className="game-side">
+      <aside className={`game-side ${sidePane ? `open pane-${sidePane}` : ''}`}>
+        <button className="btn small ghost drawer-close" onClick={() => setSidePane(null)}>
+          ▾ Fechar
+        </button>
         <div className="side-top">
           <span>
             <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som">
@@ -509,20 +805,22 @@ export function GameView() {
 
       {selection && (
         <div className="target-hint">
-          {selection.kind === 'attacker'
-            ? `⚔️ Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
-                mustHitTaunt
-                  ? 'Provocar — ataque o Golem antes das outras criaturas'
-                  : faceShielded
-                    ? 'as criaturas inimigas protegem o comandante — derrote-as primeiro'
-                    : 'mesa livre — ataque o comandante ou veja a prévia no alvo'
-              }`
-            : selectedHandDef?.target === 'friendly-creature'
-              ? 'Escolha uma criatura aliada'
-              : faceShielded && !selectedHandDef?.pierce
-                ? 'Escolha uma criatura inimiga — elas protegem o comandante'
-                : 'Escolha um alvo inimigo — passe o mouse para ver a prévia'}
-          <span className="dim"> · Esc cancela</span>
+          <span className="target-hint-text">
+            {selection.kind === 'attacker'
+              ? `⚔️ Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
+                  mustHitTaunt
+                    ? 'Provocar — ataque o Golem antes das outras criaturas'
+                    : faceShielded
+                      ? 'as criaturas inimigas protegem o comandante — derrote-as primeiro'
+                      : 'mesa livre — ataque o comandante ou veja a prévia no alvo'
+                }`
+              : selectedHandDef?.target === 'friendly-creature'
+                ? 'Escolha uma criatura aliada'
+                : faceShielded && !selectedHandDef?.pierce
+                  ? 'Escolha uma criatura inimiga — elas protegem o comandante'
+                  : 'Escolha um alvo inimigo — a prévia de dano aparece em cada um'}
+          </span>
+          <button className="btn small cancel-pill" onClick={clearAim}>✕ Cancelar</button>
         </div>
       )}
 
@@ -572,7 +870,7 @@ function FxLayer({ fx }: { fx: FloatFx[] }) {
   );
 }
 
-function PreviewChip({ p, self }: { p: CombatPreview; self?: boolean }) {
+function PreviewChip({ p, self, dim }: { p: CombatPreview; self?: boolean; dim?: boolean }) {
   if (self) {
     if (p.selfDmg === undefined) return null;
     return (
@@ -582,7 +880,7 @@ function PreviewChip({ p, self }: { p: CombatPreview; self?: boolean }) {
     );
   }
   return (
-    <span className={`preview-chip ${p.lethal ? 'lethal' : p.targetDies ? 'dies' : ''}`}>
+    <span className={`preview-chip ${dim ? 'static' : ''} ${p.lethal ? 'lethal' : p.targetDies ? 'dies' : ''}`}>
       −{p.targetDmg}
       {p.targetDies ? ' 💀' : ''}
       {p.overflow ? ` ↯${p.overflow}` : ''}
@@ -591,7 +889,7 @@ function PreviewChip({ p, self }: { p: CombatPreview; self?: boolean }) {
   );
 }
 
-function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, onHover, pendingCost = 0, energyWarn, fx }: {
+function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx }: {
   seat: SeatView;
   seatIdx: number;
   isEnemy?: boolean;
@@ -600,6 +898,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   blocked?: boolean;
   lethal?: boolean;
   preview?: CombatPreview | null;
+  previewDim?: boolean;
   onHover?: (on: boolean) => void;
   pendingCost?: number;
   energyWarn?: boolean;
@@ -626,7 +925,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         <span className="portrait-avatar">{seat.avatar}</span>
         <span className="hp-orb">{seat.hp}</span>
         {seat.shield > 0 && <span className="shield-orb">🛡️{seat.shield}</span>}
-        {preview && <PreviewChip p={preview} />}
+        {preview && <PreviewChip p={preview} dim={previewDim} />}
         <FxLayer fx={fx} />
       </button>
       <div className="hero-info">
@@ -657,7 +956,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview, retaliation, onHover, fx, onClick }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
@@ -666,10 +965,12 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
   blocked?: boolean;
   warn?: boolean;
   preview?: CombatPreview | null;
+  previewDim?: boolean;
   retaliation?: CombatPreview | null;
   onHover?: (on: boolean) => void;
   fx: FloatFx[];
   onClick: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
 }) {
   const def = CARDS[c.defId];
   const hit = fx.some((f) => f.kind === 'dmg');
@@ -691,6 +992,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
       className={classes}
       data-anchor={`cr-${c.iid}`}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       title={
         blocked
           ? 'Protegido por Provocar — ataque o Golem primeiro'
@@ -709,7 +1011,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
         <b className="hp">{c.health}</b>
       </span>
       {mine && c.canAttack && <span className="ready-dot" />}
-      {preview && <PreviewChip p={preview} />}
+      {preview && <PreviewChip p={preview} dim={previewDim} />}
       {retaliation && <PreviewChip p={retaliation} self />}
       <FxLayer fx={fx} />
     </button>

@@ -64,9 +64,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
             "$VPS_USER@$VPS_HOST" 'bash /opt/legendsclash/deploy/provision.sh'
 
-      - name: Smoke test (health pelo proxy)
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
+      - name: Smoke test (health pelo proxy, HTTPS)
         run: |
-          curl -fsS --retry 6 --retry-delay 3 --retry-connrefused \
-            "http://$VPS_HOST/api/health" && echo "" && echo "deploy OK"
+          # primeira execução pós-Caddyfile com domínio: o Let's Encrypt pode
+          # levar alguns segundos para emitir o certificado — daí os retries.
+          curl -fsSL --retry 10 --retry-delay 5 --retry-connrefused --retry-all-errors \
+            "https://srv1745709.hstgr.cloud/api/health" && echo "" && echo "deploy OK"

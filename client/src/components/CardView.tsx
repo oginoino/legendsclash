@@ -16,14 +16,17 @@ interface Props {
   defId: string;
   playable?: boolean;
   selected?: boolean;
+  /** Carta sendo levantada pelo gesto de arrasto (segue o dedo, sem transição). */
+  lifting?: boolean;
   onClick?: () => void;
   style?: React.CSSProperties;
   anchorId?: string;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
 }
 
-export function CardView({ defId, playable, selected, onClick, style, anchorId, onMouseEnter, onMouseLeave }: Props) {
+export function CardView({ defId, playable, selected, lifting, onClick, style, anchorId, onMouseEnter, onMouseLeave, onPointerDown }: Props) {
   const def = CARDS[defId];
   if (!def) return null;
   const classes = [
@@ -31,6 +34,7 @@ export function CardView({ defId, playable, selected, onClick, style, anchorId, 
     `card-${def.type}`,
     playable ? 'playable' : '',
     selected ? 'selected' : '',
+    lifting ? 'lifting' : '',
   ].join(' ');
 
   return (
@@ -42,6 +46,7 @@ export function CardView({ defId, playable, selected, onClick, style, anchorId, 
       data-anchor={anchorId}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onPointerDown={onPointerDown}
     >
       <span className="card-cost">{def.cost}</span>
       <CardArt defId={defId} className="card-art" />

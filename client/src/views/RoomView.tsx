@@ -14,6 +14,15 @@ export function RoomView() {
   const inviteLink = `${location.origin}/room/${room.code}`;
 
   async function copyInvite() {
+    // no celular, a folha de compartilhar nativa é o menor atrito p/ convidar
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+      try {
+        await navigator.share({ title: 'Legends Clash — duelo de cartas', url: inviteLink });
+      } catch {
+        // compartilhamento cancelado pelo usuário — sem fallback necessário
+      }
+      return;
+    }
     try {
       await navigator.clipboard.writeText(inviteLink);
     } catch {

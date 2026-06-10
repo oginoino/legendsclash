@@ -165,28 +165,61 @@ let pendingRoomCode: string | null = null;
 }
 
 function joinPendingRoom(): void {
-  if (pendingRoomCode) {
+  // aguarda o onboarding: ninguém entra numa sala sem nome de jogador
+  if (pendingRoomCode && state.profile?.name) {
     send({ t: 'room:join', code: pendingRoomCode });
     pendingRoomCode = null;
   }
 }
 
-// ─── Autenticação ───────────────────────────────────────────────
+// ─── Autenticação (OTP por e-mail; o servidor media o Supabase) ──
 
-export async function login(email: string, name: string, avatar: string): Promise<void> {
-  const res = await fetch('/api/auth', {
+async function postJson(
+  path: string,
+  body: unknown,
+  token?: string,
+): Promise<Record<string, any>> {
+  const res = await fetch(path, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, name, avatar }),
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error ?? 'Falha no login.');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? 'Falha na requisição.');
+  return data;
+}
+
+export async function requestOtp(email: string): Promise<void> {
+  await postJson('/api/auth/otp', { email });
+}
+
+export async function verifyOtp(email: string, code: string): Promise<{ needsProfile: boolean }> {
+  const body = await postJson('/api/auth/verify', { email, code });
   localStorage.setItem('lc_token', body.token);
   setState({ token: body.token, profile: body.profile });
   connect();
+  return { needsProfile: !!body.needsProfile };
+}
+
+export async function completeProfile(name: string, avatar: string): Promise<void> {
+  if (!state.token) throw new Error('Sessão expirada. Entre novamente.');
+  const body = await postJson('/api/auth/profile', { name, avatar }, state.token);
+  setState({ profile: body.profile });
+  joinPendingRoom(); // convite por link esperava o nome
 }
 
 export function logout(): void {
+  const token = state.token;
+  if (token) {
+    // revoga a sessão no servidor; falha de rede não impede o logout local
+    void fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  }
   localStorage.removeItem('lc_token');
   const socket = ws;
   ws = null; // impede reconexão automática
