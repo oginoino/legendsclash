@@ -22,7 +22,7 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-const store = new Store();
+const store = await Store.create();
 const app = new App(store);
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
