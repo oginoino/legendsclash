@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
   registerAccount, useAppState,
@@ -8,25 +8,22 @@ const AVATARS = ['🛡️', '⚔️', '🐺', '🐉', '🏹', '🔮', '🦅', '�
 
 /**
  * Porta de entrada: jogar é imediato (convidado escolhe nome e avatar).
- * Conta por e-mail + senha é opcional e destrava chat, histórico e ranking.
- * `profile` é o onboarding do primeiro acesso de uma conta nova.
+ * Conta por e-mail + senha é opcional: guarda o progresso e entra no
+ * ranking. Convidado que cria conta herda a sessão (promoção) e pula o
+ * onboarding; `profile` é só para conta criada do zero.
  */
 type Mode = 'welcome' | 'signin' | 'signup' | 'profile';
 
 export function LoginView() {
   const s = useAppState();
   const needsProfile = !!(s.token && s.profile && !s.profile.name);
-  // convidado virando conta: o nome/avatar atuais pré-preenchem o perfil
-  const prefill = useRef(
-    s.profile?.guest ? { name: s.profile.name, avatar: s.profile.avatar } : null,
-  );
   const fromGuest = !!(s.accountPrompt && s.profile);
 
   const [mode, setMode] = useState<Mode>(
     needsProfile ? 'profile' : s.accountPrompt ? 'signup' : 'welcome',
   );
-  const [name, setName] = useState(prefill.current?.name ?? '');
-  const [avatar, setAvatar] = useState(prefill.current?.avatar ?? AVATARS[0]);
+  const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState(AVATARS[0]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +124,7 @@ export function LoginView() {
               Entrar ou criar conta
             </button>
             <p className="login-note">
-              Conta guarda seu histórico, libera o chat e coloca você no ranking.
+              Conta guarda seu progresso entre sessões e coloca você no ranking.
             </p>
             <p className="login-note credits">
               Arte das cartas: ícones de{' '}
@@ -141,7 +138,9 @@ export function LoginView() {
           <form onSubmit={submitAccount}>
             <p className="login-step-info">
               {mode === 'signup'
-                ? 'Crie sua conta: chat, histórico e ranking desbloqueados.'
+                ? fromGuest
+                  ? 'Crie sua conta: o progresso desta sessão vai junto — histórico, MMR e ranking.'
+                  : 'Crie sua conta: progresso salvo e vaga no ranking.'
                 : 'Bem-vindo de volta! Entre com seu e-mail e senha.'}
             </p>
             <label>

@@ -124,13 +124,14 @@ export function HomeView() {
 
         <section className="panel">
           <h2>Histórico de partidas</h2>
-          {p.guest ? (
+          {p.guest && (
             <p className="account-cta">
-              🔒 Suas partidas de convidado não ficam salvas.{' '}
+              ⏳ Histórico de convidado vale só nesta sessão.{' '}
               <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
-              para guardar seu histórico.
+              para levar seu progresso com você.
             </p>
-          ) : s.history.length === 0 ? (
+          )}
+          {s.history.length === 0 ? (
             <p className="hint">Suas partidas aparecerão aqui.</p>
           ) : (
             <ul className="history-list">

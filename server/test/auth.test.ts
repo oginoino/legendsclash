@@ -52,7 +52,7 @@ describe('auth · convidado', () => {
     );
   });
 
-  it('não entra no ranking nem acumula histórico; contas sim', async () => {
+  it('não entra no ranking; progresso fica só na memória da sessão', async () => {
     const { store, auth } = await makeAuth();
     const guest = auth.guest('Visitante', '🐺', '127.0.0.1');
     const acc = await auth.register('lenda@exemplo.com', 'senha-forte-1', '127.0.0.1');
@@ -64,8 +64,8 @@ describe('auth · convidado', () => {
     expect(board.map((u) => u.id)).toEqual([acc.profile.id]); // convidado fora
 
     const guestUser = store.userBySession(guest.token)!;
-    expect(guestUser.mmr).toBe(1016); // MMR evolui na sessão (matchmaking justo)…
-    expect(guestUser.history).toHaveLength(0); // …mas histórico é benefício de conta
+    expect(guestUser.mmr).toBe(1016); // progresso vivo na sessão…
+    expect(guestUser.history).toHaveLength(1); // …inclusive o histórico (em memória)
     expect(store.userBySession(acc.token)!.history).toHaveLength(1);
   });
 
@@ -96,6 +96,63 @@ describe('auth · convidado', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('auth · promoção: convidado vira conta na mesma sessão', () => {
+  it('a conta nova herda nome, avatar, MMR, V/D e histórico — e persiste tudo', async () => {
+    vi.useFakeTimers(); // desde o início: o flush debounced do snapshot é um timer
+    const path = tmpDbPath();
+    try {
+      const store = await Store.create(path);
+      const auth = new AuthService(store, new LocalPasswordProvider(), 'off');
+
+      const guest = auth.guest('Promovida', '🔮', '127.0.0.1');
+      store.recordMatch(guest.profile.id, matchEntry('rival-1'), 1016, true);
+      store.recordMatch(guest.profile.id, matchEntry('rival-2'), 1003, false);
+
+      const acc = await auth.register('promo@exemplo.com', 'senha-forte-1', '127.0.0.1', guest.token);
+      expect(acc.needsProfile).toBe(false); // identidade herdada: onboarding dispensado
+      expect(acc.profile.guest).toBe(false);
+      expect(acc.profile.name).toBe('Promovida');
+      expect(acc.profile.avatar).toBe('🔮');
+      expect(acc.profile.mmr).toBe(1003);
+      expect(acc.profile.wins).toBe(1);
+      expect(acc.profile.losses).toBe(1);
+
+      expect(store.userBySession(guest.token)).toBeUndefined(); // sessão antiga revogada
+      expect(store.leaderboard().map((u) => u.id)).toEqual([acc.profile.id]); // agora ranqueia
+
+      vi.advanceTimersByTime(600); // flush do snapshot debounced (500ms)
+      const reloaded = await Store.create(path);
+      const user = reloaded.userBySession(acc.token)!;
+      expect(user.name).toBe('Promovida'); // sobreviveu ao restart…
+      expect(user.mmr).toBe(1003);
+      expect(user.history).toHaveLength(2); // …com o histórico da sessão de convidado
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('registro sem sessão de convidado segue pedindo o perfil', async () => {
+    const { auth } = await makeAuth();
+    const acc = await auth.register('zero@exemplo.com', 'senha-forte-1', '127.0.0.1');
+    expect(acc.needsProfile).toBe(true);
+  });
+
+  it('token de convidado inválido ou de conta não contamina o registro', async () => {
+    const { store, auth } = await makeAuth();
+    const outra = await auth.register('fonte@exemplo.com', 'senha-forte-1', '127.0.0.1');
+    auth.completeProfile(outra.token, 'Fonte', '⚔️');
+
+    // Bearer de uma CONTA (não convidado) não vira promoção
+    const acc = await auth.register('alvo@exemplo.com', 'senha-forte-1', '127.0.0.1', outra.token);
+    expect(acc.needsProfile).toBe(true); // nada herdado
+    expect(store.userBySession(outra.token)?.name).toBe('Fonte'); // fonte intacta
+
+    // token aleatório é simplesmente ignorado
+    const acc2 = await auth.register('alvo2@exemplo.com', 'senha-forte-1', '127.0.0.1', 'token-falso');
+    expect(acc2.needsProfile).toBe(true);
   });
 });
 

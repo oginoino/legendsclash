@@ -1208,15 +1208,6 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .link-btn:hover { color: var(--gold-2); }
 
-.chat-locked {
-  margin: 0;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  color: var(--dim);
-  font-size: 13px;
-  text-align: center;
-}
-
 /* ── Acessibilidade: sem animação decorativa contínua ─────────── */
 @media (prefers-reduced-motion: reduce) {
   .card.playable .card-shine::after,

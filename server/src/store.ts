@@ -374,10 +374,16 @@ export class Store {
     this.dropSession(Store.hashToken(rawToken));
   }
 
+  /** Remove a sessão dos índices em memória (sem efeitos colaterais). */
+  private removeSessionRecord(tokenHash: string): boolean {
+    if (!this.sessions.delete(tokenHash)) return false;
+    this.db.sessions = this.db.sessions.filter((s) => s.tokenHash !== tokenHash);
+    return true;
+  }
+
   private dropSession(tokenHash: string): void {
     const session = this.sessions.get(tokenHash);
-    if (!this.sessions.delete(tokenHash)) return;
-    this.db.sessions = this.db.sessions.filter((s) => s.tokenHash !== tokenHash);
+    if (!this.removeSessionRecord(tokenHash)) return;
     const user = session && this.byId.get(session.playerId);
     if (user?.guest) {
       // convidado sem sessão é inalcançável: libera a memória
@@ -459,6 +465,34 @@ export class Store {
     return u;
   }
 
+  /**
+   * Promoção: a conta recém-criada herda a identidade e o progresso da
+   * sessão de convidado (nome, avatar, MMR, V/D, histórico, silenciados) —
+   * agora persistidos. A sessão do convidado é revogada; o registro dele só
+   * fica em memória até expirar, caso uma partida ainda o referencie.
+   */
+  adoptGuestProgress(targetId: string, guestToken: string): boolean {
+    const guest = this.userBySession(guestToken);
+    if (!guest?.guest) return false;
+    const target = this.byId.get(targetId);
+    if (!target || target.guest || target.id === guest.id) return false;
+
+    target.name = guest.name;
+    target.avatar = guest.avatar;
+    target.mmr = guest.mmr;
+    target.wins = guest.wins;
+    target.losses = guest.losses;
+    target.muted = [...guest.muted];
+    target.history = [...guest.history];
+    this.persistence.saveUser(target);
+    // partidas da sessão entram no histórico persistido, em ordem cronológica
+    for (let i = target.history.length - 1; i >= 0; i--) {
+      this.persistence.saveMatch(target.id, target.history[i]);
+    }
+    this.removeSessionRecord(Store.hashToken(guestToken));
+    return true;
+  }
+
   userById(id: string): UserRecord | undefined {
     return this.byId.get(id);
   }
@@ -468,10 +502,10 @@ export class Store {
     if (!u) return;
     u.mmr = newMmr;
     if (won) u.wins++; else u.losses++;
-    // histórico é um benefício de conta: convidado só evolui MMR na sessão
-    if (u.guest) return;
     u.history.unshift(entry);
     u.history = u.history.slice(0, 50);
+    // convidado acumula só em memória: vira conta (promoção) ou se perde
+    if (u.guest) return;
     this.persistence.saveUser(u);
     this.persistence.saveMatch(userId, entry);
   }

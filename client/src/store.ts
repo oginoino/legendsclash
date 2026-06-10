@@ -240,7 +240,10 @@ export async function registerAccount(
   email: string,
   password: string,
 ): Promise<{ needsProfile: boolean }> {
-  return adoptSession(await postJson('/api/auth/register', { email, password }));
+  // a sessão de convidado vai junto: a conta nova herda o progresso (promoção)
+  return adoptSession(
+    await postJson('/api/auth/register', { email, password }, state.token ?? undefined),
+  );
 }
 
 export async function loginAccount(

@@ -8,12 +8,14 @@ import type { Store } from './store.js';
  * Autenticação com sessões próprias do servidor.
  *
  * Jogar não exige cadastro: o convidado escolhe nome/avatar e recebe uma
- * sessão efêmera. Conta (e-mail + senha, Supabase Auth) destrava chat,
- * histórico e ranking. O servidor media tudo (o cliente nunca fala com o
- * Supabase) e nenhum fluxo envia e-mail: o cadastro já nasce confirmado.
+ * sessão efêmera. Conta (e-mail + senha, Supabase Auth) guarda o progresso
+ * e coloca o jogador no ranking. O servidor media tudo (o cliente nunca
+ * fala com o Supabase) e nenhum fluxo envia e-mail: o cadastro já nasce
+ * confirmado.
  *
  *   POST /api/auth/guest    { name, avatar }    → sessão de convidado
- *   POST /api/auth/register { email, password } → cria a conta e loga
+ *   POST /api/auth/register { email, password } → cria a conta e loga;
+ *     com Bearer de convidado, a conta herda o progresso da sessão (promoção)
  *   POST /api/auth/login    { email, password } → sessão de 30 dias
  *   POST /api/auth/profile  Bearer + {name, avatar} → onboarding do 1º acesso
  *   POST /api/auth/logout   Bearer              → revoga a sessão
@@ -161,29 +163,41 @@ export class AuthService {
     return { token, profile: this.store.profileOf(user), needsProfile: false };
   }
 
-  async register(emailRaw: string, passwordRaw: string, ip: string): Promise<SessionResult> {
+  /**
+   * Cria a conta. Se vier a sessão de convidado da mesma pessoa
+   * (`guestToken`), a conta nova herda o progresso da sessão — promoção.
+   */
+  async register(
+    emailRaw: string,
+    passwordRaw: string,
+    ip: string,
+    guestToken?: string,
+  ): Promise<SessionResult> {
     const { email, password } = this.checkCredentials(emailRaw, passwordRaw, ip);
     if (password.length < MIN_PASSWORD) {
       throw new AuthError(400, `A senha precisa de pelo menos ${MIN_PASSWORD} caracteres.`);
     }
     const { authUserId } = await this.provider.register(email, password);
-    return this.sessionFor(email, authUserId);
+    return this.sessionFor(email, authUserId, guestToken);
   }
 
   async login(emailRaw: string, passwordRaw: string, ip: string): Promise<SessionResult> {
     const { email, password } = this.checkCredentials(emailRaw, passwordRaw, ip);
     const { authUserId } = await this.provider.login(email, password);
+    // login em conta existente não herda nada: o progresso dela prevalece
     return this.sessionFor(email, authUserId);
   }
 
   /** Conta autenticada → jogador (vinculando contas legadas) → sessão. */
-  private sessionFor(email: string, authUserId: string | null): SessionResult {
+  private sessionFor(email: string, authUserId: string | null, guestToken?: string): SessionResult {
     const { user, isNew } = this.store.findOrCreatePlayerByAuth(email, authUserId);
+    // só uma conta recém-nascida herda do convidado (nunca sobrescreve progresso real)
+    if (isNew && guestToken) this.store.adoptGuestProgress(user.id, guestToken);
     const token = this.store.createSession(user.id);
     return {
       token,
       profile: this.store.profileOf(user),
-      needsProfile: isNew || !user.name,
+      needsProfile: !user.name, // promoção herda o nome → onboarding dispensado
     };
   }
 
@@ -265,6 +279,11 @@ function bearerToken(req: IncomingMessage): string {
   return m[1];
 }
 
+/** Bearer opcional — o register o usa para promover a sessão de convidado. */
+function optionalBearerToken(req: IncomingMessage): string | undefined {
+  return /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+}
+
 function clientIp(req: IncomingMessage): string {
   // atrás do Caddy o IP real vem no x-forwarded-for
   const fwd = req.headers['x-forwarded-for'];
@@ -294,6 +313,7 @@ export async function handleAuthRoute(
           String(body.email ?? ''),
           String(body.password ?? ''),
           clientIp(req),
+          optionalBearerToken(req), // sessão de convidado → promoção
         );
         json(res, 200, result);
         return true;

@@ -74,7 +74,7 @@ test.describe('entrada: convidado e conta', () => {
     await home.context().close();
   });
 
-  test('convidado vira conta sem sair do jogo: nome e avatar pré-preenchidos', async ({ browser }) => {
+  test('convidado vira conta sem sair do jogo e herda a identidade da sessão', async ({ browser }) => {
     const page = await guestAs(browser, 'Promovida', '🔮');
     await page.click('.profile-chip button:has-text("Criar conta")');
 
@@ -84,14 +84,14 @@ test.describe('entrada: convidado e conta', () => {
     await expect(page.locator('.profile-chip')).toContainText('Promovida');
 
     await page.click('.profile-chip button:has-text("Criar conta")');
+    await expect(page.locator('.login-step-info')).toContainText('o progresso desta sessão vai junto');
     await page.fill('input[type=email]', uniqueEmail('promovida'));
     await page.fill('input[type=password]', E2E_PASSWORD);
     await page.click('button:has-text("Criar conta")');
 
-    // onboarding reaproveita a identidade do convidado
-    await expect(page.locator('input[name=name]')).toHaveValue('Promovida');
-    await page.click('button:has-text("Começar a jogar")');
+    // promoção herda nome e avatar: nada de onboarding, direto à home
     await expect(page.locator('.home-main')).toBeVisible();
+    await expect(page.locator('.profile-chip')).toContainText('Promovida');
     await expect(page.locator('.profile-chip .guest-badge')).toHaveCount(0); // agora é conta
     await page.context().close();
   });
@@ -140,7 +140,7 @@ test.describe('lobby: sala privada e convite por link', () => {
     await amiga.context().close();
   });
 
-  test('convidado entra pelo link sem cadastro — e o chat fica só leitura', async ({ browser }) => {
+  test('convidado entra pelo link sem cadastro e conversa no chat da sala', async ({ browser }) => {
     const host = await loginAs(browser, 'Xavier', '🐺');
     await host.click('button:has-text("Criar sala privada")');
     const code = (await host.locator('.room-code').textContent())!.trim();
@@ -154,9 +154,10 @@ test.describe('lobby: sala privada e convite por link', () => {
     await expect(visitor.locator('.member-list')).toContainText('Xavier');
     await expect(host.locator('.member-list')).toContainText('Curiosa');
 
-    // convidado lê o chat, mas o envio pede conta
-    await expect(visitor.locator('.chat-locked')).toBeVisible();
-    await expect(visitor.locator('.chat-input')).toHaveCount(0);
+    // o chat da sala é efêmero — convidado participa de igual para igual
+    await visitor.fill('.chat-input input', 'cheguei!');
+    await visitor.click('.chat-input button');
+    await expect(host.locator('.chat-msg .chat-text').last()).toContainText('cheguei');
     await host.fill('.chat-input input', 'boas-vindas!');
     await host.click('.chat-input button');
     await expect(visitor.locator('.chat-msg .chat-text').last()).toContainText('boas-vindas');

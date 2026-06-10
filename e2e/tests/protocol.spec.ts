@@ -173,7 +173,7 @@ test('autenticação: senha errada é rejeitada e token revogado derruba o WS', 
   c.close();
 });
 
-test('convidado: joga sem cadastro, mas chat e histórico exigem conta', async () => {
+test('convidado: joga e conversa sem cadastro; criar conta herda o progresso da sessão', async () => {
   test.setTimeout(30_000);
   const reg = await post('/api/auth/guest', { name: 'Visitante', avatar: '🐺' });
   expect(reg.ok).toBe(true);
@@ -196,23 +196,56 @@ test('convidado: joga sem cadastro, mas chat e histórico exigem conta', async (
     (m) => m.t === 'room:state' && m.room?.members.length === 2,
   );
 
-  // enviar chat é benefício de conta…
-  cg.send({ t: 'chat:send', text: 'oi!' });
-  const err = await cg.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
-  expect(err.message).toContain('Crie uma conta');
-
-  // …e o convidado continua lendo o que a conta envia
-  ch.send({ t: 'chat:send', text: 'bem-vinda!' });
-  const chat = await cg.waitFor<{ t: string; message: { text: string } }>(
+  // chat de sala/partida é efêmero: convidado conversa, com o mesmo filtro
+  cg.send({ t: 'chat:send', text: 'oi, seu idiota' });
+  const chat = await ch.waitFor<{ t: string; message: { text: string } }>(
     (m) => m.t === 'chat:message',
   );
-  expect(chat.message.text).toBe('bem-vinda!');
+  expect(chat.message.text).not.toContain('idiota');
+  expect(chat.message.text).toContain('*');
 
-  // histórico de convidado é sempre vazio (nada é guardado)
+  // partida real: a anfitriã desiste e o convidado vence
+  ch.send({ t: 'room:start' });
+  await cg.waitFor((m: { t: string }) => m.t === 'game:state');
+  ch.send({ t: 'game:surrender' });
+  const over = await cg.waitFor<{ t: string; result: { winnerId: string; mmr: Record<string, { after: number }> } }>(
+    (m) => m.t === 'game:over',
+  );
+  expect(over.result.winnerId).toBe(guest.profile.id);
+  expect(over.result.mmr[guest.profile.id].after).toBe(1016);
+
+  // o progresso vive na sessão: histórico em memória, mas fora do ranking
   cg.send({ t: 'history:get' });
-  const hist = await cg.waitFor<{ t: string; entries: unknown[] }>((m) => m.t === 'history');
-  expect(hist.entries).toHaveLength(0);
+  const hist = await cg.waitFor<{ t: string; entries: Array<{ won: boolean }> }>(
+    (m) => m.t === 'history' && m.entries.length > 0,
+  );
+  expect(hist.entries[0].won).toBe(true);
+  cg.send({ t: 'leaderboard:get' });
+  const lb = await cg.waitFor<{ t: string; entries: Array<{ id: string }> }>(
+    (m) => m.t === 'leaderboard',
+  );
+  expect(lb.entries.map((e) => e.id)).not.toContain(guest.profile.id);
 
+  // promoção: registro com o Bearer do convidado herda tudo — sem onboarding
+  const promo = await post(
+    '/api/auth/register',
+    { email: uniqueEmail('promovido'), password: PASSWORD },
+    guest.token,
+  );
+  expect(promo.ok).toBe(true);
+  const promoted = await promo.json();
+  expect(promoted.needsProfile).toBe(false);
+  expect(promoted.profile.guest).toBe(false);
+  expect(promoted.profile.name).toBe('Visitante');
+  expect(promoted.profile.mmr).toBe(1016);
+  expect(promoted.profile.wins).toBe(1);
+
+  // a sessão de convidado morreu junto com a promoção
+  const dead = await connect(guest.token);
+  const err = await dead.waitFor<{ t: string; message: string }>((m) => m.t === 'error');
+  expect(err.message).toBe('Sessão expirada. Entre novamente.');
+
+  dead.close();
   cg.close();
   ch.close();
 });
