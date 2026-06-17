@@ -78,6 +78,10 @@ const SPELL_DMG: Record<string, number> = { s_faisca: 2, s_bola_de_fogo: 5 };
 
 /** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
+/** Inspeção no hover só com mouse real — no toque o mouseover sintético do
+ *  tap deixaria o overlay preso na tela (não há mouseleave correspondente). */
+const CAN_HOVER = typeof window !== 'undefined'
+  && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
 
@@ -115,12 +119,17 @@ export function GameView() {
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [reveals, setReveals] = useState<Reveal[]>([]);
   const [banner, setBanner] = useState<{ text: string; at: number } | null>(null);
+  // investida da atacante: empurrão na direção do inimigo no momento do envio
+  const [attackFx, setAttackFx] = useState<{ iid: string; at: number } | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [sound, setSound] = useState(soundOn());
   const [showRules, setShowRules] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
   // carta sem alvo sendo "levantada" pelo gesto de arrasto (solta ≥48px acima = joga)
   const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
+  // inspeção no hover (desktop): carta ampliada flutuando acima da mão —
+  // a mão é um scroll container, então escalar a carta no lugar seria cortado
+  const [inspect, setInspect] = useState<{ iid: string; defId: string; x: number; y: number } | null>(null);
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
@@ -389,6 +398,7 @@ export function GameView() {
       }
       send({ t: 'game:attack', attackerIid: attacker.iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
     }
+    setAttackFx({ iid: attacker.iid, at: Date.now() });
     sfx.attack();
     clearAim();
   }
@@ -747,6 +757,7 @@ export function GameView() {
               mine
               selected={selection?.kind === 'attacker' && selection.iid === c.iid}
               buffTarget={targetingFriendly}
+              lunging={attackFx?.iid === c.iid && now - attackFx.at < 500}
               warn={cantAttackWarn?.iid === c.iid && now - cantAttackWarn.at < 600}
               posIndex={myPos.get(c.iid)}
               retaliation={preview?.attackerIid === c.iid ? preview : null}
@@ -786,8 +797,13 @@ export function GameView() {
                 lifting={lifting}
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
-                onMouseEnter={() => myTurn && affordable && setHoverCost(CARDS[c.defId].cost)}
-                onMouseLeave={() => setHoverCost(0)}
+                onMouseEnter={(e) => {
+                  if (myTurn && affordable) setHoverCost(CARDS[c.defId].cost);
+                  if (!CAN_HOVER) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setInspect({ iid: c.iid, defId: c.defId, x: r.left + r.width / 2, y: r.top - 10 });
+                }}
+                onMouseLeave={() => { setHoverCost(0); setInspect(null); }}
                 style={lifting ? {
                   // a carta segue o dedo na vertical; soltar bem acima joga
                   transform: `translateY(${lift!.dy}px) scale(1.12)`,
@@ -883,6 +899,18 @@ export function GameView() {
           </div>
         ))}
       </div>
+
+      {inspect && !selection && !lift && game.status === 'active' && game.hand.some((c) => c.iid === inspect.iid) && (
+        <div
+          className="card-inspect"
+          style={{
+            left: Math.min(Math.max(inspect.x, 130), window.innerWidth - 130),
+            top: inspect.y,
+          }}
+        >
+          <CardView defId={inspect.defId} />
+        </div>
+      )}
 
       {banner && <div className="turn-banner" key={banner.at}>{banner.text}</div>}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
@@ -990,7 +1018,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, style }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, style }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
@@ -1000,6 +1028,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
   warn?: boolean;
   /** Número da posição quando há cópias iguais na mesa (senão indefinido). */
   posIndex?: number;
+  lunging?: boolean;
   preview?: CombatPreview | null;
   previewDim?: boolean;
   retaliation?: CombatPreview | null;
@@ -1013,6 +1042,10 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
   const hit = fx.some((f) => f.kind === 'dmg');
   const healed = fx.some((f) => f.kind === 'heal');
   const isTaunt = def.keywords?.includes('taunt');
+  // convenção de card game: número verde = acima do impresso; vermelho = ferida
+  const atkBuffed = c.attack + bonus > (def.attack ?? 0);
+  const hpHurt = c.health < c.baseHealth;
+  const hpBuffed = !hpHurt && c.baseHealth > (def.health ?? 0);
   const classes = [
     'creature',
     mine ? 'mine' : '',
@@ -1021,6 +1054,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     buffTarget && mine ? 'buff-target' : '',
     blocked ? 'blocked' : '',
     warn ? 'cant-attack' : '',
+    lunging ? 'lunging' : '',
     isTaunt ? 'taunt' : '',
     c.health < c.baseHealth ? 'wounded' : '',
     hit ? 'hit struck' : '',
@@ -1053,10 +1087,8 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       )}
       <CardArt defId={c.defId} className="creature-art" />
       <span className="creature-name">{def.name}</span>
-      <span className="creature-stats">
-        <b className="atk">{c.attack + bonus}</b>
-        <b className="hp">{c.health}</b>
-      </span>
+      <span className={`stat-gem atk ${atkBuffed ? 'buffed' : ''}`}>{c.attack + bonus}</span>
+      <span className={`stat-gem hp ${hpHurt ? 'hurt' : hpBuffed ? 'buffed' : ''}`}>{c.health}</span>
       {mine && c.canAttack && <span className="ready-dot" />}
       {preview && <PreviewChip p={preview} dim={previewDim} />}
       {retaliation && <PreviewChip p={retaliation} self />}

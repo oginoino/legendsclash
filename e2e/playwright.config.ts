@@ -33,9 +33,9 @@ export default defineConfig({
     // reaproveitado — garanta que ele também rode com LC_LOCAL=1.
     reuseExistingServer: true,
     timeout: 30_000,
-    // Modo local forçado: snapshot JSON + códigos OTP em memória
-    // (/api/auth/dev-code). Os testes nunca tocam o Supabase de produção,
-    // mesmo com o .env da raiz preenchido.
+    // Modo local forçado: snapshot JSON + contas (e-mail+senha) em memória.
+    // Os testes nunca tocam o Supabase de produção, mesmo com o .env da
+    // raiz preenchido.
     env: { ...(process.env as Record<string, string>), LC_LOCAL: '1' },
   },
 });
