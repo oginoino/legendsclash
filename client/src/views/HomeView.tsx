@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { logout, openAccountPrompt, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
+import { CodexView } from './CodexView';
 
 /** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
 function leagueProgress(mmr: number): { label: string; pct: number } | null {
@@ -15,6 +16,7 @@ export function HomeView() {
   const s = useAppState();
   const [joinCode, setJoinCode] = useState('');
   const [showRules, setShowRules] = useState(false);
+  const [showCodex, setShowCodex] = useState(false);
   const p = s.profile;
 
   if (!p) return <div className="centered">Carregando perfil…</div>;
@@ -68,9 +70,14 @@ export function HomeView() {
                 </div>
               )}
               {!progress && <p className="hint">🥇 Você está na liga máxima — defenda o topo!</p>}
-              <button className="btn ghost" onClick={() => setShowRules(true)}>
-                📖 Como jogar
-              </button>
+              <div className="home-secondary">
+                <button className="btn ghost" onClick={() => setShowRules(true)}>
+                  📖 Como jogar
+                </button>
+                <button className="btn ghost" onClick={() => setShowCodex(true)}>
+                  📜 Arquivo de Aurélia
+                </button>
+              </div>
               <div className="divider">ou jogue com amigos</div>
               <button className="btn" onClick={() => send({ t: 'room:create' })}>
                 Criar sala privada
@@ -150,6 +157,7 @@ export function HomeView() {
         </section>
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
     </div>
   );
 }
