@@ -362,6 +362,60 @@ describe('invariante: criaturas espectadoras nunca sofrem dano', () => {
   });
 });
 
+describe('cartas iguais na mesa: o log cita a posição exata', () => {
+  const creature = (iid: string, defId: string, attack: number, health: number) => ({
+    iid, defId, attack, health, baseHealth: health, canAttack: true, attacked: false,
+  });
+
+  it('magia em uma de duas cópias idênticas nomeia a posição atingida', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'sp', defId: 's_faisca' }];
+    m.seats[0].energy = 5;
+    m.seats[1].board = [
+      creature('b1', 'c_lobo', 3, 4),
+      creature('b2', 'c_lobo', 3, 4), // segunda cópia — alvo
+    ];
+    m.playCard('p0', 'sp', { seat: 1, iid: 'b2' });
+    const log = m.viewFor('p0').log.map((l) => l.text);
+    expect(log).toContain('Faísca causou 2 de dano em Lobo das Sombras (posição 2)');
+    // a outra cópia segue intacta e sem dano
+    expect(m.seats[1].board.find((c) => c.iid === 'b1')!.health).toBe(4);
+    expect(m.seats[1].board.find((c) => c.iid === 'b2')!.health).toBe(2);
+  });
+
+  it('cópia única não recebe sufixo de posição (relato continua limpo)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'sp', defId: 's_faisca' }];
+    m.seats[0].energy = 5;
+    m.seats[1].board = [creature('b1', 'c_lobo', 3, 4)];
+    m.playCard('p0', 'sp', { seat: 1, iid: 'b1' });
+    const log = m.viewFor('p0').log.map((l) => l.text);
+    expect(log).toContain('Faísca causou 2 de dano em Lobo das Sombras');
+    expect(log.some((t) => t.includes('posição'))).toBe(false);
+  });
+
+  it('ataque e destruição entre cópias idênticas citam as posições certas', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [
+      creature('a1', 'c_lobo', 3, 2),
+      creature('a2', 'c_lobo', 3, 2), // atacante: 2ª cópia
+    ];
+    m.seats[1].board = [
+      creature('e1', 'c_recruta', 1, 2),
+      creature('e2', 'c_recruta', 1, 2), // defensora: 2ª cópia, morre para 3 de ataque
+    ];
+    m.attack('p0', 'a2', { seat: 1, iid: 'e2' });
+    const log = m.viewFor('p0').log.map((l) => l.text);
+    expect(log).toContain('Lobo das Sombras (posição 2) atacou Recruta da Vanguarda (posição 2)');
+    expect(log).toContain('Recruta da Vanguarda (posição 2) foi destruída');
+    // a primeira recruta não foi tocada
+    expect(m.seats[1].board.find((c) => c.iid === 'e1')!.health).toBe(2);
+  });
+});
+
 describe('registro público de jogadas (revelação no cliente)', () => {
   it('expõe as cartas jogadas na visão dos dois lados', () => {
     const { m } = makeMatch();

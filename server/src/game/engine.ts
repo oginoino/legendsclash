@@ -214,6 +214,20 @@ export class Match {
     return this.seats.findIndex((s) => s.player.id === playerId);
   }
 
+  /**
+   * Rótulo de uma criatura para o log de eventos. Quando há cópias idênticas
+   * da mesma carta na mesa do dono, anexa a posição (1-based, da esquerda para
+   * a direita, na mesma ordem em que o cliente as desenha) — assim duas cartas
+   * iguais nunca se confundem no relato de quem sofreu o efeito/dano.
+   */
+  private creatureLabel(seat: Seat, creature: Creature): string {
+    const name = CARDS[creature.defId].name;
+    const copies = seat.board.filter((c) => c.defId === creature.defId).length;
+    if (copies < 2) return name;
+    const pos = seat.board.indexOf(creature) + 1;
+    return `${name} (posição ${pos})`;
+  }
+
   playCard(playerId: string, iid: string, target?: Target): void {
     const { seat, idx } = this.requireTurn(playerId);
     const handIdx = seat.hand.findIndex((c) => c.iid === iid);
@@ -290,7 +304,7 @@ export class Match {
           const creature = enemy.board.find((c) => c.iid === target.iid);
           if (!creature) throw new GameError('Alvo inválido.');
           creature.health -= dmg;
-          this.addLog(`${def.name} causou ${dmg} de dano em ${CARDS[creature.defId].name}`);
+          this.addLog(`${def.name} causou ${dmg} de dano em ${this.creatureLabel(enemy, creature)}`);
           this.cleanupBoard(enemy);
         } else {
           this.damagePlayer(enemy, dmg);
@@ -311,7 +325,7 @@ export class Match {
         creature.attack += 2;
         creature.health += 2;
         creature.baseHealth += 2;
-        this.addLog(`${CARDS[creature.defId].name} recebeu +2/+2`);
+        this.addLog(`${this.creatureLabel(caster, creature)} recebeu +2/+2`);
         break;
       }
       case 't_reforcos':
@@ -325,11 +339,13 @@ export class Match {
         break;
       case 't_recuo': {
         const { seat, creature } = enemyCreature();
+        // rótulo calculado antes de remover: ainda inclui as cópias idênticas
+        const label = this.creatureLabel(seat, creature);
         seat.board = seat.board.filter((c) => c.iid !== creature.iid);
         if (seat.hand.length < MAX_HAND) {
           seat.hand.push({ iid: creature.iid, defId: creature.defId });
         }
-        this.addLog(`${CARDS[creature.defId].name} foi devolvida à mão de ${seat.player.name}`);
+        this.addLog(`${label} foi devolvida à mão de ${seat.player.name}`);
         break;
       }
       default:
@@ -361,20 +377,22 @@ export class Match {
     }
 
     const power = attacker.attack + seat.attackBonus;
-    const attackerName = CARDS[attacker.defId].name;
+    const attackerName = this.creatureLabel(seat, attacker);
 
     if (target.iid) {
       const defender = enemy.board.find((c) => c.iid === target.iid);
       if (!defender) throw new GameError('Alvo inválido.');
+      // rótulos fixados antes da limpeza, quando as posições ainda valem
+      const defenderName = this.creatureLabel(enemy, defender);
       const wasLast = enemy.board.length === 1;
       const excess = power - defender.health;
       // Combate simultâneo: cada criatura causa seu ataque na outra.
       const retaliation = defender.attack + enemy.attackBonus;
       defender.health -= power;
       attacker.health -= retaliation;
-      this.addLog(`${attackerName} atacou ${CARDS[defender.defId].name}`);
+      this.addLog(`${attackerName} atacou ${defenderName}`);
       if (retaliation > 0) {
-        this.addLog(`${CARDS[defender.defId].name} revidou: ${attackerName} sofreu ${retaliation} de dano`);
+        this.addLog(`${defenderName} revidou: ${attackerName} sofreu ${retaliation} de dano`);
       }
       this.cleanupBoard(seat);
       this.cleanupBoard(enemy);
@@ -454,7 +472,8 @@ export class Match {
 
   private cleanupBoard(seat: Seat): void {
     const dead = seat.board.filter((c) => c.health <= 0);
-    for (const c of dead) this.addLog(`${CARDS[c.defId].name} foi destruída`);
+    // rótulo calculado com o tabuleiro ainda intacto, para citar a posição certa
+    for (const c of dead) this.addLog(`${this.creatureLabel(seat, c)} foi destruída`);
     seat.board = seat.board.filter((c) => c.health > 0);
   }
 
