@@ -57,7 +57,6 @@ export function CardView({ defId, playable, selected, lifting, onClick, style, a
       onPointerDown={onPointerDown}
     >
       <span className="card-cost">{def.cost}</span>
-      <CardArt defId={defId} className="card-art" />
       <span className="card-name">{def.name}</span>
       <span className="card-ornament" title={`Raridade: ${RARITY_LABEL[def.rarity]}`}>
         <i className="rarity-gem" />

@@ -361,11 +361,24 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ── Placas dos heróis ────────────────────────────────────────── */
 .hero-plate {
+  position: relative;
   display: flex; align-items: center; gap: 16px;
   background: linear-gradient(90deg, #1e2a45f2, #18202fb3 65%, #18202f66);
   border: 1px solid #31426488;
   border-radius: 16px; padding: 8px 16px;
   box-shadow: 0 6px 18px #00000055, inset 0 1px 0 #ffffff0e;
+}
+/* anel da cor de destaque do comandante (some durante a mira p/ não competir) */
+.portrait::before {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  border: 2px solid var(--accent, transparent);
+  pointer-events: none;
+}
+.portrait.targetable::before, .portrait.lethal::before { opacity: 0; }
+.commander-sub {
+  font-size: 11px; font-weight: 700; line-height: 1;
+  letter-spacing: .3px; color: var(--accent, var(--dim));
+  text-shadow: 0 1px 2px #0008;
 }
 .portrait {
   position: relative;
@@ -392,9 +405,16 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .portrait.targetable {
   border-color: var(--red);
   cursor: crosshair;
-  animation: target-pulse 0.9s infinite;
+  animation: target-pulse .95s ease-in-out infinite;
 }
-@keyframes target-pulse { 50% { box-shadow: 0 0 22px #f85149aa; } }
+/* anel "radar" que pulsa em volta do comandante mirável */
+.portrait.targetable::after {
+  content: ''; position: absolute; inset: -4px;
+  border: 2px solid #f85149; border-radius: 50%;
+  pointer-events: none;
+  animation: target-ping 1.15s ease-out infinite;
+}
+@keyframes target-pulse { 0%, 100% { box-shadow: 0 0 8px #f8514955; } 50% { box-shadow: 0 0 26px #f85149bb; } }
 .portrait.hit { animation: shake .4s; }
 @keyframes shake {
   20% { transform: translateX(-5px); }
@@ -626,6 +646,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .hand .card:first-child { margin-left: auto; }
 .hand .card:last-child { margin-right: auto; }
 .card {
+  /* relevo de moldura física reutilizado por todos os estados: brilho no topo,
+     borda interna clara e sombra interna inferior (bisel de carta de verdade) */
+  --relief: inset 0 1px 0 #ffffff33, inset 0 0 0 1px #ffffff12, inset 0 -13px 22px #00000055;
   position: relative;
   display: flex; flex-direction: column; gap: 2px;
   width: 132px; min-height: 176px;
@@ -665,10 +688,17 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   transform: translateY(-12px) scale(1.04) !important;
   z-index: 11;
 }
+/* carta escolhida: halo dourado pulsante (vem depois → vence a aura azul) */
+.card.selected::before {
+  content: ''; position: absolute; inset: -1px; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 22px 2px #e3b341aa;
+  animation: aura-gold 1.5s ease-in-out infinite;
+}
+.card.selected::after { animation-duration: 2.4s; }
 .card.lifting {
   transition: none; /* segue o dedo sem atraso */
   border-color: var(--gold);
-  box-shadow: 0 18px 40px #000b;
+  box-shadow: var(--relief), 0 22px 46px #000c, 0 0 22px #e3b34188;
   z-index: 13;
 }
 .card:not(.playable) { opacity: .72; filter: saturate(.6); }
@@ -796,11 +826,17 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .aim-arrow {
   position: fixed; inset: 0;
   pointer-events: none; z-index: 40;
-  filter: drop-shadow(0 0 6px #e3b34177);
 }
-/* tracejado em marcha: a mira parece "viva" enquanto procura o alvo */
-.aim-arrow path { animation: arrow-march .5s linear infinite; }
-@keyframes arrow-march { to { stroke-dashoffset: -14; } }
+/* linha viva com tracejado correndo rumo ao alvo (Hearthstone/Clash Royale) */
+.aim-flow { animation: aim-dash .5s linear infinite; }
+@keyframes aim-dash { to { stroke-dashoffset: -40; } }
+/* retícula de "travado no alvo": anel que respira + ping que expande */
+.aim-reticle .reticle-ring, .aim-reticle .reticle-ping { transform-box: fill-box; transform-origin: center; }
+.aim-reticle .reticle-ring { animation: reticle-breathe 1.1s ease-in-out infinite; }
+.aim-reticle .reticle-ping { animation: reticle-ping 1.1s ease-out infinite; }
+.aim-reticle.lethal .reticle-ping { animation-duration: .62s; }
+@keyframes reticle-breathe { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.06); } }
+@keyframes reticle-ping { 0% { transform: scale(.55); opacity: .85; } 100% { transform: scale(1.5); opacity: 0; } }
 .target-hint {
   position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px;
@@ -912,6 +948,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   animation: target-pulse .5s infinite;
   box-shadow: 0 0 26px #f85149cc;
 }
+.portrait.lethal::after { border-color: #ff6b62; animation-duration: .65s; }
 
 .crystal.spend {
   background: linear-gradient(180deg, #ffd970, #c98f1b);
@@ -1353,6 +1390,125 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 @media (max-width: 480px) {
   .board-table td:nth-child(5) { display: none; } /* V/D sai; MMR fica */
   .board-table td:nth-child(2) { max-width: 38vw; }
+}
+
+/* ── Provocações na arena (roda + balões sobre o comandante) ───── */
+.taunt-dock { position: relative; display: flex; align-items: center; }
+.taunt-toggle { font-size: 18px; line-height: 1; padding: 6px 11px; }
+.taunt-toggle.active { border-color: var(--gold); color: var(--gold); }
+.taunt-wheel {
+  position: absolute; bottom: calc(100% + 8px); right: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  width: max-content; max-width: min(280px, 86vw);
+  background: linear-gradient(180deg, #1d2840, #161f30);
+  border: 1px solid var(--line); border-radius: 12px; padding: 8px;
+  box-shadow: 0 14px 36px #000c; z-index: 47;
+  animation: pop-in .16s cubic-bezier(.2, 1.4, .45, 1);
+}
+.taunt-pick {
+  background: var(--bg-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer;
+  white-space: nowrap; text-align: left;
+  transition: transform .1s, border-color .1s, background .1s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .taunt-pick:hover { transform: translateY(-1px); border-color: var(--gold-soft); background: var(--panel); }
+}
+
+.taunt-bubble {
+  position: absolute; left: 10px; max-width: 220px;
+  background: linear-gradient(180deg, #ffffff, #e6edfb); color: #15233f;
+  border-radius: 14px; padding: 7px 12px; font-size: 14px; font-weight: 700;
+  box-shadow: 0 10px 26px #000b; z-index: 32; pointer-events: none;
+  animation: bubble-pop .3s cubic-bezier(.2, 1.5, .4, 1), bubble-fade .5s ease 3.9s forwards;
+}
+.taunt-bubble.up { bottom: calc(100% - 4px); transform-origin: 24px 100%; }
+.taunt-bubble.down { top: calc(100% - 4px); transform-origin: 24px 0; }
+.taunt-bubble::after {
+  content: ''; position: absolute; left: 22px; border: 8px solid transparent;
+}
+.taunt-bubble.up::after { top: 100%; border-bottom: 0; border-top-color: #e6edfb; }
+.taunt-bubble.down::after { bottom: 100%; border-top: 0; border-bottom-color: #ffffff; }
+@keyframes bubble-pop { from { opacity: 0; transform: scale(.5) translateY(6px); } }
+@keyframes bubble-fade { to { opacity: 0; } }
+
+/* ── Modal de personalização (perfil + comandante) ─────────────── */
+.customize-modal {
+  max-width: 470px; width: calc(100% - 32px); max-height: 92dvh; overflow-y: auto;
+  text-align: left; animation: pop-in .35s cubic-bezier(.2, 1.4, .45, 1);
+}
+.customize-modal h4 {
+  margin: 16px 0 8px; font-size: 12px; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 1.2px;
+}
+.commander-preview {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; margin: 6px 0 4px;
+}
+.commander-medallion {
+  width: 62px; height: 62px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 32px;
+  background: radial-gradient(circle at 35% 30%, #2c3c5e, #16203455);
+  border: 2px solid var(--cz-accent, var(--gold));
+  box-shadow: inset 0 0 14px #0008, 0 0 18px color-mix(in srgb, var(--cz-accent, #e3b341) 60%, transparent);
+}
+.commander-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.commander-id strong { font-size: 18px; }
+.commander-title { color: var(--cz-accent, var(--gold)); font-weight: 700; font-size: 13px; }
+.cz-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--dim); margin-top: 14px; }
+.cz-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.cz-grid.commanders {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px;
+}
+.cz-chip {
+  font-size: 22px; background: var(--bg-2); border: 2px solid var(--line);
+  border-radius: 10px; padding: 6px 10px; cursor: pointer; min-width: 46px;
+  transition: transform .1s, border-color .1s, background .1s;
+}
+.cz-chip.sel { border-color: var(--cz-accent, var(--gold)); background: #ffffff12; }
+.cz-cmd {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: var(--bg-2); border: 2px solid var(--line); border-radius: 10px;
+  padding: 9px 6px; cursor: pointer; color: var(--text);
+  transition: transform .1s, border-color .1s, background .1s;
+}
+.cz-cmd.sel { border-color: var(--cz-accent, var(--gold)); background: #ffffff12; }
+.cz-cmd-portrait { font-size: 27px; line-height: 1; }
+.cz-cmd-title { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.1; }
+.cz-cmd.sel .cz-cmd-title { color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .cz-chip:hover, .cz-cmd:hover { transform: translateY(-2px); }
+}
+.cz-swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+.cz-swatch {
+  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  border: 2px solid #00000066; box-shadow: 0 2px 6px #0007;
+  transition: transform .1s;
+}
+.cz-swatch.sel { transform: scale(1.12); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #fff; }
+.cz-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
+
+/* compactação da arena (mobile): provocações e título do comandante */
+@media (max-width: 700px), (max-height: 500px) {
+  .taunt-toggle { padding: 6px 9px; font-size: 16px; }
+  .taunt-pick { padding: 7px 9px; font-size: 12px; }
+}
+@media (max-height: 500px) { .commander-sub { display: none; } }
+
+/* ── Acessibilidade: sem movimento contínuo p/ quem pediu menos animação ──
+   Os destaques continuam (borda/brilho estáticos), só param de pulsar. */
+@media (prefers-reduced-motion: reduce) {
+  .card.playable::before, .card.playable::after,
+  .card.selected::before, .card.selected::after,
+  .enemy-row.targetable .creature:not(.blocked)::before,
+  .enemy-row.targetable .creature:not(.blocked)::after,
+  .creature.buff-target::before, .creature.buff-target::after,
+  .creature.selected::before,
+  .portrait.targetable, .portrait.targetable::after, .portrait.lethal::after,
+  .aim-flow, .aim-reticle .reticle-ring, .aim-reticle .reticle-ping {
+    animation: none !important;
+  }
 }
 
 /* ── Convidado: selo e convites para criar conta ──────────────── */

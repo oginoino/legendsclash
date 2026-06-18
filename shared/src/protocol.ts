@@ -7,6 +7,7 @@ import type {
 
 export type ClientMsg =
   | { t: 'hello'; token: string }
+  | { t: 'profile:update'; name?: string; avatar?: string; commander?: string; accent?: string }
   // keepalive do cliente: detecta conexão morta e mantém NAT/proxy abertos
   | { t: 'ping' }
   | { t: 'queue:join' }

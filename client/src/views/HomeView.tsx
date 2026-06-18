@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { logout, openAccountPrompt, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
+import { ProfileModal } from '../components/ProfileModal';
 import { RulesModal } from '../components/RulesModal';
 import { CodexView } from './CodexView';
 
@@ -16,6 +17,7 @@ export function HomeView() {
   const s = useAppState();
   const [joinCode, setJoinCode] = useState('');
   const [showRules, setShowRules] = useState(false);
+  const [showCustomize, setShowCustomize] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
   const p = s.profile;
 
@@ -37,6 +39,7 @@ export function HomeView() {
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
             </div>
           </div>
+          <button className="btn ghost" onClick={() => setShowCustomize(true)}>✨ Personalizar</button>
           {p.guest && (
             <button className="btn primary" onClick={openAccountPrompt}>Criar conta</button>
           )}
@@ -157,6 +160,7 @@ export function HomeView() {
         </section>
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showCustomize && <ProfileModal onClose={() => setShowCustomize(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
     </div>
   );

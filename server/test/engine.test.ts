@@ -4,7 +4,7 @@ import { CARDS, STARTING_HP, RECONNECT_GRACE_MS } from '@legendsclash/shared';
 
 function players(n: number): MatchPlayer[] {
   return Array.from({ length: n }, (_, i) => ({
-    id: `p${i}`, name: `Jogador ${i}`, avatar: '🛡️', mmr: 1000,
+    id: `p${i}`, name: `Jogador ${i}`, avatar: '🛡️', commander: '🛡️', accent: '#e3b341', mmr: 1000,
   }));
 }
 

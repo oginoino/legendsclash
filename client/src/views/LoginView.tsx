@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
+import { AVATARS } from '@legendsclash/shared';
 import {
   closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
   registerAccount, useAppState,
 } from '../store';
-
-const AVATARS = ['🛡️', '⚔️', '🐺', '🐉', '🏹', '🔮', '🦅', '🌙'];
 
 /**
  * Porta de entrada: jogar é imediato (convidado escolhe nome e avatar).
@@ -23,7 +22,7 @@ export function LoginView() {
     needsProfile ? 'profile' : s.accountPrompt ? 'signup' : 'welcome',
   );
   const [name, setName] = useState('');
-  const [avatar, setAvatar] = useState(AVATARS[0]);
+  const [avatar, setAvatar] = useState<string>(AVATARS[0]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);

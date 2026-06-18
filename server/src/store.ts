@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { League, MatchHistoryEntry, Profile } from '@legendsclash/shared';
+import {
+  DEFAULT_ACCENT, DEFAULT_COMMANDER, isValidAccent, isValidAvatar, isValidCommander,
+} from '@legendsclash/shared';
 import { BASE_MMR, leagueOf } from './elo.js';
 
 /**
@@ -28,6 +31,9 @@ export interface UserRecord {
   /** Vazio = onboarding pendente: o jogador ainda não escolheu nome/avatar. */
   name: string;
   avatar: string;
+  /** Retrato do comandante na arena e cor de destaque (personalização). */
+  commander: string;
+  accent: string;
   /** Vínculo com auth.users do Supabase (login por senha). Null em convidados/contas legadas/modo local. */
   authUserId: string | null;
   /**
@@ -95,6 +101,8 @@ class JsonPersistence implements Persistence {
     this.db.sessions ??= [];
     for (const u of this.db.users) {
       u.authUserId ??= null;
+      u.commander ??= u.avatar; // contas anteriores: retrato = avatar do perfil
+      u.accent ??= DEFAULT_ACCENT;
       u.guest = false; // só contas persistem; convidados vivem em memória
       delete (u as { token?: string }).token;
     }
@@ -188,6 +196,8 @@ class SupabasePersistence implements Persistence {
       email: p.email,
       name: p.name,
       avatar: p.avatar,
+      commander: p.commander ?? p.avatar,
+      accent: p.accent ?? DEFAULT_ACCENT,
       authUserId: p.auth_user_id ?? null,
       guest: false,
       mmr: p.mmr,
@@ -219,6 +229,8 @@ class SupabasePersistence implements Persistence {
         email: user.email,
         name: user.name,
         avatar: user.avatar,
+        commander: user.commander,
+        accent: user.accent,
         auth_user_id: user.authUserId,
         mmr: user.mmr,
         wins: user.wins,
@@ -418,6 +430,8 @@ export class Store {
       email: normEmail,
       name: '',
       avatar: '🛡️',
+      commander: DEFAULT_COMMANDER,
+      accent: DEFAULT_ACCENT,
       authUserId,
       guest: false,
       mmr: BASE_MMR,
@@ -443,6 +457,8 @@ export class Store {
       email: '',
       name: name.trim().slice(0, 24),
       avatar: avatar || '🛡️',
+      commander: avatar || DEFAULT_COMMANDER,
+      accent: DEFAULT_ACCENT,
       authUserId: null,
       guest: true,
       mmr: BASE_MMR,
@@ -462,6 +478,28 @@ export class Store {
     u.name = name.trim().slice(0, 24);
     if (avatar) u.avatar = avatar;
     if (!u.guest) this.persistence.saveUser(u);
+    return u;
+  }
+
+  /**
+   * Personalização pós-onboarding (perfil + comandante). Cada campo é validado
+   * contra as listas de cosméticos do shared — valores fora da lista são
+   * ignorados (anti-abuso: nada de texto arbitrário no avatar/retrato alheio).
+   */
+  updateCosmetics(
+    userId: string,
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string },
+  ): UserRecord | undefined {
+    const u = this.byId.get(userId);
+    if (!u) return undefined;
+    if (patch.name !== undefined) {
+      const name = patch.name.trim().slice(0, 24);
+      if (name) u.name = name;
+    }
+    if (patch.avatar && isValidAvatar(patch.avatar)) u.avatar = patch.avatar;
+    if (patch.commander && isValidCommander(patch.commander)) u.commander = patch.commander;
+    if (patch.accent && isValidAccent(patch.accent)) u.accent = patch.accent;
+    this.persistence.saveUser(u);
     return u;
   }
 
@@ -536,6 +574,8 @@ export class Store {
       name: u.name,
       email: u.email,
       avatar: u.avatar,
+      commander: u.commander,
+      accent: u.accent,
       guest: u.guest,
       mmr: u.mmr,
       league: leagueOf(u.mmr) as League,
