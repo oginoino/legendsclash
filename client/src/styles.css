@@ -6,7 +6,9 @@
   --panel-2: #202c44;
   --line: #2d3c58;
   --text: #e9eff7;
-  --dim: #8b98ab;
+  /* rampa de texto secundário: --dim clareado p/ AA; --dim-strong p/ texto <14px */
+  --dim: #9fb0c4;
+  --dim-strong: #aebccd;
   --gold: #e3b341;
   --gold-2: #ffd970;
   --gold-soft: #e3b34155;
@@ -21,6 +23,38 @@
   --rar-rare: #5da0ff;
   --rar-epic: #c08ffc;
   --rar-legendary: #ffae34;
+  /* dimensões padronizadas das cartas — mesma medida na mão, nas escolhas
+     iniciais (mulligan) e proporção compatível na ficha da mesa */
+  --card-w: 132px;
+  --card-h: 192px;
+  --card-art-h: 50px;
+  --token-w: 110px;
+  --token-art-h: 54px;
+  /* ── Tokens de design ─────────────────────────────────────────
+     escala única de espaçamento, tipografia fluida, elevação e raio:
+     fonte da verdade p/ ritmo e sofisticação em todas as telas */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  /* tipografia fluida (escala com a viewport, sem saltos por breakpoint) */
+  --fs-overline: clamp(.68rem, .62rem + .2vw, .78rem);
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-body: clamp(.9rem, .86rem + .2vw, 1rem);
+  --fs-h3: clamp(1rem, .95rem + .3vw, 1.15rem);
+  --fs-h2: clamp(1.1rem, 1rem + .5vw, 1.4rem);
+  --fs-display: clamp(2rem, 1.4rem + 3vw, 2.75rem);
+  /* elevação coesa (4 níveis no lugar de dezenas de sombras avulsas) */
+  --elev-1: 0 2px 8px #0006;
+  --elev-2: 0 6px 18px #00000055;
+  --elev-3: 0 10px 30px #0005;
+  --elev-4: 0 18px 50px #00000077;
+  /* raios */
+  --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px; --r-pill: 99px;
+  /* respiro de container fluido */
+  --pad-container: clamp(12px, 2.5vw, 20px);
+  /* métricas fluidas da arena (respiram entre celular e desktop) */
+  --portrait: clamp(44px, 5.5vw, 68px);
+  --board-min: clamp(78px, 12vh, 112px);
+  --hand-min: clamp(158px, 26vh, 226px);
   /* grão sutil de textura para superfícies grandes (SVG inline, sem rede) */
   --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
@@ -50,15 +84,15 @@ body {
   overscroll-behavior-y: none; /* sem pull-to-refresh no meio da partida */
 }
 
-h1, h2, h3 { margin: 0 0 12px; }
+h1, h2, h3 { margin: 0 0 12px; font-family: var(--font-display); letter-spacing: .4px; }
 .dim { color: var(--dim); font-size: 13px; }
 .hint { color: var(--dim); font-size: 13px; margin: 8px 0; }
 .centered { display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; }
 
 .logo {
   font-family: var(--font-display);
-  font-size: 44px;
-  letter-spacing: 3px;
+  font-size: var(--fs-display);
+  letter-spacing: clamp(2px, .4vw, 3px);
   font-weight: 900;
   background: linear-gradient(180deg, #fff 20%, #b9c8de 100%);
   -webkit-background-clip: text;
@@ -72,6 +106,23 @@ h1, h2, h3 { margin: 0 0 12px; }
   background-clip: text;
 }
 .logo.small { font-size: 22px; margin: 0; }
+
+/* ── Acessibilidade: anel de foco visível por teclado ─────────────
+   antes só existia input:focus{outline:none} — quem navega por Tab não
+   conseguia localizar os botões-emoji no tema escuro. */
+:focus-visible {
+  outline: 2px solid var(--gold-2);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+/* controles redondos (retrato, gemas, swatches) usam halo em vez de retângulo */
+.portrait:focus-visible, .cz-swatch:focus-visible, .stat-gem:focus-visible,
+.crystal:focus-visible, .taunt-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--gold-2);
+}
+/* o mouse não deve ver o anel; só o teclado */
+:focus:not(:focus-visible) { outline: none; }
 
 /* ── Botões ───────────────────────────────────────────────────── */
 .btn {
@@ -123,8 +174,14 @@ h1, h2, h3 { margin: 0 0 12px; }
   .btn { min-height: 44px; }
   .btn.small { min-height: 40px; padding: 8px 14px; }
   .avatar { min-width: 44px; min-height: 44px; }
-  .emote { min-height: 36px; padding: 6px 12px; }
-  .chat-actions button { min-width: 36px; min-height: 36px; font-size: 16px; }
+  .emote { min-height: 44px; padding: 8px 14px; }
+  .chat-actions button { min-width: 40px; min-height: 40px; font-size: 16px; }
+  /* alvos de toque confortáveis nas escolhas do Codex e da Personalização */
+  .codex-pill, .taunt-pick, .cz-chip, .cz-cmd { min-height: 44px; }
+  /* swatch de cor: estende a área tocável p/ 44px com um halo invisível,
+     preservando o disco visual de 34px e o anel de seleção */
+  .cz-swatch { position: relative; }
+  .cz-swatch::before { content: ''; position: absolute; inset: -5px; border-radius: 50%; }
 }
 /* sem mouse não existe "revelar no hover" — ações ficam sempre visíveis */
 @media (hover: none) {
@@ -147,8 +204,8 @@ h1, h2, h3 { margin: 0 0 12px; }
 .login-card {
   background: linear-gradient(180deg, #1b2538f2, #141c2cf2);
   border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 38px;
+  border-radius: var(--r-xl);
+  padding: clamp(22px, 5vw, 38px);
   width: 100%;
   max-width: 430px;
   text-align: center;
@@ -194,30 +251,59 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .login-callback .spinner { margin: 4px auto; }
 
 /* ── Home ─────────────────────────────────────────────────────── */
-.home-screen { max-width: 1100px; margin: 0 auto; padding: 20px; }
+.home-screen { max-width: 1100px; margin: 0 auto; padding: var(--pad-container); }
 .home-header {
   display: flex; justify-content: space-between; align-items: center;
   padding-bottom: 16px; border-bottom: 1px solid var(--line); margin-bottom: 20px;
 }
-.profile-chip { display: flex; align-items: center; gap: 12px; }
+/* wrap: o trio de ações (Personalizar/Criar conta/Sair) cai p/ outra linha
+   em telas estreitas em vez de transbordar a viewport */
+.profile-chip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .profile-sub { font-size: 13px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
 .avatar-lg { font-size: 28px; }
 
-.home-main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.play-panel { grid-row: span 2; display: flex; flex-direction: column; justify-content: center; }
-@media (max-width: 800px) { .home-main { grid-template-columns: 1fr; } }
+/* grade intrínseca: 2+ colunas quando cabem (≥340px cada), 1 quando não —
+   acaba com a zona apertada de 800–980px e o salto seco em 800px.
+   min(340px,100%) impede que a faixa mínima estoure telas <340px */
+.home-main {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 16px; align-items: start;
+}
+.play-panel { display: flex; flex-direction: column; }
 
 .panel {
   background: linear-gradient(180deg, #1a2335, #161f30);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px;
-  box-shadow: 0 10px 30px #0005, inset 0 1px 0 #ffffff0d;
+  border-radius: var(--r-lg);
+  padding: clamp(14px, 2.5vw, 20px);
+  box-shadow: var(--elev-3), inset 0 1px 0 #ffffff0d;
 }
 .panel h3 {
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: var(--fs-h3);
   letter-spacing: 1px;
+}
+/* títulos de painel no font display, com filete dourado — devolve a
+   hierarquia de marca que o login estabelece (antes caíam no font do corpo) */
+.panel h2 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  letter-spacing: 1px;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+/* filete dourado só nos títulos alinhados à esquerda do lobby (Home/Sala);
+   títulos centralizados de modais — mulligan, tutorial — não recebem o filete */
+.home-main .panel h2::after, .room-screen .panel h2::after {
+  content: ''; display: block;
+  width: 34px; height: 2px; margin-top: 7px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+  border-radius: 2px;
+}
+/* o título da sala é centralizado → o filete acompanha (gradiente simétrico) */
+.room-panel h2::after {
+  margin-inline: auto;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
 }
 .divider {
   display: flex; align-items: center; gap: 10px;
@@ -267,9 +353,11 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 @media (max-width: 760px) { .room-screen { grid-template-columns: 1fr; } }
 .room-panel { display: flex; flex-direction: column; gap: 12px; text-align: center; }
 .room-code {
-  font-size: 40px; letter-spacing: 10px; font-weight: 900; color: var(--gold);
+  font-size: clamp(1.9rem, 1.2rem + 4vw, 2.5rem);
+  letter-spacing: clamp(4px, 1.5vw, 10px);
+  font-weight: 900; color: var(--gold);
   background: var(--bg-2); border: 1px dashed var(--gold-soft);
-  border-radius: 12px; padding: 14px;
+  border-radius: var(--r-md); padding: 14px;
   text-shadow: 0 0 24px #e3b34155;
 }
 .invite-link { word-break: break-all; }
@@ -312,16 +400,17 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ── Arena ────────────────────────────────────────────────────── */
 .game-screen {
-  /* minmax(0,1fr): a coluna pode encolher abaixo do min-content da mão */
-  display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px;
-  max-width: 1320px; margin: 0 auto; padding: 14px; min-height: 100vh; min-height: 100dvh;
+  /* minmax(0,1fr): a coluna pode encolher abaixo do min-content da mão.
+     trilho lateral fluido (240–320px): sem salto seco em 981px */
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(240px, 22vw, 320px); gap: 14px;
+  max-width: 1320px; margin: 0 auto; padding: var(--pad-container); min-height: 100vh; min-height: 100dvh;
   /* superfície de jogo: long-press não seleciona texto nem abre menu (iOS) */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 .game-screen input { user-select: text; -webkit-user-select: text; }
-@media (max-width: 980px) { .game-screen { grid-template-columns: minmax(0, 1fr); } }
+/* o colapso p/ coluna única + topbar + bottom-sheet vive no bloco ≤980px abaixo */
 .game-board {
   min-width: 0; /* não herda a largura intrínseca da mão/fileiras */
   display: flex; flex-direction: column; gap: 10px;
@@ -382,7 +471,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .portrait {
   position: relative;
-  width: 68px; height: 68px;
+  width: var(--portrait); height: var(--portrait);
   background: radial-gradient(circle at 35% 30%, #32466e, #121b2f);
   border: 2px solid #41547e;
   border-radius: 50%;
@@ -468,13 +557,15 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ── Mesa e criaturas ─────────────────────────────────────────── */
 .board-row {
-  display: flex; gap: 12px; justify-content: center; align-items: center;
-  min-height: 112px;
+  /* flex-wrap base: uma mesa cheia (7 fichas) quebra linha em vez de
+     transbordar e cortar criaturas jogáveis em telas estreitas */
+  display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center;
+  min-height: var(--board-min);
   background:
     radial-gradient(70% 130% at 50% 50%, #1b274266 0%, transparent 80%),
     linear-gradient(180deg, #0d142266, #0c121f99);
   border: 1px solid #22304b;
-  border-radius: 14px; padding: 10px 8px;
+  border-radius: var(--r-lg); padding: 10px 8px;
   box-shadow: inset 0 2px 12px #00000066, inset 0 -1px 0 #ffffff07;
   transition: border-color .2s, box-shadow .2s;
 }
@@ -494,8 +585,11 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .board-empty::before, .board-empty::after { content: '✦'; font-size: 9px; opacity: .7; }
 .board-divider {
-  display: flex; align-items: center; justify-content: center; gap: 14px;
-  position: relative; padding: 3px 0;
+  /* wrap + row-gap: a régua de chrome (pílula de turno, HUD de ritmo,
+     encerrar turno, provocações) reflui em telas estreitas em vez de
+     espremer e desalinhar tudo numa única linha */
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 10px 14px; position: relative; padding: 3px 0;
 }
 /* linha ornamental atravessando a mesa, atrás da pílula de turno */
 .board-divider::before {
@@ -518,8 +612,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   display: flex; flex-direction: column; gap: 4px; align-items: center;
   background: linear-gradient(180deg, #222e49, #1a2438);
   border: 1px solid var(--line);
-  border-radius: 14px; padding: 7px 18px; font-size: 13px; color: var(--dim);
-  min-width: 230px;
+  border-radius: var(--r-lg); padding: 7px 18px; font-size: 13px; color: var(--dim);
+  min-width: min(230px, 60vw);
   box-shadow: 0 4px 14px #00000055, inset 0 1px 0 #ffffff10;
 }
 .turn-pill.mine { color: var(--gold); border-color: var(--gold-soft); font-weight: 700; }
@@ -539,7 +633,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   display: flex; flex-direction: column; gap: 3px; align-items: center;
   background: linear-gradient(180deg, #2b3a5c, #1a2438 75%, #161d30);
   border: 2px solid #3c4d72; border-radius: 12px;
-  color: var(--text); padding: 5px 5px 13px; width: 106px;
+  color: var(--text); padding: 5px 5px 13px; width: var(--token-w);
   cursor: pointer; font-size: 12px;
   touch-action: none; /* arrastar daqui inicia a mira, nunca rolagem */
   animation: summon .3s cubic-bezier(.2, 1.6, .5, 1);
@@ -560,6 +654,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .creature-name {
   font-weight: 700; max-width: 96px; text-align: center; line-height: 1.15;
   font-size: 10.5px;
+  /* reserva sempre 2 linhas: fichas com nome curto e longo ficam da mesma
+     altura, padronizando a mesa inteira */
+  min-height: 2.3em;
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 /* gemas de ataque/vida nos cantos inferiores, meio para fora da peça */
@@ -637,7 +734,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   background: linear-gradient(180deg, transparent, #0a101cd9),
     radial-gradient(60% 100% at 50% 100%, #1b274233, transparent);
   border-top: 1px solid #ffffff0a;
-  border-radius: 14px; min-height: 224px;
+  /* comporta a carta de altura fixa + saliência das gemas, sem rolagem vertical */
+  border-radius: var(--r-lg); min-height: var(--hand-min);
   overflow-x: auto; /* mãos cheias rolam na horizontal em telas estreitas */
   touch-action: pan-x;
   scrollbar-width: thin;
@@ -651,7 +749,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   --relief: inset 0 1px 0 #ffffff33, inset 0 0 0 1px #ffffff12, inset 0 -13px 22px #00000055;
   position: relative;
   display: flex; flex-direction: column; gap: 2px;
-  width: 132px; min-height: 206px;
+  /* tamanho fixo e idêntico em toda a mão e no mulligan: nada de altura
+     desigual quando o texto/keywords variam de carta para carta */
+  width: var(--card-w); height: var(--card-h);
   flex-shrink: 0; /* a mão rola; cartas não esmagam */
   background:
     var(--noise),
@@ -765,7 +865,15 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   font-size: 9px; font-weight: 800; color: #c8d6ea;
   letter-spacing: .4px;
 }
-.card-text { flex: 1; color: #b6c1d2; line-height: 1.35; font-size: 10.5px; padding: 0 2px; }
+/* texto de regras: ocupa o espaço restante da carta de altura fixa e corta
+   o excedente (a leitura completa fica na inspeção ampliada no hover) */
+.card-text {
+  flex: 1; min-height: 0; overflow: hidden;
+  color: #b6c1d2; line-height: 1.35; font-size: 10.5px; padding: 0 2px;
+}
+/* criaturas reservam a faixa inferior para as gemas de ataque/vida: a
+   pontuação nunca fica por cima do texto de efeito */
+.card-creature { padding-bottom: 18px; }
 /* criaturas usam as gemas .stat-gem (cantos inferiores), como na mesa */
 .card .stat-gem { bottom: -10px; min-width: 28px; height: 28px; font-size: 13px; }
 .card .stat-gem.atk { left: -10px; }
@@ -863,6 +971,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .overlay {
   position: fixed; inset: 0; background: #000b;
   display: grid; place-items: center; z-index: 50;
+  /* respiro fluido nas bordas: painéis não encostam na tela em 641–980px */
+  padding: clamp(12px, 4vw, 40px);
   animation: fade-in .3s ease;
 }
 @keyframes fade-in { from { opacity: 0; } }
@@ -896,7 +1006,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .confetti i {
   position: absolute; top: -16px;
   width: 9px; height: 16px; border-radius: 2px;
-  animation: confetti-fall 2.6s linear infinite;
+  /* finito: a chuva de vitória cai 3x e para (não fica eternamente girando) */
+  animation: confetti-fall 2.6s linear 3;
 }
 @keyframes confetti-fall {
   to { transform: translateY(105vh) rotate(720deg); }
@@ -1024,7 +1135,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   transition: width .6s ease;
 }
 
-.rules-modal { max-width: 640px; width: calc(100% - 40px); animation: pop-in .35s cubic-bezier(.2, 1.4, .45, 1); }
+/* rolagem própria na base: telas baixas alcançam o fim das regras e o CTA */
+.rules-modal { max-width: 640px; width: 100%; max-height: 88dvh; overflow-y: auto; animation: pop-in .35s cubic-bezier(.2, 1.4, .45, 1); }
 .rules-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px;
   text-align: left; margin-bottom: 18px;
@@ -1081,7 +1193,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 
 .codex-factions {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px;
 }
 .codex-faction-card {
   --accent: var(--gold);
@@ -1122,7 +1234,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   border-bottom: 1px solid #ffffff12; padding-bottom: 8px; margin-bottom: 12px;
 }
 .codex-gallery {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(108px, 28vw, 132px), 1fr));
+  gap: 10px;
 }
 .codex-tile {
   position: relative; display: flex; flex-direction: column; gap: 3px;
@@ -1185,7 +1299,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ── Cartas iguais na mesa: número da posição + impacto na carta exata ── */
 .pos-badge {
-  position: absolute; bottom: -8px; left: -8px; z-index: 6;
+  /* no topo da arte, no centro: longe das gemas de ataque/vida nos cantos
+     inferiores — o indicador de cópia não cobre mais a pontuação */
+  position: absolute; top: 3px; left: 50%; transform: translateX(-50%); z-index: 6;
   min-width: 21px; height: 21px; padding: 0 4px;
   display: grid; place-items: center;
   background: #0a0e16ee; border: 1.5px solid var(--accent);
@@ -1210,8 +1326,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 @media (max-width: 640px) {
   .codex { padding: 0 16px 22px; width: calc(100% - 16px); max-height: 94dvh; }
   .codex-realm { font-size: 34px; letter-spacing: 3px; }
-  .codex-factions { grid-template-columns: 1fr; }
-  .codex-gallery { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 8px; }
+  /* factions e gallery agora refluem sozinhos (auto-fit/clamp) — sem override */
+  .codex-gallery { gap: 8px; }
   .codex-detail-head { flex-direction: column; align-items: center; text-align: center; gap: 14px; }
   .codex-detail-art.card-art-frame { width: 132px; height: 104px; font-size: 66px; }
   .codex-stat-row { justify-content: center; }
@@ -1237,12 +1353,12 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .card-art-frame svg { filter: drop-shadow(0 3px 5px #000c); }
 .card-art.card-art-frame {
-  width: 100%; height: 62px; font-size: 44px;
+  width: 100%; height: var(--card-art-h); font-size: 38px;
   align-self: center; margin-top: 2px;
   flex-shrink: 0;
 }
 .creature-art.card-art-frame {
-  width: 100%; height: 50px; font-size: 32px;
+  width: 100%; height: var(--token-art-h); font-size: 34px;
   border-radius: 8px 8px 5px 5px;
 }
 .card-reveal .card-art.card-art-frame { height: 62px; }
@@ -1256,13 +1372,20 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ══ Mobile: arena em coluna única com gaveta de log/chat ═══════
    Vale para telas estreitas (retrato) e baixas (paisagem de celular). */
-@media (max-width: 700px), (max-height: 500px) {
+/* ── Casca compacta (coluna única + topbar + bottom-sheet) ───────
+   Vale do tablet ao celular (≤980px) e ao celular em paisagem (curto E
+   estreito ≤1200px): fecha o "vão do tablet" 701–980px onde antes o painel
+   lateral (Eventos/Chat/Desistir) sumia abaixo da dobra. A faixa de altura
+   é limitada a ≤1200px de largura p/ não jogar janelas LARGAS-e-baixas de
+   desktop numa gaveta — essas mantêm o trilho lateral. Os TAMANHOS encolhem
+   no bloco abaixo, em sincronia com a casca. */
+@media (max-width: 980px), (max-width: 1200px) and (max-height: 600px) {
   .game-screen {
     grid-template-columns: minmax(0, 1fr);
     /* topbar enxuta em cima; a arena ocupa todo o resto da altura */
     grid-template-rows: auto minmax(0, 1fr);
     gap: 8px;
-    padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+    padding: var(--pad-container) var(--pad-container) calc(10px + env(safe-area-inset-bottom));
   }
 
   .mobile-topbar {
@@ -1299,7 +1422,13 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   .drawer-close { display: block; align-self: center; }
   .game-side .game-log { max-height: 38dvh; }
   .game-side .chat-messages { max-height: 30dvh; }
+}
 
+/* ── Compactação de TAMANHOS: celulares (≤700px) e QUALQUER janela baixa
+   (≤600px de altura). O teto de altura casa com a casca acima, p/ a carta
+   de altura fixa (192px) nunca ser cortada numa faixa 501–600px de altura.
+   Tablets altos (701–980px, >600px de altura) mantêm cartas grandes. */
+@media (max-width: 700px), (max-height: 600px) {
   /* compactação da arena */
   .hero-plate { padding: 6px 10px; gap: 10px; }
   .portrait { width: 50px; height: 50px; font-size: 22px; }
@@ -1322,7 +1451,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   /* mão compacta com sobreposição (rola na horizontal se precisar) */
   .hand { min-height: 196px; padding: 14px 8px 8px; gap: 0; }
   .hand .card:not(:first-child) { margin-left: -28px; }
-  .card { width: clamp(102px, 27vw, 132px); min-height: 184px; }
+  .card { width: clamp(102px, 27vw, 132px); height: 178px; }
   .card-text { font-size: 10px; }
   .card-cost { width: 26px; height: 26px; font-size: 13px; top: -8px; left: -8px; }
   .card .stat-gem { min-width: 24px; height: 24px; font-size: 12px; bottom: -8px; }
@@ -1352,8 +1481,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   .creature-art.card-art-frame { height: 26px; font-size: 18px; }
   .stat-gem { min-width: 19px; height: 19px; font-size: 10px; bottom: -7px; border-width: 1.5px; }
   .board-divider::after { font-size: 64px; }
-  .hand { min-height: 126px; padding: 10px 6px 6px; }
-  .card { width: 100px; min-height: 116px; }
+  .hand { min-height: 150px; padding: 10px 6px 6px; }
+  .card { width: 100px; height: 138px; }
   .card-text { display: none; }
   .card-art.card-art-frame { height: 38px; font-size: 26px; }
   .card-cost { width: 23px; height: 23px; font-size: 12px; top: -7px; left: -7px; }
@@ -1366,34 +1495,35 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 /* ══ Mobile: telas de menu (login, home, sala, modais) ══════════ */
 @media (max-width: 640px) {
   /* login */
-  .login-card { padding: 26px 18px; }
-  .logo { font-size: 34px; letter-spacing: 2px; }
-
-  /* home */
-  .home-screen { padding: 12px; }
+  /* login/logo/home/panel já escalam por clamp() — sem overrides fixos aqui */
   .home-header { flex-wrap: wrap; gap: 10px; }
-  .panel { padding: 14px; }
-  .board-table { font-size: 13px; }
-  .board-table td:nth-child(2) {
-    max-width: 34vw;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* placar vira cartões de 2 linhas: sem nomes truncados nem colunas escondidas */
+  .board-table, .board-table tbody, .board-table tr, .board-table td { display: block; }
+  .board-table tr {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "pos name mmr" "pos league vd";
+    align-items: center; column-gap: 10px; row-gap: 3px;
+    padding: 9px 8px; border-bottom: 1px solid var(--line);
   }
+  .board-table tr.me { background: #4d8dff14; border-radius: var(--r-sm); }
+  .board-table td { padding: 0; border: none; font-size: 13px; }
+  /* o destaque pinta só na linha (tr); zera a camada por célula p/ não dobrar o tom */
+  .board-table tr.me td { background: transparent; }
+  .board-table .pos { grid-area: pos; align-self: center; width: auto; font-size: 15px; }
+  .board-table td:nth-child(2) { grid-area: name; font-weight: 600; min-width: 0; }
+  .board-table td:nth-child(3) { grid-area: league; }
+  .board-table td:nth-child(4) { grid-area: mmr; text-align: right; font-weight: 800; color: var(--gold); }
+  .board-table td:nth-child(5) { grid-area: vd; text-align: right; color: var(--dim-strong); font-size: var(--fs-xs); }
   .history-list li { flex-wrap: wrap; row-gap: 2px; font-size: 13px; }
 
   /* sala */
   .room-screen { padding: 14px 12px; gap: 12px; }
-  .room-code { font-size: 30px; letter-spacing: 6px; padding: 10px; }
+  .room-code { padding: 10px; } /* tamanho/espaçamento já fluidos via clamp() */
   .room-chat { min-height: 300px; }
 
-  /* modais cabem na tela e rolam */
-  .rules-modal { max-height: 92dvh; overflow-y: auto; }
-  .game-over { width: calc(100% - 24px); padding: 26px 18px; }
-  .overlay { padding: 12px; }
-}
-
-@media (max-width: 480px) {
-  .board-table td:nth-child(5) { display: none; } /* V/D sai; MMR fica */
-  .board-table td:nth-child(2) { max-width: 38vw; }
+  /* modais cabem na tela e rolam (gutter já vem do padding fluido do .overlay) */
+  .game-over { padding: 26px 18px; }
 }
 
 /* ── Provocações na arena (roda + balões sobre o comandante) ───── */
@@ -1491,6 +1621,9 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   transition: transform .1s;
 }
 .cz-swatch.sel { transform: scale(1.12); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #fff; }
+/* foco por teclado num swatch JÁ selecionado: soma o anel dourado ao anel
+   branco de seleção (senão o foco some sob a seleção, e é onde o Tab cai) */
+.cz-swatch.sel:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #fff, 0 0 0 6px var(--gold-2); }
 .cz-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
 
 /* compactação da arena (mobile): provocações e título do comandante */
@@ -1554,8 +1687,10 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 
 /* ── HUD de ritmo: turno atual + fadiga iminente ──────────────── */
 .pace-hud {
+  /* sem margin-top: o espaçamento vertical na régua vem do row-gap do
+     .board-divider — assim o HUD alinha em vez de "flutuar" deslocado */
   display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
-  justify-content: center; margin-top: 6px; font-size: 0.8rem;
+  justify-content: center; font-size: 0.8rem;
 }
 .pace-turn { color: var(--dim); }
 .pace-fatigue { color: var(--red); font-weight: 600; }
@@ -1615,7 +1750,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   display: flex; flex-wrap: wrap; gap: 14px;
   justify-content: center; align-items: flex-end; margin-bottom: 20px;
 }
-.mulligan-slot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.mulligan-slot { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .mulligan-slot.swapping .card { outline: 2px solid var(--red); outline-offset: 2px; opacity: 0.78; }
 .mulligan-slot.locked .card { cursor: default; }
 .mulligan-flag { font-size: 12px; color: var(--dim); letter-spacing: 0.02em; }
@@ -1634,6 +1769,11 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   .preview-chip.lethal,
   .creature.buff-target,
   .time-urgent,
+  .game-over.won .go-emblem::before,
+  .energy-crystals.warn,
   .login-screen::before,
-  .login-screen::after { animation: none; }
+  .login-screen::after { animation: none !important; }
+  /* loops que faltavam: roda de carregar para estática; chuva de vitória some */
+  .spinner { animation: none; border-top-color: var(--gold); }
+  .confetti { display: none; }
 }
