@@ -8,7 +8,9 @@ export interface Profile {
   id: string;
   name: string;
   email: string;
-  avatar: string; // emoji escolhido pelo jogador
+  avatar: string; // emoji escolhido pelo jogador (perfil/listas/chat)
+  commander: string; // retrato do comandante exibido na arena
+  accent: string; // cor de destaque do comandante (hex)
   mmr: number;
   league: League;
   wins: number;
@@ -78,6 +80,8 @@ export interface SeatView {
   playerId: string;
   name: string;
   avatar: string;
+  commander: string; // retrato do comandante na arena
+  accent: string; // cor de destaque do comandante (hex)
   mmr: number;
   hp: number;
   shield: number;

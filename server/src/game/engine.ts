@@ -22,6 +22,8 @@ export interface MatchPlayer {
   id: string;
   name: string;
   avatar: string;
+  commander: string;
+  accent: string;
   mmr: number;
 }
 
@@ -212,6 +214,23 @@ export class Match {
 
   seatOf(playerId: string): number {
     return this.seats.findIndex((s) => s.player.id === playerId);
+  }
+
+  /**
+   * Atualiza só os cosméticos do jogador (nome/avatar/comandante/cor). Não toca
+   * nas regras — reflete a personalização na partida em andamento.
+   */
+  updateCosmetics(
+    playerId: string,
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string },
+  ): boolean {
+    const seat = this.seats.find((s) => s.player.id === playerId);
+    if (!seat) return false;
+    if (patch.name) seat.player.name = patch.name;
+    if (patch.avatar) seat.player.avatar = patch.avatar;
+    if (patch.commander) seat.player.commander = patch.commander;
+    if (patch.accent) seat.player.accent = patch.accent;
+    return true;
   }
 
   playCard(playerId: string, iid: string, target?: Target): void {
@@ -495,6 +514,8 @@ export class Match {
       playerId: s.player.id,
       name: s.player.name,
       avatar: s.player.avatar,
+      commander: s.player.commander,
+      accent: s.player.accent,
       mmr: s.player.mmr,
       hp: Math.max(0, s.hp),
       shield: s.shield,

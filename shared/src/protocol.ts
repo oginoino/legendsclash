@@ -7,6 +7,7 @@ import type {
 
 export type ClientMsg =
   | { t: 'hello'; token: string }
+  | { t: 'profile:update'; name?: string; avatar?: string; commander?: string; accent?: string }
   | { t: 'queue:join' }
   | { t: 'queue:leave' }
   | { t: 'room:create' }

@@ -241,6 +241,17 @@ export async function completeProfile(name: string, avatar: string): Promise<voi
   joinPendingRoom(); // convite por link esperava o nome
 }
 
+/** Personalização pós-onboarding (perfil + comandante); o servidor valida e
+ *  responde com o perfil atualizado. Envia só os campos alterados. */
+export function updateProfile(patch: {
+  name?: string;
+  avatar?: string;
+  commander?: string;
+  accent?: string;
+}): void {
+  send({ t: 'profile:update', ...patch });
+}
+
 export function logout(): void {
   const token = state.token;
   if (token) {

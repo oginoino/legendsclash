@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AVATARS } from '@legendsclash/shared';
 import { completeProfile, dismissAuthCallback, requestOtp, useAppState } from '../store';
-
-const AVATARS = ['🛡️', '⚔️', '🐺', '🐉', '🏹', '🔮', '🦅', '🌙'];
 
 /**
  * Login por link mágico: e-mail → "link enviado" (o clique no e-mail volta
@@ -17,7 +16,7 @@ export function LoginView() {
   const [step, setStep] = useState<Step>(needsProfile ? 'profile' : 'email');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [avatar, setAvatar] = useState(AVATARS[0]);
+  const [avatar, setAvatar] = useState<string>(AVATARS[0]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resendAt, setResendAt] = useState(0);

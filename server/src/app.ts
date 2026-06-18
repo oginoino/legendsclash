@@ -64,6 +64,7 @@ export class App {
     if (!user) throw new KnownError('Usuário não encontrado.');
 
     switch (msg.t) {
+      case 'profile:update': return this.profileUpdate(user, msg);
       case 'queue:join': return this.queueJoin(user);
       case 'queue:leave': return this.queueLeave(user);
       case 'room:create': return this.roomCreate(user);
@@ -122,6 +123,26 @@ export class App {
     }
     const room = this.rooms.leave(userId);
     if (room) this.broadcastRoom(room.code);
+  }
+
+  // ─── Personalização (perfil + comandante) ───────────────────────
+
+  private profileUpdate(
+    user: UserRecord,
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string },
+  ): void {
+    const updated = this.store.updateCosmetics(user.id, patch);
+    if (!updated) throw new KnownError('Perfil não encontrado.');
+    this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(updated) });
+    // reflete a personalização na partida em andamento (cosmético, sem regras)
+    const match = this.matches.get(user.id);
+    if (match && !match.finished) {
+      match.updateCosmetics(user.id, {
+        name: updated.name, avatar: updated.avatar,
+        commander: updated.commander, accent: updated.accent,
+      });
+      this.broadcastMatch(match);
+    }
   }
 
   // ─── Fila / matchmaking ─────────────────────────────────────────
@@ -204,7 +225,8 @@ export class App {
 
   private startMatch(users: UserRecord[]): void {
     const players: MatchPlayer[] = users.map((u) => ({
-      id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr,
+      id: u.id, name: displayName(u), avatar: u.avatar,
+      commander: u.commander, accent: u.accent, mmr: u.mmr,
     }));
     let match: Match;
     match = new Match(

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CARDS, MAX_ENERGY, TURN_SECONDS } from '@legendsclash/shared';
+import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, commanderTitle } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
 import { dismissGameOver, send, useAppState } from '../store';
 import { CardArt } from '../components/CardArt';
@@ -55,12 +55,31 @@ let fxId = 1;
 const FX_TTL = 1100;
 const GHOST_TTL = 700;
 const REVEAL_TTL = 1700;
+/** Tempo que uma provocação fica como balão sobre o comandante. */
+const BUBBLE_TTL = 4500;
+/** Cadência mínima entre provocações (anti-spam local). */
+const TAUNT_COOLDOWN_MS = 2500;
+
+/** Balão de provocação ancorado ao comandante de um assento. */
+interface Bubble {
+  id: number;
+  seatIdx: number;
+  text: string;
+  at: number;
+}
 const SPELL_DMG: Record<string, number> = { s_faisca: 2, s_bola_de_fogo: 5 };
 
 /** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
+
+/** Curva da seta de mira: arco quadrático do atacante/carta até o alvo. */
+function arrowPath(a: { x1: number; y1: number; x2: number; y2: number }): string {
+  const cx = (a.x1 + a.x2) / 2;
+  const cy = Math.min(a.y1, a.y2) - 60;
+  return `M ${a.x1} ${a.y1} Q ${cx} ${cy} ${a.x2} ${a.y2}`;
+}
 
 /**
  * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
@@ -95,6 +114,8 @@ export function GameView() {
   const [fx, setFx] = useState<FloatFx[]>([]);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [reveals, setReveals] = useState<Reveal[]>([]);
+  const [bubbles, setBubbles] = useState<Bubble[]>([]);
+  const [tauntOpen, setTauntOpen] = useState(false);
   const [banner, setBanner] = useState<{ text: string; at: number } | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [sound, setSound] = useState(soundOn());
@@ -105,6 +126,8 @@ export function GameView() {
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
   const prevRef = useRef<GameViewState | null>(null);
+  const prevChatLenRef = useRef(0);
+  const tauntCooldownRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
   // após um arrasto real, o clique sintético do mouse não deve disparar ações
   const suppressClickRef = useRef(false);
@@ -126,6 +149,7 @@ export function GameView() {
       setFx((f) => (f.length && ts - f[0].at > FX_TTL ? f.filter((x) => ts - x.at < FX_TTL) : f));
       setGhosts((g) => (g.length && ts - g[0].at > GHOST_TTL ? g.filter((x) => ts - x.at < GHOST_TTL) : g));
       setReveals((r) => (r.length && ts - r[0].at > REVEAL_TTL ? r.filter((x) => ts - x.at < REVEAL_TTL) : r));
+      setBubbles((b) => (b.length && ts - b[0].at > BUBBLE_TTL ? b.filter((x) => ts - x.at < BUBBLE_TTL) : b));
       setBanner((b) => (b && ts - b.at > 1500 ? null : b));
     }, 250);
     return () => clearInterval(t);
@@ -133,7 +157,9 @@ export function GameView() {
 
   // cancela a seleção com Esc ou clique com o botão direito
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelection(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSelection(null); setTauntOpen(false); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
@@ -251,6 +277,24 @@ export function GameView() {
     if (sidePane === 'chat') setChatSeen(s.chat.length);
   }, [sidePane, s.chat.length]);
 
+  // provocações/mensagens viram balões sobre o comandante de quem enviou
+  useEffect(() => {
+    const g = s.game;
+    if (!g) return;
+    if (s.chat.length < prevChatLenRef.current) prevChatLenRef.current = 0; // nova partida zera
+    const fresh = s.chat.slice(prevChatLenRef.current);
+    prevChatLenRef.current = s.chat.length;
+    if (!fresh.length) return;
+    const ts = Date.now();
+    const add: Bubble[] = [];
+    for (const m of fresh) {
+      const seatIdx = g.seats.findIndex((st) => st.playerId === m.from.id);
+      if (seatIdx >= 0) add.push({ id: fxId++, seatIdx, text: m.text, at: ts });
+    }
+    if (add.length) setBubbles((b) => [...b, ...add]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.chat]);
+
   // fanfarra de fim de partida
   const overSig = s.gameOver?.matchId;
   useEffect(() => {
@@ -345,6 +389,15 @@ export function GameView() {
     setSelection(null);
     setHover(null);
     setMouse(null);
+  }
+
+  /** Dispara uma provocação no chat da partida (com cadência mínima). */
+  function sendTaunt(text: string) {
+    setTauntOpen(false);
+    const ts = Date.now();
+    if (ts - tauntCooldownRef.current < TAUNT_COOLDOWN_MS) return;
+    tauntCooldownRef.current = ts;
+    send({ t: 'chat:send', text });
   }
 
   /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
@@ -570,21 +623,55 @@ export function GameView() {
 
   const fxFor = (anchor: string) => fx.filter((f) => f.anchor === anchor);
   const ghostsFor = (seatIdx: number) => ghosts.filter((g) => g.seatIdx === seatIdx);
+  const bubbleFor = (seatIdx: number): Bubble | null => {
+    let latest: Bubble | null = null;
+    for (const b of bubbles) if (b.seatIdx === seatIdx && (!latest || b.at >= latest.at)) latest = b;
+    return latest;
+  };
+
+  // alvo válido sob o ponteiro? (trava a seta e mostra a retícula nele)
+  const hoverValid = (() => {
+    if (!hover) return false;
+    if (targetingFriendly) return hover.kind === 'creature' && me.board.some((c) => c.iid === hover.iid);
+    if (!targetingEnemy) return false;
+    if (hover.kind === 'face') return !faceShielded || !!selectedHandDef?.pierce;
+    const ec = enemy.board.find((c) => c.iid === hover.iid);
+    if (!ec) return false;
+    if (mustHitTaunt && !CARDS[ec.defId].keywords?.includes('taunt')) return false;
+    return true;
+  })();
 
   // ── Seta de mira ────────────────────────────────────────────────
+  // A ponta segue o ponteiro; sobre um alvo válido ela "trava" no centro
+  // dele e troca a flecha por uma retícula pulsante (estilo Hearthstone).
   let arrow: { x1: number; y1: number; x2: number; y2: number } | null = null;
+  let lockOn = false;
   if (selection && mouse) {
-    const key = selection.kind === 'attacker' ? `cr-${selection.iid}` : `hand-${selection.iid}`;
-    const el = document.querySelector(`[data-anchor="${key}"]`);
+    const originKey = selection.kind === 'attacker' ? `cr-${selection.iid}` : `hand-${selection.iid}`;
+    const el = document.querySelector(`[data-anchor="${originKey}"]`);
     if (el) {
       const r = el.getBoundingClientRect();
-      arrow = { x1: r.left + r.width / 2, y1: r.top + r.height / 2, x2: mouse.x, y2: mouse.y };
+      let x2 = mouse.x;
+      let y2 = mouse.y;
+      if (hoverValid && hover) {
+        const tKey = hover.kind === 'face' ? `face-${enemySeatIdx}` : `cr-${hover.iid}`;
+        const te = document.querySelector(`[data-anchor="${tKey}"]`);
+        if (te) {
+          const tr = te.getBoundingClientRect();
+          x2 = tr.left + tr.width / 2;
+          y2 = tr.top + tr.height / 2;
+          lockOn = true;
+        }
+      }
+      arrow = { x1: r.left + r.width / 2, y1: r.top + r.height / 2, x2, y2 };
     }
   }
 
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
   const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
+  // cor da mira: letal = vermelho · ataque = ouro · magia = roxo
+  const aimColor = lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0';
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
@@ -635,9 +722,10 @@ export function GameView() {
       <div
         className="game-board"
         onClick={(e) => {
-          // toque em área vazia da arena cancela a mira (equivalente do Esc)
-          if (selection && !(e.target as Element).closest('[data-anchor], button, .hand')) {
+          // toque em área vazia da arena cancela a mira/provocação (equivalente do Esc)
+          if (!(e.target as Element).closest('[data-anchor], button, .hand')) {
             setSelection(null);
+            setTauntOpen(false);
           }
         }}
       >
@@ -653,6 +741,7 @@ export function GameView() {
           previewDim={hover?.kind !== 'face' && !!staticFacePreview}
           onHover={(h) => setHover(h ? { kind: 'face' } : null)}
           fx={fxFor(`face-${enemySeatIdx}`)}
+          bubble={bubbleFor(enemySeatIdx)}
         />
 
         <div className={`board-row enemy-row ${targetingEnemy ? 'targetable' : ''}`}>
@@ -708,6 +797,25 @@ export function GameView() {
               Encerrar turno ▸
             </button>
           )}
+          <div className="taunt-dock">
+            {tauntOpen && (
+              <div className="taunt-wheel">
+                {TAUNTS.map((t) => (
+                  <button key={t.id} type="button" className="taunt-pick" onClick={() => sendTaunt(t.text)}>
+                    {t.text}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              className={`btn small taunt-toggle ${tauntOpen ? 'active' : ''}`}
+              onClick={() => setTauntOpen((o) => !o)}
+              title="Provocar o oponente"
+            >
+              😎
+            </button>
+          </div>
         </div>
 
         <div className={`board-row my-row ${targetingFriendly ? 'friendly-targetable' : ''}`}>
@@ -738,6 +846,7 @@ export function GameView() {
           pendingCost={selection?.kind === 'hand' && selectedHandDef ? selectedHandDef.cost : hoverCost}
           energyWarn={energyWarn}
           fx={fxFor(`face-${game.yourSeat}`)}
+          bubble={bubbleFor(game.yourSeat)}
         />
 
         <div className="hand">
@@ -825,20 +934,38 @@ export function GameView() {
       )}
 
       {arrow && (
-        <svg className="aim-arrow" width="100%" height="100%">
+        <svg className="aim-arrow" width="100%" height="100%" style={{ filter: `drop-shadow(0 0 7px ${aimColor}aa)` }}>
           <defs>
-            <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill={lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0'} />
+            <marker id="arrowhead" markerWidth="9" markerHeight="9" refX="5" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 L2.6,4.5 Z" fill={aimColor} />
             </marker>
           </defs>
+          {/* trilho translúcido: o "corpo" luminoso da seta */}
+          <path d={arrowPath(arrow)} stroke={aimColor} strokeOpacity="0.22" strokeWidth="12" strokeLinecap="round" fill="none" />
+          {/* linha viva com tracejado correndo rumo ao alvo */}
           <path
-            d={`M ${arrow.x1} ${arrow.y1} Q ${(arrow.x1 + arrow.x2) / 2} ${Math.min(arrow.y1, arrow.y2) - 60} ${arrow.x2} ${arrow.y2}`}
-            stroke={lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0'}
-            strokeWidth="3"
-            strokeDasharray="8 6"
+            className="aim-flow"
+            d={arrowPath(arrow)}
+            stroke={aimColor}
+            strokeWidth="4"
+            strokeDasharray="11 9"
+            strokeLinecap="round"
             fill="none"
-            markerEnd="url(#arrowhead)"
+            markerEnd={lockOn ? undefined : 'url(#arrowhead)'}
           />
+          {/* retícula de "travado no alvo" */}
+          {lockOn && (
+            <g className={`aim-reticle ${lethalAim ? 'lethal' : ''}`}>
+              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
+              <circle className="reticle-ping" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
+              <g stroke={aimColor} strokeWidth="2.5" strokeLinecap="round">
+                <line x1={arrow.x2 - 34} y1={arrow.y2} x2={arrow.x2 - 21} y2={arrow.y2} />
+                <line x1={arrow.x2 + 21} y1={arrow.y2} x2={arrow.x2 + 34} y2={arrow.y2} />
+                <line x1={arrow.x2} y1={arrow.y2 - 34} x2={arrow.x2} y2={arrow.y2 - 21} />
+                <line x1={arrow.x2} y1={arrow.y2 + 21} x2={arrow.x2} y2={arrow.y2 + 34} />
+              </g>
+            </g>
+          )}
         </svg>
       )}
 
@@ -889,7 +1016,7 @@ function PreviewChip({ p, self, dim }: { p: CombatPreview; self?: boolean; dim?:
   );
 }
 
-function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx }: {
+function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx, bubble }: {
   seat: SeatView;
   seatIdx: number;
   isEnemy?: boolean;
@@ -903,10 +1030,15 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   pendingCost?: number;
   energyWarn?: boolean;
   fx: FloatFx[];
+  bubble?: Bubble | null;
 }) {
   const hit = fx.some((f) => f.kind === 'dmg');
+  const title = commanderTitle(seat.commander);
   return (
-    <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`}>
+    <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={{ ['--accent' as string]: seat.accent }}>
+      {bubble && (
+        <div className={`taunt-bubble ${isEnemy ? 'down' : 'up'}`} key={bubble.id}>{bubble.text}</div>
+      )}
       <button
         className={[
           'portrait',
@@ -922,7 +1054,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         onMouseLeave={onHover ? () => onHover(false) : undefined}
         title={blocked ? 'Protegido por Provocar' : undefined}
       >
-        <span className="portrait-avatar">{seat.avatar}</span>
+        <span className="portrait-avatar">{seat.commander || seat.avatar}</span>
         <span className="hp-orb">{seat.hp}</span>
         {seat.shield > 0 && <span className="shield-orb">🛡️{seat.shield}</span>}
         {preview && <PreviewChip p={preview} dim={previewDim} />}
@@ -933,6 +1065,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
           {seat.name}
           {!seat.connected && <em className="dc-tag"> · reconectando…</em>}
         </span>
+        {title && <span className="commander-sub">{title}</span>}
         <span
           className={`energy-crystals ${energyWarn ? 'warn' : ''}`}
           title={`Energia ${seat.energy}/${seat.maxEnergy}`}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { logout, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
+import { ProfileModal } from '../components/ProfileModal';
 import { RulesModal } from '../components/RulesModal';
 
 /** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
@@ -15,6 +16,7 @@ export function HomeView() {
   const s = useAppState();
   const [joinCode, setJoinCode] = useState('');
   const [showRules, setShowRules] = useState(false);
+  const [showCustomize, setShowCustomize] = useState(false);
   const p = s.profile;
 
   if (!p) return <div className="centered">Carregando perfil…</div>;
@@ -35,6 +37,7 @@ export function HomeView() {
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
             </div>
           </div>
+          <button className="btn ghost" onClick={() => setShowCustomize(true)}>✨ Personalizar</button>
           <button className="btn ghost" onClick={logout}>Sair</button>
         </div>
       </header>
@@ -133,6 +136,7 @@ export function HomeView() {
         </section>
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showCustomize && <ProfileModal onClose={() => setShowCustomize(false)} />}
     </div>
   );
 }

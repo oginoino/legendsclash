@@ -49,17 +49,19 @@ export function CardView({ defId, playable, selected, lifting, onClick, style, a
       onPointerDown={onPointerDown}
     >
       <span className="card-cost">{def.cost}</span>
-      <CardArt defId={defId} className="card-art" />
       <span className="card-name">{def.name}</span>
-      <span className="card-type">{TYPE_LABEL[def.type]}</span>
-      {def.keywords?.map((k) => (
-        <span key={k} className="keyword-chip">{KEYWORD_LABEL[k] ?? k}</span>
-      ))}
+      <CardArt defId={defId} className="card-art" />
+      <span className="card-typeline">
+        <span className="card-type">{TYPE_LABEL[def.type]}</span>
+        {def.keywords?.map((k) => (
+          <span key={k} className="keyword-chip">{KEYWORD_LABEL[k] ?? k}</span>
+        ))}
+      </span>
       <span className="card-text">{def.text}</span>
       {def.type === 'creature' && (
         <span className="card-stats">
-          <b className="atk">⚔ {def.attack}</b>
-          <b className="hp">❤ {def.health}</b>
+          <b className="atk">{def.attack}</b>
+          <b className="hp">{def.health}</b>
         </span>
       )}
     </button>
