@@ -8,9 +8,9 @@ function players(n: number): MatchPlayer[] {
   }));
 }
 
-function makeMatch(n = 2, turnSeconds = 60) {
+function makeMatch(n = 2, turnSeconds = 60, mulligan = false) {
   let result: EngineResult | null = null;
-  const m = new Match(players(n), () => {}, (r) => { result = r; }, turnSeconds);
+  const m = new Match(players(n), () => {}, (r) => { result = r; }, turnSeconds, mulligan);
   return { m, result: () => result };
 }
 
@@ -32,9 +32,29 @@ describe('início de partida', () => {
     const view0 = m.viewFor('p0');
     // jogador 0 já comprou a carta do turno 1: 4 inicial + 1
     expect(view0.hand.length).toBe(5);
-    expect(view0.seats[1].handCount).toBe(5); // 4 + 1 de compensação
+    expect(view0.seats[1].handCount).toBe(5); // 4 cartas + a Moeda do Tempo
     expect(view0.seats[0].hp).toBe(STARTING_HP);
     expect(view0.seats[0].deckCount).toBe(25); // 30 - 4 - 1
+  });
+
+  it('quem joga depois recebe a Moeda do Tempo (tempo, não carta extra)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    // a moeda é um token na mão do seat 1; o seat 0 não a recebe; não sai do deck
+    expect(m.seats[1].hand.filter((c) => c.defId === 't_moeda')).toHaveLength(1);
+    expect(m.seats[0].hand.some((c) => c.defId === 't_moeda')).toBe(false);
+    expect(m.seats[1].deck.length).toBe(26); // 30 - 4 (sem carta extra; a moeda não vem do deck)
+  });
+
+  it('a Moeda do Tempo dá +1 de energia no turno (custo 0)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    const coin = m.seats[1].hand.find((c) => c.defId === 't_moeda')!;
+    m.endTurn('p0'); // passa a vez para o seat 1 (1º turno dele: maxEnergy 1)
+    expect(m.seats[1].energy).toBe(1);
+    m.playCard('p1', coin.iid);
+    expect(m.seats[1].energy).toBe(2); // +1 de energia, sem custo
+    expect(m.seats[1].hand.some((c) => c.defId === 't_moeda')).toBe(false); // consumida
   });
 
   it('energia incremental: 1 no primeiro turno, +1 por turno, máx. 10', () => {
@@ -45,6 +65,63 @@ describe('início de partida', () => {
     expect(m.viewFor('p1').seats[1].maxEnergy).toBe(1);
     m.endTurn('p1');
     expect(m.viewFor('p0').seats[0].maxEnergy).toBe(2);
+  });
+});
+
+describe('mulligan (troca da mão inicial)', () => {
+  it('entra na fase de mulligan antes do turno 1 quando habilitado', () => {
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    expect(m.viewFor('p0').status).toBe('mulligan');
+    // jogar/atacar/passar é bloqueado durante a troca
+    expect(() => m.endTurn('p0')).toThrow('Aguarde a troca de mãos.');
+  });
+
+  it('trocar cartas devolve ao baralho e recompra a mesma quantidade', () => {
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    const hand0 = m.seats[0].hand.map((c) => c.iid);
+    const deckBefore = m.seats[0].deck.length;
+    m.mulligan('p0', hand0.slice(0, 2)); // troca 2
+    expect(m.seats[0].hand).toHaveLength(hand0.length); // mesma contagem de cartas
+    expect(m.seats[0].deck.length).toBe(deckBefore); // 2 saíram, 2 entraram → deck igual
+    expect(m.viewFor('p0').status).toBe('mulligan'); // p1 ainda não confirmou
+    expect(m.viewFor('p0').seats[0].mulliganDone).toBe(true);
+  });
+
+  it('a partida começa no turno 1 quando todos confirmam', () => {
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    m.mulligan('p0', []);
+    m.mulligan('p1', []);
+    expect(m.viewFor('p0').status).toBe('active');
+    expect(m.viewFor('p0').turnSeat).toBe(0);
+  });
+
+  it('a Moeda do Tempo não é trocável no mulligan', () => {
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    const coin = m.seats[1].hand.find((c) => c.defId === 't_moeda')!;
+    const handLen = m.seats[1].hand.length;
+    m.mulligan('p1', m.seats[1].hand.map((c) => c.iid)); // tenta trocar tudo, inclusive a moeda
+    expect(m.seats[1].hand.some((c) => c.iid === coin.iid)).toBe(true);
+    expect(m.seats[1].hand).toHaveLength(handLen);
+  });
+
+  it('confirmar a mão duas vezes é rejeitado', () => {
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    m.mulligan('p0', []);
+    expect(() => m.mulligan('p0', [])).toThrow('Você já confirmou sua mão.');
+  });
+
+  it('o tempo de troca esgotado confirma as mãos e começa a partida', () => {
+    vi.useFakeTimers();
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    expect(m.viewFor('p0').status).toBe('mulligan');
+    vi.advanceTimersByTime(31_000); // MULLIGAN_SECONDS = 30
+    expect(m.viewFor('p0').status).toBe('active');
   });
 });
 
@@ -163,6 +240,128 @@ describe('magias e táticas', () => {
     expect(() => m.playCard('p0', 'x1', { seat: 1, iid: 'b1' }))
       .toThrow('Escolha uma criatura aliada.');
   });
+
+  it('surto de energia respeita o teto MAX_ENERGY (não estoura 10)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 't_surto' }];
+    m.seats[0].maxEnergy = 10;
+    m.seats[0].energy = 10; // turno com energia cheia
+    m.playCard('p0', 'x1');
+    // surto resolve antes do débito: min(10, 10+2)=10; depois -1 de custo = 9.
+    // (antes o clamp era MAX_ENERGY+2, terminando em 11 — acima do teto.)
+    expect(m.seats[0].energy).toBe(9);
+  });
+
+  it('recuo com a mão do dono cheia destrói a criatura e o log não mente', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [{
+      iid: 'b1', defId: 'c_dragao', attack: 7, health: 7, baseHealth: 7,
+      canAttack: true, attacked: false,
+    }];
+    // mão cheia (MAX_HAND = 10): a criatura recuada não cabe e é destruída
+    m.seats[1].hand = Array.from({ length: 10 }, (_, i) => ({ iid: `h${i}`, defId: 'c_recruta' }));
+    m.seats[0].hand = [{ iid: 'x1', defId: 't_recuo' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].board).toHaveLength(0);
+    expect(m.seats[1].hand).toHaveLength(10); // não cresceu
+    expect(m.seats[1].hand.some((c) => c.iid === 'b1')).toBe(false);
+    const log = m.viewFor('p0').log.map((l) => l.text);
+    expect(log.some((t) => t.includes('foi devolvida à mão'))).toBe(false);
+    expect(log.some((t) => t.includes('destruída'))).toBe(true);
+  });
+});
+
+describe('palavras-chave: Investida, Grito de Batalha, Estertor', () => {
+  const creature = (iid: string, defId: string, attack: number, health: number) => ({
+    iid, defId, attack, health, baseHealth: health, canAttack: true, attacked: false,
+  });
+
+  it('Investida (charge): o Dragão ataca no turno em que entra', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 'c_dragao' }];
+    m.seats[0].energy = 7;
+    m.playCard('p0', 'x1');
+    // sem enjoo de invocação: ataca já a mesa vazia do oponente
+    m.attack('p0', 'x1', { seat: 1 });
+    expect(m.seats[1].hp).toBe(STARTING_HP - 7);
+  });
+
+  it('Grito de Batalha (Arqueira): 1 de dano numa criatura inimiga ao entrar', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [creature('e1', 'c_lobo', 3, 2)]; // único alvo
+    m.seats[0].hand = [{ iid: 'x1', defId: 'c_arqueira' }];
+    m.seats[0].energy = 2;
+    m.playCard('p0', 'x1');
+    // 2 de vida - 1 do grito = 1
+    expect(m.seats[1].board.find((c) => c.iid === 'e1')!.health).toBe(1);
+  });
+
+  it('Grito de Batalha fizzla sem criaturas inimigas (apenas invoca)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 'c_arqueira' }];
+    m.seats[0].energy = 2;
+    expect(() => m.playCard('p0', 'x1')).not.toThrow();
+    expect(m.seats[0].board.some((c) => c.defId === 'c_arqueira')).toBe(true);
+  });
+
+  it('Estertor (Cavaleiro): um Recruta toma seu lugar ao morrer', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_campea', 5, 5)];
+    m.seats[1].board = [creature('e1', 'c_cavaleiro', 3, 4)]; // morre para 5 de ataque
+    m.attack('p0', 'a1', { seat: 1, iid: 'e1' });
+    expect(m.seats[1].board.some((c) => c.iid === 'e1')).toBe(false); // cavaleiro morreu
+    const recruits = m.seats[1].board.filter((c) => c.defId === 'c_recruta');
+    expect(recruits).toHaveLength(1); // estertor invocou o substituto
+    expect(recruits[0].canAttack).toBe(false); // entra com enjoo de invocação
+  });
+});
+
+describe('Fase 3: AoE (Tempestade) e reach (Bola de Fogo pierce)', () => {
+  const creature = (iid: string, defId: string, attack: number, health: number) => ({
+    iid, defId, attack, health, baseHealth: health, canAttack: true, attacked: false,
+  });
+
+  it('Tempestade causa 2 de dano a TODAS as criaturas inimigas', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [
+      creature('e1', 'c_recruta', 1, 2), // 2 - 2 = 0 → morre
+      creature('e2', 'c_golem', 3, 6), // 6 - 2 = 4 → sobrevive
+    ];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_tempestade' }];
+    m.seats[0].energy = 4;
+    m.playCard('p0', 'x1');
+    expect(m.seats[1].board.some((c) => c.iid === 'e1')).toBe(false);
+    expect(m.seats[1].board.find((c) => c.iid === 'e2')!.health).toBe(4);
+  });
+
+  it('Tempestade não atinge as próprias criaturas', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [creature('a1', 'c_lobo', 3, 2)];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_tempestade' }];
+    m.seats[0].energy = 4;
+    m.playCard('p0', 'x1');
+    expect(m.seats[0].board.find((c) => c.iid === 'a1')!.health).toBe(2); // intacta
+  });
+
+  it('Bola de Fogo (pierce) atinge o comandante mesmo com criatura em campo', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [creature('e1', 'c_recruta', 1, 2)]; // mesa ocupada
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_bola_de_fogo' }];
+    m.seats[0].energy = 4;
+    m.playCard('p0', 'x1', { seat: 1 }); // sem iid = comandante; pierce atravessa
+    expect(m.seats[1].hp).toBe(STARTING_HP - 5);
+    expect(m.seats[1].board).toHaveLength(1); // a criatura segue intacta
+  });
 });
 
 describe('Provocar (palavra-chave)', () => {
@@ -230,12 +429,14 @@ describe('proteção do comandante (dinâmica Yu-Gi-Oh)', () => {
     expect(m.seats[1].hp).toBe(STARTING_HP - 3);
   });
 
-  it('magias também são bloqueadas pela proteção das criaturas', () => {
+  it('magias sem pierce são bloqueadas pela proteção das criaturas', () => {
     const { m } = makeMatch();
     track(m).start();
     m.seats[1].board = [creature('b1', 'c_recruta', 1, 2)];
-    m.seats[0].hand = [{ iid: 'x1', defId: 's_bola_de_fogo' }];
-    m.seats[0].energy = 4;
+    // Faísca não tem pierce: a mesa inimiga protege o comandante (a Bola de Fogo,
+    // que agora atravessa, é coberta no teste de reach da Fase 3).
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_faisca' }];
+    m.seats[0].energy = 1;
     expect(() => m.playCard('p0', 'x1', { seat: 1 }))
       .toThrow('As criaturas inimigas protegem o comandante.');
     // em criatura continua válida
@@ -470,6 +671,23 @@ describe('condições de vitória (slide "Conceito e condições de vitória")',
     expect(m.viewFor('p0').turnSeat).toBe(0);
     vi.advanceTimersByTime(11_000);
     expect(m.viewFor('p0').turnSeat).toBe(1);
+  });
+
+  it('teto de turnos encerra por morte súbita; a maior vida vence', () => {
+    const { m, result } = makeMatch();
+    track(m).start();
+    // decks grandes para isolar o teste do teto da fadiga (sem deck-out)
+    const big = (n: number) => Array.from({ length: n }, (_, i) => ({ iid: `d${i}`, defId: 'c_recruta' }));
+    m.seats[0].deck = big(100);
+    m.seats[1].deck = big(100);
+    m.seats[0].hp = 20;
+    m.seats[1].hp = 10;
+    // alterna passar a vez até o teto de turnos disparar a morte súbita
+    for (let k = 0; k < 80 && !m.finished; k++) {
+      m.endTurn(k % 2 === 0 ? 'p0' : 'p1');
+    }
+    expect(m.finished).toBe(true);
+    expect(result()!.winnerSeat).toBe(0); // seat 0 tinha mais vida
   });
 
   it('fadiga: deck vazio causa dano crescente e encerra partidas longas', () => {

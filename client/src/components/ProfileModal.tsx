@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { ACCENTS, AVATARS, COMMANDERS, commanderTitle } from '@legendsclash/shared';
+import {
+  ACCENTS, ACCENT_UNLOCKS, AVATARS, COMMANDERS, COMMANDER_UNLOCKS,
+  accentUnlocked, achievementLabel, commanderTitle, commanderUnlocked,
+} from '@legendsclash/shared';
 import { updateProfile, useAppState } from '../store';
 
 /**
@@ -15,6 +18,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
   const [commander, setCommander] = useState(p?.commander ?? COMMANDERS[0].portrait);
   const [accent, setAccent] = useState(p?.accent ?? ACCENTS[0]);
   if (!p) return null;
+  const earned = p.achievements ?? [];
 
   function save() {
     const trimmed = name.trim();
@@ -65,32 +69,42 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
 
         <h4>Comandante na arena</h4>
         <div className="cz-grid commanders">
-          {COMMANDERS.map((c) => (
-            <button
-              key={c.portrait}
-              type="button"
-              className={`cz-cmd ${c.portrait === commander ? 'sel' : ''}`}
-              title={c.title}
-              onClick={() => setCommander(c.portrait)}
-            >
-              <span className="cz-cmd-portrait">{c.portrait}</span>
-              <span className="cz-cmd-title">{c.title}</span>
-            </button>
-          ))}
+          {COMMANDERS.map((c) => {
+            const locked = !commanderUnlocked(c.portrait, earned);
+            const req = locked ? achievementLabel(COMMANDER_UNLOCKS[c.portrait]) : '';
+            return (
+              <button
+                key={c.portrait}
+                type="button"
+                className={`cz-cmd ${c.portrait === commander ? 'sel' : ''} ${locked ? 'locked' : ''}`}
+                title={locked ? `🔒 Desbloqueie: ${req}` : c.title}
+                disabled={locked}
+                onClick={() => !locked && setCommander(c.portrait)}
+              >
+                <span className="cz-cmd-portrait">{locked ? '🔒' : c.portrait}</span>
+                <span className="cz-cmd-title">{locked ? req : c.title}</span>
+              </button>
+            );
+          })}
         </div>
 
         <h4>Cor de destaque</h4>
         <div className="cz-swatches">
-          {ACCENTS.map((col) => (
-            <button
-              key={col}
-              type="button"
-              className={`cz-swatch ${col === accent ? 'sel' : ''}`}
-              style={{ background: col }}
-              onClick={() => setAccent(col)}
-              aria-label={`Cor ${col}`}
-            />
-          ))}
+          {ACCENTS.map((col) => {
+            const locked = !accentUnlocked(col, earned);
+            return (
+              <button
+                key={col}
+                type="button"
+                className={`cz-swatch ${col === accent ? 'sel' : ''} ${locked ? 'locked' : ''}`}
+                style={{ background: col }}
+                disabled={locked}
+                onClick={() => !locked && setAccent(col)}
+                title={locked ? `🔒 Desbloqueie: ${achievementLabel(ACCENT_UNLOCKS[col])}` : `Cor ${col}`}
+                aria-label={`Cor ${col}${locked ? ' (bloqueada)' : ''}`}
+              />
+            );
+          })}
         </div>
 
         <div className="cz-actions">

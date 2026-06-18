@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, commanderTitle } from '@legendsclash/shared';
+import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
 import { dismissGameOver, send, useAppState } from '../store';
 import { CardArt } from '../components/CardArt';
@@ -7,6 +7,7 @@ import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
+import { Tutorial } from '../components/Tutorial';
 import { CodexView } from './CodexView';
 import { sfx, soundOn, toggleSound } from '../sounds';
 
@@ -146,6 +147,10 @@ export function GameView() {
   const [sound, setSound] = useState(soundOn());
   const [showRules, setShowRules] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
+  // tutorial da 1ª partida: uma vez por dispositivo (flag em localStorage)
+  const [showTutorial, setShowTutorial] = useState(() => {
+    try { return localStorage.getItem('lc_tutorial_done') !== '1'; } catch { return false; }
+  });
   // carta sem alvo sendo "levantada" pelo gesto de arrasto (solta ≥48px acima = joga)
   const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
   // inspeção no hover (desktop): carta ampliada flutuando acima da mão —
@@ -347,6 +352,10 @@ export function GameView() {
 
   if (!game || !me) return null;
 
+  // Fase de mulligan: tela própria de troca de mão, antes do tabuleiro.
+  // (Seguro como early return: não há hooks depois deste ponto no componente.)
+  if (game.status === 'mulligan') return <MulliganOverlay game={game} me={me} />;
+
   const enemySeatIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
   const enemy = game.seats[enemySeatIdx];
   const timerPct = Math.min(100, (secondsLeft / TURN_SECONDS) * 100);
@@ -425,13 +434,14 @@ export function GameView() {
     setMouse(null);
   }
 
-  /** Dispara uma provocação no chat da partida (com cadência mínima). */
-  function sendTaunt(text: string) {
+  /** Dispara uma provocação no chat da partida (cadência no cliente p/ UX; o
+   *  servidor reforça o cooldown e valida o id contra o catálogo). */
+  function sendTaunt(id: string) {
     setTauntOpen(false);
     const ts = Date.now();
     if (ts - tauntCooldownRef.current < TAUNT_COOLDOWN_MS) return;
     tauntCooldownRef.current = ts;
-    send({ t: 'chat:send', text });
+    send({ t: 'chat:taunt', id });
   }
 
   /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
@@ -731,6 +741,7 @@ export function GameView() {
           className={`btn small ghost ${sidePane === 'log' ? 'active' : ''}`}
           onClick={() => setSidePane(sidePane === 'log' ? null : 'log')}
           title="Eventos"
+          aria-label="Eventos da partida"
         >
           📜
         </button>
@@ -738,19 +749,21 @@ export function GameView() {
           className={`btn small ghost ${sidePane === 'chat' ? 'active' : ''}`}
           onClick={() => setSidePane(sidePane === 'chat' ? null : 'chat')}
           title="Chat"
+          aria-label={`Chat${unreadChat > 0 ? ` (${unreadChat} não lidas)` : ''}`}
         >
           💬
           {unreadChat > 0 && sidePane !== 'chat' && <span className="unread-badge">{unreadChat}</span>}
         </button>
-        <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar">📖</button>
-        <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia">📜</button>
-        <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som">
+        <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar">📖</button>
+        <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia">📜</button>
+        <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som" aria-label={sound ? 'Desligar som' : 'Ligar som'}>
           {sound ? '🔊' : '🔇'}
         </button>
         <button
           className="btn small ghost danger"
           onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
           title="Desistir"
+          aria-label="Desistir da partida"
         >
           🏳️
         </button>
@@ -827,6 +840,14 @@ export function GameView() {
               />
             </span>
           </div>
+          <div className="pace-hud">
+            <span className="pace-turn" title="Turno da partida">Turno {game.turnNumber}</span>
+            {me.fatigue === 0 && me.deckCount <= 3 && (
+              <span className="pace-fatigue" title="Seu baralho está acabando — em breve cada compra custa vida">
+                ⚠️ Fadiga à vista ({me.deckCount} no deck)
+              </span>
+            )}
+          </div>
           {myTurn && (
             <button
               className={`btn end-turn ${noMovesLeft ? 'pulse' : ''}`}
@@ -839,7 +860,7 @@ export function GameView() {
             {tauntOpen && (
               <div className="taunt-wheel">
                 {TAUNTS.map((t) => (
-                  <button key={t.id} type="button" className="taunt-pick" onClick={() => sendTaunt(t.text)}>
+                  <button key={t.id} type="button" className="taunt-pick" onClick={() => sendTaunt(t.id)}>
                     {t.text}
                   </button>
                 ))}
@@ -951,7 +972,7 @@ export function GameView() {
         </div>
         <div className="panel log-panel">
           <h3>📜 Eventos</h3>
-          <ul className="game-log">
+          <ul className="game-log" role="log" aria-live="polite" aria-label="Eventos da partida">
             {game.log.slice(-14).reverse().map((l, i) => <li key={game.log.length - i}>{l.text}</li>)}
           </ul>
         </div>
@@ -1039,9 +1060,10 @@ export function GameView() {
         </div>
       )}
 
-      {banner && <div className="turn-banner" key={banner.at}>{banner.text}</div>}
+      {banner && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
+      {showTutorial && !s.gameOver && <Tutorial onClose={() => setShowTutorial(false)} />}
       {s.gameOver && <GameOverOverlay />}
     </div>
   );
@@ -1243,6 +1265,62 @@ function GhostCreature({ g }: { g: Ghost }) {
   );
 }
 
+/** Fase de mulligan: ajustar a mão inicial (trocar cartas) antes do turno 1. */
+function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
+  const [swap, setSwap] = useState<Set<string>>(() => new Set());
+  const confirmed = me.mulliganDone;
+
+  function toggle(iid: string, defId: string) {
+    if (confirmed || CARDS[defId].token) return; // a Moeda não é trocável
+    setSwap((prev) => {
+      const next = new Set(prev);
+      if (next.has(iid)) next.delete(iid);
+      else next.add(iid);
+      return next;
+    });
+  }
+
+  function confirm() {
+    sfx.click();
+    send({ t: 'game:mulligan', iids: [...swap] });
+  }
+
+  return (
+    <div className="overlay">
+      <div className="panel mulligan">
+        <h2>Ajuste sua mão inicial</h2>
+        <p className="mulligan-hint">
+          Toque nas cartas que quer devolver ao baralho — você compra outras no lugar.
+          A Moeda do Tempo fica.
+        </p>
+        <div className="mulligan-hand">
+          {game.hand.map((c) => {
+            const token = !!CARDS[c.defId].token;
+            const picked = swap.has(c.iid);
+            return (
+              <div key={c.iid} className={`mulligan-slot ${picked ? 'swapping' : ''} ${token ? 'locked' : ''}`}>
+                <CardView
+                  defId={c.defId}
+                  selected={picked}
+                  onClick={confirmed || token ? undefined : () => toggle(c.iid, c.defId)}
+                />
+                <span className="mulligan-flag">{token ? '🪙 fixa' : picked ? '↺ trocar' : 'manter'}</span>
+              </div>
+            );
+          })}
+        </div>
+        {confirmed ? (
+          <p className="mulligan-waiting">Mão confirmada — aguardando o oponente…</p>
+        ) : (
+          <button className="btn primary big mulligan-confirm" onClick={confirm}>
+            {swap.size ? `Trocar ${swap.size} e começar` : 'Manter a mão e começar'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GameOverOverlay() {
   const s = useAppState();
   const result = s.gameOver;
@@ -1273,7 +1351,7 @@ function GameOverOverlay() {
           ))}
         </div>
       )}
-      <div className={`panel game-over ${won ? 'won' : 'lost'}`}>
+      <div className={`panel game-over ${won ? 'won' : 'lost'}`} role="alert" aria-live="assertive">
         <div className="go-emblem">{won ? '🏆' : '💀'}</div>
         <h2>{won ? 'Vitória!' : 'Derrota'}</h2>
         <p>{reasonText[result.reason]}</p>
@@ -1288,6 +1366,15 @@ function GameOverOverlay() {
             <LeagueBadge league={my.league} />
           </p>
         )}
+        {(() => {
+          const newly = (myId && result.unlocked?.[myId]) || [];
+          return newly.length ? (
+            <div className="go-unlocks">
+              <p className="go-unlocks-title">✨ Conquista desbloqueada!</p>
+              {newly.map((a) => <span key={a} className="go-unlock">🏅 {achievementLabel(a)}</span>)}
+            </div>
+          ) : null;
+        })()}
         <button className="btn primary big" onClick={() => { sfx.click(); dismissGameOver(); }}>
           ⚔️ Jogar de novo
         </button>

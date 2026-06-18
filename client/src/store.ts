@@ -16,11 +16,16 @@ export interface AppState {
   connected: boolean;
   inQueue: boolean;
   queueSize: number;
+  /** Você é o único na fila — a UI sugere convidar um amigo. */
+  waitingAlone: boolean;
   room: RoomState | null;
   game: GameView | null;
   gameOver: MatchResult | null;
   chat: ChatMessage[];
   leaderboard: LeaderboardEntry[];
+  /** Posição do jogador no ranking e vizinhos por MMR (alvo de subida). */
+  myRank: number | null;
+  around: LeaderboardEntry[];
   history: MatchHistoryEntry[];
   toast: string | null;
   reportSent: boolean;
@@ -36,11 +41,14 @@ let state: AppState = {
   connected: false,
   inQueue: false,
   queueSize: 0,
+  waitingAlone: false,
   room: null,
   game: null,
   gameOver: null,
   chat: [],
   leaderboard: [],
+  myRank: null,
+  around: [],
   history: [],
   toast: null,
   reportSent: false,
@@ -175,7 +183,7 @@ function handleServerMsg(msg: ServerMsg): void {
       setState({ profile: msg.profile });
       break;
     case 'queue:status':
-      setState({ inQueue: msg.inQueue, queueSize: msg.size });
+      setState({ inQueue: msg.inQueue, queueSize: msg.size, waitingAlone: !!msg.waitingAlone });
       break;
     case 'room:state':
       setState({
@@ -216,7 +224,7 @@ function handleServerMsg(msg: ServerMsg): void {
       showToast('Denúncia registrada. Obrigado por ajudar a manter a comunidade saudável.');
       break;
     case 'leaderboard':
-      setState({ leaderboard: msg.entries });
+      setState({ leaderboard: msg.entries, myRank: msg.myRank ?? null, around: msg.around ?? [] });
       break;
     case 'history':
       setState({ history: msg.entries });

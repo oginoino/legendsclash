@@ -10,6 +10,9 @@ const TYPE_LABEL: Record<string, string> = {
 
 const KEYWORD_LABEL: Record<string, string> = {
   taunt: '🛡 Provocar',
+  charge: '⚡ Investida',
+  battlecry: '📣 Grito de Batalha',
+  deathrattle: '💀 Estertor',
 };
 
 const RARITY_LABEL: Record<string, string> = {

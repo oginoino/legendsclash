@@ -52,6 +52,58 @@ export const TAUNTS: Taunt[] = [
   { id: 'lol', text: '😂 kkkk' },
 ];
 
+// ─── Conquistas e desbloqueio por mérito ────────────────────────
+// Progressão por hábito/habilidade, NUNCA por pagamento (pilar "sem pay-to-win").
+// As conquistas derivam de estatísticas MONOTÔNICAS (vitórias e nº de partidas,
+// que só crescem) — logo os desbloqueios são permanentes sem persistência extra.
+
+export interface Achievement {
+  id: string;
+  label: string;
+  /** Como conquistar (texto curto para a UI). */
+  how: string;
+}
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { id: 'first_win', label: 'Primeira Vitória', how: 'Vença 1 partida' },
+  { id: 'veteran_10', label: 'Veterano', how: 'Jogue 10 partidas' },
+  { id: 'winner_10', label: 'Conquistador', how: 'Vença 10 partidas' },
+  { id: 'veteran_50', label: 'Lenda da Arena', how: 'Jogue 50 partidas' },
+];
+
+/** Conquistas já obtidas, derivadas de vitórias e nº de partidas (monotônicas). */
+export function achievementsOf(wins: number, games: number): string[] {
+  const earned: string[] = [];
+  if (wins >= 1) earned.push('first_win');
+  if (games >= 10) earned.push('veteran_10');
+  if (wins >= 10) earned.push('winner_10');
+  if (games >= 50) earned.push('veteran_50');
+  return earned;
+}
+
+export function achievementLabel(id: string): string {
+  return ACHIEVEMENTS.find((a) => a.id === id)?.label ?? id;
+}
+
+/** Comandante → conquista que o desbloqueia (ausente da lista = sempre liberado). */
+export const COMMANDER_UNLOCKS: Record<string, string> = {
+  '👑': 'winner_10', // o Monarca
+  '🐲': 'veteran_50', // o Domador
+};
+/** Cor de destaque → conquista que a desbloqueia. */
+export const ACCENT_UNLOCKS: Record<string, string> = {
+  '#3fd3c6': 'veteran_10',
+};
+
+export function commanderUnlocked(portrait: string, earned: string[]): boolean {
+  const req = COMMANDER_UNLOCKS[portrait];
+  return !req || earned.includes(req);
+}
+export function accentUnlocked(accent: string, earned: string[]): boolean {
+  const req = ACCENT_UNLOCKS[accent];
+  return !req || earned.includes(req);
+}
+
 /** Título do comandante associado a um retrato (para exibição na arena). */
 export function commanderTitle(portrait: string | undefined): string | null {
   return COMMANDERS.find((c) => c.portrait === portrait)?.title ?? null;
