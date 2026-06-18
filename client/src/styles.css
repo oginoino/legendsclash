@@ -801,7 +801,11 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   box-shadow: var(--relief), 0 22px 46px #000c, 0 0 22px #e3b34188;
   z-index: 13;
 }
-.card:not(.playable) { opacity: .72; filter: saturate(.6); }
+/* carta não-jogável: só esmaece (sinal de "inativa"). Sem dessaturar — o
+   filtro de grupo lavava a ilustração e quebrava a consistência com a arte
+   da mesa/codex (que nunca dessaturam). O realce azul + brilho da .playable
+   já distingue o que dá pra jogar. */
+.card:not(.playable) { opacity: .72; }
 .card-cost {
   position: absolute; top: -10px; left: -10px;
   background:
