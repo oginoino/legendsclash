@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { greedyTurn, loginAs, playUntilOver, shotPath } from './helpers.js';
+import { greedyTurn, loginAs, passMulligan, passTutorial, playUntilOver, shotPath } from './helpers.js';
 
 test.describe('partida real: matchmaking → duelo → fim de jogo', () => {
   test('dois jogadores se enfrentam do início ao fim', async ({ browser }) => {
@@ -11,6 +11,11 @@ test.describe('partida real: matchmaking → duelo → fim de jogo', () => {
     await xavier.click('button:has-text("Partida ranqueada")');
     await expect(xavier.locator('.queue-status')).toBeVisible();
     await aline.click('button:has-text("Partida ranqueada")');
+    // fase de mulligan: ambos confirmam a mão inicial antes do tabuleiro
+    await passMulligan(xavier);
+    await passMulligan(aline);
+    await passTutorial(xavier);
+    await passTutorial(aline);
     await expect(xavier.locator('.game-board')).toBeVisible({ timeout: 15_000 });
     await expect(aline.locator('.game-board')).toBeVisible({ timeout: 15_000 });
 
@@ -93,6 +98,10 @@ test.describe('resiliência: reconexão no meio da partida', () => {
     await guest.goto(`/room/${code}`);
     await expect(host.locator('.member-list')).toContainText('Aline');
     await host.click('button:has-text("Iniciar duelo")');
+    await passMulligan(host);
+    await passMulligan(guest);
+    await passTutorial(host);
+    await passTutorial(guest);
     await expect(host.locator('.game-board')).toBeVisible({ timeout: 10_000 });
     await expect(guest.locator('.game-board')).toBeVisible({ timeout: 10_000 });
 
@@ -126,6 +135,9 @@ test.describe('fluxo pós-partida', () => {
     const code = (await a.locator('.room-code').textContent())!.trim();
     await b.goto(`/room/${code}`);
     await a.click('button:has-text("Iniciar duelo")');
+    await passMulligan(a);
+    await passMulligan(b);
+    await passTutorial(a);
     await expect(a.locator('.game-board')).toBeVisible({ timeout: 10_000 });
 
     await a.click('button:has-text("Desistir")');
@@ -136,5 +148,25 @@ test.describe('fluxo pós-partida', () => {
 
     await a.context().close();
     await b.context().close();
+  });
+});
+
+test.describe('fila vazia: rota de escape para a 1ª sessão', () => {
+  test('jogador sozinho na fila recebe o convite para criar sala', async ({ browser }) => {
+    test.setTimeout(60_000);
+    const solo = await loginAs(browser, 'Solo', '🦅');
+    await solo.click('button:has-text("Partida ranqueada")');
+    await expect(solo.locator('.queue-status')).toBeVisible();
+
+    // sozinho na fila → CTA de convite aparece (em vez do spinner sem fim)
+    await expect(solo.locator('.queue-thin')).toBeVisible({ timeout: 10_000 });
+    const invite = solo.locator('.queue-thin button:has-text("Criar sala e convidar")');
+    await expect(invite).toBeVisible();
+
+    // criar a sala tira da fila e mostra o código de convite
+    await invite.click();
+    await expect(solo.locator('.room-code')).toBeVisible({ timeout: 10_000 });
+
+    await solo.context().close();
   });
 });

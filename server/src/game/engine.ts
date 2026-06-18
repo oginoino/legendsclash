@@ -54,6 +54,7 @@ interface Seat {
   fatigue: number;
   connected: boolean;
   out: boolean;
+  mulliganDone: boolean;
   reconnectTimer: NodeJS.Timeout | null;
 }
 
@@ -66,9 +67,26 @@ export interface EngineResult {
 
 export class GameError extends Error {}
 
+/** Segundos da fase de mulligan (troca de mão inicial) antes do turno 1. */
+const MULLIGAN_SECONDS = 30;
+/**
+ * Teto de turnos (somados entre os assentos): backstop contra impasses que se
+ * arrastam (board-lock simétrico). Atingido o teto, a partida é decidida por
+ * morte súbita por vantagem — garante encerramento previsível.
+ */
+const MAX_TURNS = 40;
+
 let nextIid = 1;
 function newIid(): string {
   return 'i' + nextIid++;
+}
+
+/** Fisher–Yates com aleatoriedade do servidor (anti-cheat: não auditável pelo cliente). */
+function shuffle<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
 }
 
 function buildDeck(): CardInstance[] {
@@ -76,12 +94,7 @@ function buildDeck(): CardInstance[] {
   for (const [defId, copies] of DEFAULT_DECK) {
     for (let i = 0; i < copies; i++) deck.push({ iid: newIid(), defId });
   }
-  // Fisher–Yates com aleatoriedade do servidor — embaralhamento não auditável
-  // pelo cliente é parte do anti-cheat.
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
+  shuffle(deck);
   return deck;
 }
 
@@ -92,7 +105,8 @@ export class Match {
   private turnNumber = 0;
   private turnEndsAt = 0;
   private turnTimer: NodeJS.Timeout | null = null;
-  private status: 'active' | 'finished' = 'active';
+  private mulliganTimer: NodeJS.Timeout | null = null;
+  private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
   private readonly startedAt = Date.now();
   private log: GameLogEntry[] = [];
@@ -104,6 +118,8 @@ export class Match {
     private onUpdate: () => void,
     private onFinish: (result: EngineResult) => void,
     private turnSeconds = TURN_SECONDS,
+    /** Habilita a fase de mulligan antes do turno 1 (default off p/ testes do motor). */
+    private useMulligan = false,
   ) {
     if (players.length < 2) throw new Error('partida exige ao menos 2 jogadores');
     this.seats = players.map((player) => ({
@@ -120,17 +136,74 @@ export class Match {
       fatigue: 0,
       connected: true,
       out: false,
+      mulliganDone: false,
       reconnectTimer: null,
     }));
   }
 
   start(): void {
-    // Mão inicial; quem joga depois compensa a desvantagem com 1 carta extra.
+    // Mão inicial. Quem joga depois recebe a "moeda": tempo (1 de energia) no
+    // lugar de uma carta extra — devolve a iniciativa que o seat 0 ganha por agir
+    // primeiro, e o jogador decide quando gastá-la (pode segurar), ao contrário de
+    // um bônus fixo. Antes a compensação era +1 carta (recurso, não tempo).
     this.seats.forEach((seat, i) => {
-      const extra = i === 0 ? 0 : 1;
-      for (let k = 0; k < STARTING_HAND + extra; k++) this.draw(seat, true);
+      for (let k = 0; k < STARTING_HAND; k++) this.draw(seat, true);
+      if (i !== 0) seat.hand.push({ iid: newIid(), defId: 't_moeda' });
     });
     this.addLog(`Partida iniciada: ${this.seats.map((s) => s.player.name).join(' vs ')}`);
+    if (this.useMulligan) {
+      // Fase de troca: cada jogador ajusta a mão inicial antes do turno 1.
+      this.status = 'mulligan';
+      this.turnEndsAt = Date.now() + MULLIGAN_SECONDS * 1000;
+      this.mulliganTimer = setTimeout(() => this.forceFinishMulligan(), MULLIGAN_SECONDS * 1000);
+      this.addLog('Fase de troca: ajuste a mão inicial');
+      this.onUpdate();
+      return;
+    }
+    this.beginTurn(0);
+    this.onUpdate();
+  }
+
+  // ─── Mulligan (troca da mão inicial, antes do turno 1) ──────────
+
+  mulligan(playerId: string, iids: string[]): void {
+    if (this.status !== 'mulligan') throw new GameError('Não é a fase de troca de mão.');
+    const idx = this.seatOf(playerId);
+    if (idx < 0) throw new GameError('Você não está nesta partida.');
+    const seat = this.seats[idx];
+    if (seat.mulliganDone) throw new GameError('Você já confirmou sua mão.');
+
+    const swapIds = new Set(iids);
+    // a Moeda do Tempo (token) nunca é trocada
+    const swapping = seat.hand.filter((c) => swapIds.has(c.iid) && !CARDS[c.defId].token);
+    if (swapping.length) {
+      const swappingIds = new Set(swapping.map((c) => c.iid));
+      seat.hand = seat.hand.filter((c) => !swappingIds.has(c.iid));
+      // compra as substitutas ANTES de devolver as trocadas (não recompra a mesma)
+      for (let k = 0; k < swapping.length; k++) this.draw(seat, true);
+      for (const c of swapping) seat.deck.push(c);
+      shuffle(seat.deck);
+    }
+    seat.mulliganDone = true;
+    this.addLog(
+      `${seat.player.name} confirmou a mão${swapping.length ? ` (trocou ${swapping.length})` : ''}`,
+    );
+    if (this.seats.every((s) => s.out || s.mulliganDone)) this.finishMulligan();
+    else this.onUpdate();
+  }
+
+  /** Tempo de troca esgotado: confirma as mãos como estão e começa a partida. */
+  private forceFinishMulligan(): void {
+    if (this.status !== 'mulligan') return;
+    for (const s of this.seats) s.mulliganDone = true;
+    this.addLog('Tempo de troca esgotado — mãos confirmadas');
+    this.finishMulligan();
+  }
+
+  private finishMulligan(): void {
+    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
+    this.mulliganTimer = null;
+    this.status = 'active';
     this.beginTurn(0);
     this.onUpdate();
   }
@@ -140,6 +213,11 @@ export class Match {
   private beginTurn(seatIdx: number): void {
     this.turnSeat = seatIdx;
     this.turnNumber++;
+    // Backstop de duração: passado o teto, decide por morte súbita (vantagem).
+    if (this.turnNumber > MAX_TURNS) {
+      this.resolveByTiebreak();
+      if (this.status !== 'active') return;
+    }
     const seat = this.seats[seatIdx];
 
     // Fase de Energia: +1 ponto, máx. 10 (energia incremental por design)
@@ -205,6 +283,7 @@ export class Match {
   // ─── Ações do jogador ───────────────────────────────────────────
 
   private requireTurn(playerId: string): { seat: Seat; idx: number } {
+    if (this.status === 'mulligan') throw new GameError('Aguarde a troca de mãos.');
     if (this.status !== 'active') throw new GameError('A partida já terminou.');
     const idx = this.seatOf(playerId);
     if (idx < 0) throw new GameError('Você não está nesta partida.');
@@ -258,16 +337,19 @@ export class Match {
     switch (def.type) {
       case 'creature': {
         if (seat.board.length >= MAX_BOARD) throw new GameError('Mesa cheia (máx. 6 criaturas).');
+        const keywords = def.keywords ?? [];
         seat.board.push({
           iid: card.iid,
           defId: card.defId,
           attack: def.attack!,
           health: def.health!,
           baseHealth: def.health!,
-          canAttack: false, // enjoo de invocação: ataca a partir do próximo turno
+          // Investida (charge) ataca já; senão, enjoo de invocação até o próximo turno.
+          canAttack: keywords.includes('charge'),
           attacked: false,
         });
         this.addLog(`${seat.player.name} invocou ${def.name}`);
+        if (keywords.includes('battlecry')) this.triggerBattlecry(idx, def.id);
         break;
       }
       case 'spell':
@@ -335,6 +417,21 @@ export class Match {
         caster.hp = Math.min(STARTING_HP, caster.hp + 4);
         this.addLog(`${caster.player.name} restaurou 4 de vida`);
         break;
+      case 's_tempestade': {
+        // AoE: 2 de dano a TODAS as criaturas inimigas (pune go-wide; ferramenta
+        // de virada). Sem alvo — atinge todos os assentos inimigos.
+        let hit = 0;
+        this.seats.forEach((s, i) => {
+          if (i === casterIdx || s.out) return;
+          for (const c of s.board) {
+            c.health -= 2;
+            hit++;
+          }
+          this.cleanupBoard(s);
+        });
+        this.addLog(`${def.name} atingiu ${hit} criatura(s) inimiga(s)`);
+        break;
+      }
       case 's_fortalecer': {
         if (!target || target.seat !== casterIdx || !target.iid) {
           throw new GameError('Escolha uma criatura aliada.');
@@ -353,8 +450,17 @@ export class Match {
         this.addLog(`${caster.player.name} comprou 2 cartas`);
         break;
       case 't_surto':
-        caster.energy = Math.min(MAX_ENERGY + 2, caster.energy + 2);
+        // Adianta energia DENTRO do turno, mas respeita o teto MAX_ENERGY (10) —
+        // o mesmo limite da fase de energia (beginTurn). Antes clampava em
+        // MAX_ENERGY+2, deixando a energia estourar o teto que o resto do motor
+        // assume.
+        caster.energy = Math.min(MAX_ENERGY, caster.energy + 2);
         this.addLog(`${caster.player.name} ganhou 2 de energia`);
+        break;
+      case 't_moeda':
+        // "Moeda" de quem joga depois: +1 de energia neste turno (teto MAX_ENERGY).
+        caster.energy = Math.min(MAX_ENERGY, caster.energy + 1);
+        this.addLog(`${caster.player.name} usou a Moeda do Tempo (+1 de energia)`);
         break;
       case 't_recuo': {
         const { seat, creature } = enemyCreature();
@@ -363,8 +469,12 @@ export class Match {
         seat.board = seat.board.filter((c) => c.iid !== creature.iid);
         if (seat.hand.length < MAX_HAND) {
           seat.hand.push({ iid: creature.iid, defId: creature.defId });
+          this.addLog(`${label} foi devolvida à mão de ${seat.player.name}`);
+        } else {
+          // Mão cheia: a criatura não cabe e é destruída (mesma convenção honesta
+          // da queima por compra em draw()). O log antes mentia "devolvida à mão".
+          this.addLog(`${label} não coube na mão cheia de ${seat.player.name} e foi destruída`);
         }
-        this.addLog(`${label} foi devolvida à mão de ${seat.player.name}`);
         break;
       }
       default:
@@ -494,6 +604,62 @@ export class Match {
     // rótulo calculado com o tabuleiro ainda intacto, para citar a posição certa
     for (const c of dead) this.addLog(`${this.creatureLabel(seat, c)} foi destruída`);
     seat.board = seat.board.filter((c) => c.health > 0);
+    // Estertor (deathrattle) dispara após a remoção do corpo.
+    for (const c of dead) {
+      if (CARDS[c.defId].keywords?.includes('deathrattle')) this.triggerDeathrattle(seat, c);
+    }
+  }
+
+  // ─── Gatilhos de palavras-chave (battlecry / deathrattle) ───────
+
+  /** Grito de Batalha: efeito ao invocar (targetless, sem mudar a UI de alvo). */
+  private triggerBattlecry(casterIdx: number, defId: string): void {
+    if (defId === 'c_arqueira') {
+      // dispara 1 de dano numa criatura inimiga aleatória (fizzla sem alvos)
+      const targets: Array<{ seat: Seat; creature: Creature }> = [];
+      this.seats.forEach((s, i) => {
+        if (i === casterIdx || s.out) return;
+        for (const c of s.board) targets.push({ seat: s, creature: c });
+      });
+      if (!targets.length) return;
+      const pick = targets[randomInt(targets.length)];
+      pick.creature.health -= 1;
+      this.addLog(`Grito de Batalha: a flecha causou 1 de dano em ${this.creatureLabel(pick.seat, pick.creature)}`);
+      this.cleanupBoard(pick.seat);
+    }
+  }
+
+  /** Estertor: efeito ao morrer (targetless). */
+  private triggerDeathrattle(seat: Seat, creature: Creature): void {
+    if (creature.defId === 'c_cavaleiro') {
+      if (seat.board.length >= MAX_BOARD) return;
+      const def = CARDS['c_recruta'];
+      seat.board.push({
+        iid: newIid(),
+        defId: 'c_recruta',
+        attack: def.attack!,
+        health: def.health!,
+        baseHealth: def.health!,
+        canAttack: false,
+        attacked: false,
+      });
+      this.addLog(`Estertor: um ${def.name} toma o lugar de ${CARDS['c_cavaleiro'].name}`);
+    }
+  }
+
+  /**
+   * Morte súbita por tempo (teto de turnos): vence quem tem mais vida; empate
+   * decide pela maior soma de ataque em campo; persistindo o empate, o assento de
+   * menor índice. Usa o motivo 'hp' (sem novo enum nem migração de banco).
+   */
+  private resolveByTiebreak(): void {
+    const alive = this.seats.map((s, i) => ({ s, i })).filter(({ s }) => !s.out);
+    if (alive.length <= 1) return;
+    const score = (s: Seat) => s.hp * 1000 + s.board.reduce((sum, c) => sum + c.attack, 0);
+    alive.sort((a, b) => score(b.s) - score(a.s));
+    for (let k = 1; k < alive.length; k++) alive[k].s.out = true; // só o líder sobrevive
+    this.addLog(`Limite de ${MAX_TURNS} turnos atingido — vitória por vantagem (morte súbita)`);
+    this.checkEnd();
   }
 
   private checkEnd(reasonHint?: MatchEndReason): void {
@@ -555,6 +721,7 @@ export class Match {
       fatigue: s.fatigue,
       connected: s.connected,
       out: s.out,
+      mulliganDone: s.mulliganDone,
     }));
     const hand: CardInHand[] =
       yourSeat >= 0 ? this.seats[yourSeat].hand.map((c) => ({ iid: c.iid, defId: c.defId })) : [];
@@ -591,6 +758,7 @@ export class Match {
   /** Encerramento administrativo (ex.: desligamento do servidor). */
   dispose(): void {
     this.clearTurnTimer();
+    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
     }

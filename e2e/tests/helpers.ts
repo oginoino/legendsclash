@@ -69,6 +69,28 @@ export async function guestAs(
   return page;
 }
 
+/**
+ * Fase de mulligan (troca da mão inicial): confirma a mão como está e segue
+ * para o tabuleiro. Toda partida começa nesta fase.
+ */
+export async function passMulligan(p: Page): Promise<void> {
+  await p.locator('.mulligan-confirm').click({ timeout: 20_000 });
+}
+
+/**
+ * Tutorial da 1ª partida (mostrado uma vez por dispositivo): pula se presente.
+ * Contextos de teste nascem sem a flag em localStorage, então aparece no 1º jogo.
+ */
+export async function passTutorial(p: Page): Promise<void> {
+  const skip = p.locator('.tutorial-skip');
+  try {
+    await skip.waitFor({ state: 'visible', timeout: 6000 });
+    await skip.click();
+  } catch {
+    // sem tutorial (já dispensado nesta sessão) — segue o jogo
+  }
+}
+
 async function gameEnded(p: Page): Promise<boolean> {
   return (await p.locator('.game-over').count()) > 0;
 }

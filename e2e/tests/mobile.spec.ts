@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loginAs, shotPath } from './helpers.js';
+import { loginAs, passMulligan, passTutorial, shotPath } from './helpers.js';
 
 /**
  * Experiência mobile: login a 390px, partida por toque (tap-tap), gaveta de
@@ -34,6 +34,11 @@ test.describe('mobile: login, partida por toque e gaveta', () => {
     await noHorizontalScroll(phone);
 
     await desk.click('button:has-text("Iniciar duelo")');
+    // fase de mulligan: ambos confirmam a mão antes do tabuleiro
+    await passMulligan(phone);
+    await passMulligan(desk);
+    await passTutorial(phone);
+    await passTutorial(desk);
     await expect(phone.locator('.game-board')).toBeVisible({ timeout: 10_000 });
     await expect(desk.locator('.game-board')).toBeVisible({ timeout: 10_000 });
 
@@ -128,6 +133,11 @@ test.describe('gestos: arrastar para mirar (pointer events)', () => {
     const code = (await a.locator('.room-code').textContent())!.trim();
     await b.goto(`/room/${code}`);
     await a.click('button:has-text("Iniciar duelo")');
+    // fase de mulligan: ambos confirmam a mão antes do tabuleiro
+    await passMulligan(a);
+    await passMulligan(b);
+    await passTutorial(a);
+    await passTutorial(b);
     await expect(a.locator('.game-board')).toBeVisible({ timeout: 10_000 });
 
     // joga até A ter uma criatura pronta no seu turno

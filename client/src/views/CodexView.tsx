@@ -18,7 +18,12 @@ const TYPE_LABEL: Record<CardType, string> = {
   tactic: 'Tática',
 };
 
-const KEYWORD_LABEL: Record<string, string> = { taunt: '🛡 Provocar' };
+const KEYWORD_LABEL: Record<string, string> = {
+  taunt: '🛡 Provocar',
+  charge: '⚡ Investida',
+  battlecry: '📣 Grito de Batalha',
+  deathrattle: '💀 Estertor',
+};
 
 const FACTION_ORDER = ['vanguarda', 'silvanos', 'eter', 'profundezas'];
 
@@ -26,7 +31,8 @@ export function CodexView({ onClose }: { onClose: () => void }) {
   const [factionFilter, setFactionFilter] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
-  const allIds = useMemo(() => Object.keys(CARDS), []);
+  // tokens concedidos por mecânica (ex.: a Moeda) não fazem parte do Arquivo
+  const allIds = useMemo(() => Object.keys(CARDS).filter((id) => !CARDS[id].token), []);
   const byFaction = useMemo(() => {
     const map: Record<string, string[]> = {};
     for (const id of allIds) {

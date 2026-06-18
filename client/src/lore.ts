@@ -180,6 +180,12 @@ export const CARD_LORE: Record<string, CardLore> = {
     story:
       'Gravada no ar com um traço de Éter e fixada sobre uma aliada, a runa engrossa músculo e couraça em segundos. O Conclave não tem exércitos próprios — então aprendeu a tornar os exércitos alheios maiores do que nasceram.',
   },
+  s_tempestade: {
+    epithet: 'A Ira do Céu Partido',
+    factionId: 'eter',
+    story:
+      'Há quem decifre os Cristais para acender uma faísca; e há quem os force a sangrar. Quando um mestre do Conclave reabre de vez a ferida que a Fratura deixou no céu, o Éter desaba em raios sobre todo o campo inimigo de uma só vez. Onde havia uma horda, fica só fumaça — e o silêncio depois do trovão.',
+  },
   t_surto: {
     epithet: 'Veia de Éter',
     factionId: 'eter',

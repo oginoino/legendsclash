@@ -50,10 +50,31 @@ export function HomeView() {
       <main className="home-main">
         <section className="panel play-panel">
           <h2>Jogar</h2>
+          {!p.guest && (
+            <div className="daily-strip">
+              <span className="streak" title="Dias seguidos com partida">
+                🔥 {p.streak} {p.streak === 1 ? 'dia' : 'dias'} de sequência
+              </span>
+              <span className={`daily-mission ${p.playedToday ? 'done' : ''}`}>
+                {p.playedToday ? '✅ Missão de hoje feita' : '⬜ Missão: jogue 1 partida hoje'}
+              </span>
+            </div>
+          )}
           {s.inQueue ? (
             <div className="queue-status">
               <div className="spinner" />
               <p>Buscando oponente do seu nível… ({s.queueSize} na fila)</p>
+              {s.waitingAlone && (
+                <div className="queue-thin">
+                  <p className="hint">
+                    Você é o único na fila agora. Chame alguém para jogar já — crie uma sala
+                    e mande o link de convite.
+                  </p>
+                  <button className="btn" onClick={() => send({ t: 'room:create' })}>
+                    Criar sala e convidar
+                  </button>
+                </div>
+              )}
               <button className="btn ghost" onClick={() => send({ t: 'queue:leave' })}>
                 Cancelar busca
               </button>
@@ -113,6 +134,22 @@ export function HomeView() {
               para disputar as ligas.
             </p>
           )}
+          {!p.guest && s.myRank != null && (() => {
+            const meIdx = s.around.findIndex((e) => e.id === p.id);
+            const above = meIdx > 0 ? s.around[meIdx - 1] : null;
+            return (
+              <div className="my-rank">
+                <p className="my-rank-pos">Sua posição: <strong>#{s.myRank}</strong> · {p.mmr} MMR</p>
+                {above ? (
+                  <p className="hint">
+                    Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar {above.avatar} {above.name}.
+                  </p>
+                ) : (
+                  <p className="hint">🥇 Você lidera o ranking — defenda o topo!</p>
+                )}
+              </div>
+            );
+          })()}
           {s.leaderboard.length === 0 ? (
             <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
           ) : (

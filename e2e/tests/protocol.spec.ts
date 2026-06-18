@@ -79,6 +79,28 @@ function connect(token: string): Promise<WsClient> {
   });
 }
 
+/**
+ * Toda partida começa na fase de mulligan. Confirma a mão (sem trocas) em cada
+ * cliente e devolve a visão 'active' de cada um (já no turno 1).
+ */
+async function passMulligan(...clients: WsClient[]): Promise<Array<{ view: GameViewWire }>> {
+  for (const c of clients) {
+    await c.waitFor<{ t: string; view: GameViewWire | null }>(
+      (m) => m.t === 'game:state' && m.view?.status === 'mulligan',
+    );
+  }
+  for (const c of clients) c.send({ t: 'game:mulligan', iids: [] });
+  const active: Array<{ view: GameViewWire }> = [];
+  for (const c of clients) {
+    active.push(
+      await c.waitFor<{ t: string; view: GameViewWire }>(
+        (m) => m.t === 'game:state' && m.view?.status === 'active',
+      ),
+    );
+  }
+  return active;
+}
+
 test('contrato completo: login → sala → chat filtrado → partida → Elo → ranking', async () => {
   test.setTimeout(60_000);
 
@@ -113,8 +135,7 @@ test('contrato completo: login → sala → chat filtrado → partida → Elo �
 
   // partida iniciada: estado redigido (mão do oponente nunca trafega)
   ca.send({ t: 'room:start' });
-  const ga = await ca.waitFor<{ t: string; view: GameViewWire }>((m) => m.t === 'game:state');
-  const gb = await cb.waitFor<{ t: string; view: GameViewWire }>((m) => m.t === 'game:state');
+  const [ga, gb] = await passMulligan(ca, cb); // fase de troca → turno 1
   expect(ga.view.matchId).toBe(gb.view.matchId);
   expect(gb.view.hand).toHaveLength(5);
   expect(gb.view.seats[ga.view.yourSeat].handCount).toBe(5);
@@ -206,7 +227,7 @@ test('convidado: joga e conversa sem cadastro; criar conta herda o progresso da 
 
   // partida real: a anfitriã desiste e o convidado vence
   ch.send({ t: 'room:start' });
-  await cg.waitFor((m: { t: string }) => m.t === 'game:state');
+  await passMulligan(cg, ch); // ambos confirmam a mão antes do turno 1
   ch.send({ t: 'game:surrender' });
   const over = await cg.waitFor<{ t: string; result: { winnerId: string; mmr: Record<string, { after: number }> } }>(
     (m) => m.t === 'game:over',
@@ -261,8 +282,7 @@ test('matchmaking pareia dois jogadores da fila', async () => {
 
   ca.send({ t: 'queue:join' });
   cb.send({ t: 'queue:join' });
-  const ga = await ca.waitFor<{ t: string; view: GameViewWire }>((m) => m.t === 'game:state');
-  const gb = await cb.waitFor<{ t: string; view: GameViewWire }>((m) => m.t === 'game:state');
+  const [ga, gb] = await passMulligan(ca, cb); // fase de troca → turno 1
   expect(ga.view.matchId).toBe(gb.view.matchId);
 
   ca.send({ t: 'game:surrender' });
@@ -275,6 +295,7 @@ interface GameViewWire {
   matchId: string;
   yourSeat: number;
   turnSeat: number;
+  status: string;
   hand: unknown[];
   seats: Array<{ handCount: number }>;
 }

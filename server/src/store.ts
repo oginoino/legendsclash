@@ -6,8 +6,28 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { League, MatchHistoryEntry, Profile } from '@legendsclash/shared';
 import {
   DEFAULT_ACCENT, DEFAULT_COMMANDER, isValidAccent, isValidAvatar, isValidCommander,
+  achievementsOf, accentUnlocked, commanderUnlocked,
 } from '@legendsclash/shared';
 import { BASE_MMR, leagueOf } from './elo.js';
+
+/** Dia epoch UTC (base do cálculo da sequência diária). */
+export function epochDay(ts: number): number {
+  return Math.floor(ts / 86_400_000);
+}
+
+/**
+ * Avança a sequência diária ao jogar: +1 se foi no dia seguinte ao último,
+ * reinicia em 1 se houve intervalo, inalterada se já jogou hoje. Função pura
+ * (testável sem relógio).
+ */
+export function advanceStreak(
+  streak: number,
+  lastPlayDay: number,
+  today: number,
+): { streak: number; lastPlayDay: number } {
+  if (lastPlayDay === today) return { streak, lastPlayDay };
+  return { streak: lastPlayDay === today - 1 ? streak + 1 : 1, lastPlayDay: today };
+}
 
 /**
  * Persistência do servidor autoritativo.
@@ -47,6 +67,10 @@ export interface UserRecord {
   muted: string[];
   history: MatchHistoryEntry[];
   createdAt: number;
+  /** Sequência de dias consecutivos com partida (gancho de retorno). */
+  streak: number;
+  /** Último dia (epoch UTC) com partida — base do cálculo da sequência. */
+  lastPlayDay: number;
 }
 
 /** Sessão de login: o banco guarda só o sha-256 do token entregue ao cliente. */
@@ -66,10 +90,20 @@ export interface ReportRecord {
   at: number;
 }
 
+/** Evento de telemetria de produto (funil). Append-only; consultado via SQL. */
+export interface EventRecord {
+  type: string;
+  userId: string | null; // ator (null em eventos de partida sem ator único)
+  matchId: string | null;
+  props: Record<string, unknown>;
+  at: number;
+}
+
 interface DbShape {
   users: UserRecord[];
   reports: ReportRecord[];
   sessions: SessionRecord[];
+  events: EventRecord[];
 }
 
 interface Persistence {
@@ -80,6 +114,7 @@ interface Persistence {
   saveReport(report: ReportRecord): void;
   saveSession(session: SessionRecord): void;
   deleteSession(tokenHash: string): void;
+  saveEvent(event: EventRecord): void;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -88,7 +123,7 @@ const DEFAULT_DB_PATH = join(__dirname, '..', 'data', 'db.json');
 // ─── Fallback local: snapshot JSON com escrita debounced ─────────
 
 class JsonPersistence implements Persistence {
-  private db: DbShape = { users: [], reports: [], sessions: [] };
+  private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private saveTimer: NodeJS.Timeout | null = null;
 
   constructor(private path: string = DEFAULT_DB_PATH) {}
@@ -99,11 +134,14 @@ class JsonPersistence implements Persistence {
     }
     // Shape legado: preenche os campos novos e descarta o token eterno.
     this.db.sessions ??= [];
+    this.db.events ??= [];
     for (const u of this.db.users) {
       u.authUserId ??= null;
       u.commander ??= u.avatar; // contas anteriores: retrato = avatar do perfil
       u.accent ??= DEFAULT_ACCENT;
       u.guest = false; // só contas persistem; convidados vivem em memória
+      u.streak ??= 0;
+      u.lastPlayDay ??= 0;
       delete (u as { token?: string }).token;
     }
     // o Store muta este mesmo objeto; o snapshot sempre grava o estado atual
@@ -115,6 +153,7 @@ class JsonPersistence implements Persistence {
   saveReport(): void { this.scheduleSave(); }
   saveSession(): void { this.scheduleSave(); }
   deleteSession(): void { this.scheduleSave(); }
+  saveEvent(): void { this.scheduleSave(); }
 
   private scheduleSave(): void {
     if (this.saveTimer) return;
@@ -206,6 +245,8 @@ class SupabasePersistence implements Persistence {
       muted: p.muted ?? [],
       history: byPlayer.get(p.id) ?? [],
       createdAt: new Date(p.created_at).getTime(),
+      streak: p.streak ?? 0,
+      lastPlayDay: p.last_play_day ?? 0,
     }));
 
     const sessionRecords: SessionRecord[] = (sessions ?? []).map((s) => ({
@@ -217,8 +258,8 @@ class SupabasePersistence implements Persistence {
     }));
 
     console.log(`[store] Supabase conectado: ${users.length} jogadores, ${sessionRecords.length} sessões ativas`);
-    // denúncias são write-only para o servidor do jogo
-    return { users, reports: [], sessions: sessionRecords };
+    // denúncias e eventos são write-only para o servidor do jogo (análise por SQL)
+    return { users, reports: [], sessions: sessionRecords, events: [] };
   }
 
   saveUser(user: UserRecord): void {
@@ -237,6 +278,8 @@ class SupabasePersistence implements Persistence {
         losses: user.losses,
         muted: user.muted,
         created_at: new Date(user.createdAt).toISOString(),
+        streak: user.streak,
+        last_play_day: user.lastPlayDay,
       })
       .then(({ error }) => {
         if (error) console.error('[store] upsert player falhou:', error.message);
@@ -302,6 +345,21 @@ class SupabasePersistence implements Persistence {
         if (error) console.error('[store] delete session falhou:', error.message);
       });
   }
+
+  saveEvent(event: EventRecord): void {
+    void this.client
+      .from('events')
+      .insert({
+        type: event.type,
+        user_id: event.userId,
+        match_id: event.matchId,
+        props: event.props,
+        created_at: new Date(event.at).toISOString(),
+      })
+      .then(({ error }) => {
+        if (error) console.error('[store] insert event falhou:', error.message);
+      });
+  }
 }
 
 // ─── Store: cache em memória + write-through ────────────────────
@@ -312,9 +370,11 @@ const SESSION_TTL_MS = 30 * 24 * 3600_000;
 const GUEST_SESSION_TTL_MS = 24 * 3600_000;
 /** Renovação grava no banco no máximo 1x/hora por sessão. */
 const SESSION_TOUCH_MS = 3600_000;
+/** Buffer de eventos em memória (debug/testes); a verdade é o banco. */
+const EVENTS_MEMORY_CAP = 500;
 
 export class Store {
-  private db: DbShape = { users: [], reports: [], sessions: [] };
+  private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private byId = new Map<string, UserRecord>();
   private sessions = new Map<string, SessionRecord>(); // tokenHash → sessão
 
@@ -440,6 +500,8 @@ export class Store {
       muted: [],
       history: [],
       createdAt: Date.now(),
+      streak: 0,
+      lastPlayDay: 0,
     };
     this.db.users.push(user);
     this.byId.set(user.id, user);
@@ -467,6 +529,8 @@ export class Store {
       muted: [],
       history: [],
       createdAt: Date.now(),
+      streak: 0,
+      lastPlayDay: 0,
     };
     this.byId.set(user.id, user);
     return user;
@@ -496,9 +560,16 @@ export class Store {
       const name = patch.name.trim().slice(0, 24);
       if (name) u.name = name;
     }
+    // cosméticos por mérito: comandante/cor podem exigir uma conquista (anti-abuso:
+    // só aplica se o jogador realmente desbloqueou — derivado de vitórias/partidas).
+    const earned = achievementsOf(u.wins, u.wins + u.losses);
     if (patch.avatar && isValidAvatar(patch.avatar)) u.avatar = patch.avatar;
-    if (patch.commander && isValidCommander(patch.commander)) u.commander = patch.commander;
-    if (patch.accent && isValidAccent(patch.accent)) u.accent = patch.accent;
+    if (patch.commander && isValidCommander(patch.commander) && commanderUnlocked(patch.commander, earned)) {
+      u.commander = patch.commander;
+    }
+    if (patch.accent && isValidAccent(patch.accent) && accentUnlocked(patch.accent, earned)) {
+      u.accent = patch.accent;
+    }
     this.persistence.saveUser(u);
     return u;
   }
@@ -522,17 +593,49 @@ export class Store {
     target.losses = guest.losses;
     target.muted = [...guest.muted];
     target.history = [...guest.history];
+    target.streak = guest.streak;
+    target.lastPlayDay = guest.lastPlayDay;
     this.persistence.saveUser(target);
     // partidas da sessão entram no histórico persistido, em ordem cronológica
     for (let i = target.history.length - 1; i >= 0; i--) {
       this.persistence.saveMatch(target.id, target.history[i]);
     }
     this.removeSessionRecord(Store.hashToken(guestToken));
+    this.recordEvent('guest_to_account', {
+      userId: target.id,
+      props: { mmr: target.mmr, matches: target.wins + target.losses },
+    });
     return true;
   }
 
   userById(id: string): UserRecord | undefined {
     return this.byId.get(id);
+  }
+
+  /**
+   * Telemetria de produto (write-through). Alimenta D1/D7 e a validação de
+   * balanceamento (winrate por assento) via SQL — o servidor nunca relê. Mantém
+   * um buffer curto em memória para debug/testes; a fonte de verdade é o banco.
+   */
+  recordEvent(
+    type: string,
+    opts: { userId?: string | null; matchId?: string | null; props?: Record<string, unknown> } = {},
+  ): void {
+    const event: EventRecord = {
+      type,
+      userId: opts.userId ?? null,
+      matchId: opts.matchId ?? null,
+      props: opts.props ?? {},
+      at: Date.now(),
+    };
+    this.db.events.push(event);
+    if (this.db.events.length > EVENTS_MEMORY_CAP) this.db.events.shift();
+    this.persistence.saveEvent(event);
+  }
+
+  /** Buffer recente de eventos em memória (debug/testes). */
+  recentEvents(): EventRecord[] {
+    return this.db.events;
   }
 
   recordMatch(userId: string, entry: MatchHistoryEntry, newMmr: number, won: boolean): void {
@@ -542,6 +645,10 @@ export class Store {
     if (won) u.wins++; else u.losses++;
     u.history.unshift(entry);
     u.history = u.history.slice(0, 50);
+    // sequência diária: jogar uma partida mantém/avança a sequência (gancho D7)
+    const adv = advanceStreak(u.streak, u.lastPlayDay, epochDay(Date.now()));
+    u.streak = adv.streak;
+    u.lastPlayDay = adv.lastPlayDay;
     // convidado acumula só em memória: vira conta (promoção) ou se perde
     if (u.guest) return;
     this.persistence.saveUser(u);
@@ -551,7 +658,7 @@ export class Store {
   setMuted(userId: string, targetId: string, muted: boolean): void {
     const u = this.byId.get(userId);
     if (!u) return;
-    if (muted && !u.muted.includes(targetId)) u.muted.push(targetId);
+    if (muted && !u.muted.includes(targetId) && u.muted.length < 500) u.muted.push(targetId);
     if (!muted) u.muted = u.muted.filter((id) => id !== targetId);
     if (!u.guest) this.persistence.saveUser(u);
   }
@@ -568,6 +675,20 @@ export class Store {
       .slice(0, limit);
   }
 
+  /**
+   * Posição (1-based) do jogador no ranking global e seus vizinhos por MMR (±span).
+   * Dá um alvo de subida a quem está fora do top-20. Null se o jogador ainda não
+   * pontua (convidado ou sem partidas).
+   */
+  rankView(userId: string, span = 3): { rank: number; around: UserRecord[] } | null {
+    const ranked = [...this.db.users]
+      .filter((u) => u.wins + u.losses > 0)
+      .sort((a, b) => b.mmr - a.mmr);
+    const idx = ranked.findIndex((u) => u.id === userId);
+    if (idx < 0) return null;
+    return { rank: idx + 1, around: ranked.slice(Math.max(0, idx - span), idx + span + 1) };
+  }
+
   profileOf(u: UserRecord): Profile {
     return {
       id: u.id,
@@ -581,6 +702,9 @@ export class Store {
       league: leagueOf(u.mmr) as League,
       wins: u.wins,
       losses: u.losses,
+      streak: u.streak,
+      playedToday: u.lastPlayDay === epochDay(Date.now()),
+      achievements: achievementsOf(u.wins, u.wins + u.losses),
       muted: u.muted,
     };
   }

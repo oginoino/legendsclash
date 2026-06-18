@@ -100,11 +100,11 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 const HEARTBEAT_MS = 30_000;
 const alive = new WeakMap<import('ws').WebSocket, boolean>();
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   alive.set(ws, true);
   ws.on('pong', () => alive.set(ws, true));
   ws.on('message', () => alive.set(ws, true));
-  app.handleConnection(ws);
+  app.handleConnection(ws, req);
 });
 
 setInterval(() => {
@@ -121,3 +121,20 @@ setInterval(() => {
 server.listen(PORT, () => {
   console.log(`⚔️  Legends Clash — servidor autoritativo em http://localhost:${PORT}`);
 });
+
+// Encerramento gracioso: um deploy/restart (systemd manda SIGTERM) tira os
+// jogadores das partidas em andamento de volta ao menu sem perda de Elo, em vez
+// de matar o processo com as batalhas em memória ainda ativas.
+let shuttingDown = false;
+function gracefulShutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} — encerrando partidas e fechando o servidor`);
+  app.shutdown();
+  wss.close();
+  server.close(() => process.exit(0));
+  // backstop: se algo travar o close, sai mesmo assim
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -25,14 +25,25 @@ export interface CardDef {
   health?: number;
   /** Se a carta exige alvo ao ser jogada */
   target?: 'enemy-creature' | 'friendly-creature' | 'enemy-any' | 'none';
-  /** Palavras-chave de regra (ex.: Provocar — inimigos devem atacá-la primeiro) */
-  keywords?: Array<'taunt'>;
+  /**
+   * Palavras-chave de regra:
+   * - `taunt` (Provocar): inimigos devem atacá-la primeiro.
+   * - `charge` (Investida): pode atacar no turno em que entra.
+   * - `battlecry` (Grito de Batalha): dispara um efeito ao ser invocada.
+   * - `deathrattle` (Estertor): dispara um efeito ao ser destruída.
+   */
+  keywords?: Array<'taunt' | 'charge' | 'battlecry' | 'deathrattle'>;
   /**
    * Efeito especial de dano direto: ignora a proteção das criaturas e pode
    * mirar o comandante mesmo com a mesa inimiga ocupada. Nenhuma carta do
    * deck padrão usa o flag — é espaço de design para expansões.
    */
   pierce?: boolean;
+  /**
+   * Token concedido por uma mecânica (ex.: a "moeda" de quem joga depois): não
+   * faz parte do baralho nem do catálogo colecionável — fica fora do Arquivo/Codex.
+   */
+  token?: boolean;
 }
 
 export const CARDS: Record<string, CardDef> = {
@@ -49,13 +60,13 @@ export const CARDS: Record<string, CardDef> = {
   },
   c_arqueira: {
     id: 'c_arqueira', art: '🏹', name: 'Arqueira Élfica', type: 'creature', cost: 2, rarity: 'common',
-    attack: 2, health: 3, target: 'none',
-    text: 'Nunca erra duas vezes o mesmo alvo.',
+    attack: 2, health: 3, target: 'none', keywords: ['battlecry'],
+    text: 'Grito de Batalha: dispara 1 de dano numa criatura inimiga. Nunca erra duas vezes o mesmo alvo.',
   },
   c_cavaleiro: {
     id: 'c_cavaleiro', art: '⚔️', name: 'Cavaleiro de Ferro', type: 'creature', cost: 3, rarity: 'rare',
-    attack: 3, health: 4, target: 'none',
-    text: 'Sua armadura já atravessou três guerras.',
+    attack: 3, health: 4, target: 'none', keywords: ['deathrattle'],
+    text: 'Estertor: um Recruta da Vanguarda toma seu lugar na linha. Sua armadura já atravessou três guerras.',
   },
   c_golem: {
     id: 'c_golem', art: '🗿', name: 'Golem de Pedra', type: 'creature', cost: 4, rarity: 'rare',
@@ -69,8 +80,8 @@ export const CARDS: Record<string, CardDef> = {
   },
   c_dragao: {
     id: 'c_dragao', art: '🐉', name: 'Dragão Cinzento', type: 'creature', cost: 7, rarity: 'legendary',
-    attack: 7, health: 7, target: 'none',
-    text: 'A última carta que muitos comandantes viram.',
+    attack: 7, health: 7, target: 'none', keywords: ['charge'],
+    text: 'Investida: pode atacar no turno em que entra. A última carta que muitos comandantes viram.',
   },
 
   // ─── Magias ───────────────────────────────────────────────────
@@ -81,8 +92,8 @@ export const CARDS: Record<string, CardDef> = {
   },
   s_bola_de_fogo: {
     id: 's_bola_de_fogo', art: '🔥', name: 'Bola de Fogo', type: 'spell', cost: 4, rarity: 'rare',
-    target: 'enemy-any',
-    text: 'Causa 5 de dano a uma criatura inimiga ou ao comandante inimigo.',
+    target: 'enemy-any', pierce: true,
+    text: 'Causa 5 de dano a uma criatura inimiga — ou direto ao comandante, atravessando as defesas.',
   },
   s_bencao: {
     id: 's_bencao', art: '💖', name: 'Bênção Vital', type: 'spell', cost: 2, rarity: 'common',
@@ -93,6 +104,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 's_fortalecer', art: '💪', name: 'Fortalecer', type: 'spell', cost: 2, rarity: 'common',
     target: 'friendly-creature',
     text: 'Uma criatura aliada ganha +2/+2.',
+  },
+  s_tempestade: {
+    id: 's_tempestade', art: '⛈️', name: 'Tempestade', type: 'spell', cost: 4, rarity: 'epic',
+    target: 'none',
+    text: 'Causa 2 de dano a todas as criaturas inimigas. Pune tabuleiros lotados.',
   },
 
   // ─── Artefatos ────────────────────────────────────────────────
@@ -123,6 +139,13 @@ export const CARDS: Record<string, CardDef> = {
     target: 'enemy-creature',
     text: 'Devolve uma criatura inimiga à mão do dono.',
   },
+
+  // ─── Token (concedido por mecânica, fora do baralho) ───────────
+  t_moeda: {
+    id: 't_moeda', art: '🪙', name: 'Moeda do Tempo', type: 'tactic', cost: 0, rarity: 'common',
+    target: 'none', token: true,
+    text: 'Ganhe 1 de energia neste turno. Compensa a iniciativa de quem joga primeiro.',
+  },
 };
 
 /** Composição do deck padrão: 30 cartas (slide "Conceito e condições de vitória"). */
@@ -136,8 +159,9 @@ export const DEFAULT_DECK: Array<[cardId: string, copies: number]> = [
   ['c_dragao', 1],
   ['s_faisca', 2],
   ['s_bola_de_fogo', 2],
-  ['s_bencao', 2],
+  ['s_bencao', 1],
   ['s_fortalecer', 2],
+  ['s_tempestade', 1],
   ['a_escudo', 1],
   ['a_estandarte', 1],
   ['t_reforcos', 1],

@@ -17,6 +17,12 @@ export interface Profile {
   league: League;
   wins: number;
   losses: number;
+  /** Dias consecutivos com partida (gancho de retorno). */
+  streak: number;
+  /** Já jogou hoje? (missão do dia cumprida) */
+  playedToday: boolean;
+  /** Conquistas obtidas (ids) — desbloqueiam cosméticos por mérito. */
+  achievements: string[];
   muted: string[]; // ids de jogadores silenciados por este usuário
 }
 
@@ -97,6 +103,8 @@ export interface SeatView {
   fatigue: number;
   connected: boolean;
   out: boolean;
+  /** Fase de mulligan: este assento já confirmou a mão inicial. */
+  mulliganDone: boolean;
 }
 
 export interface GameView {
@@ -107,7 +115,8 @@ export interface GameView {
   turnEndsAt: number; // epoch ms — temporizador autoritativo do servidor
   seats: SeatView[];
   hand: CardInHand[];
-  status: 'active' | 'finished';
+  /** 'mulligan' = fase de troca da mão inicial, antes do turno 1. */
+  status: 'mulligan' | 'active' | 'finished';
   log: GameLogEntry[];
   /** Últimas cartas jogadas (informação pública para os dois lados). */
   plays: PlayedCard[];
@@ -132,6 +141,8 @@ export interface MatchResult {
   turns: number;
   durationMs: number;
   mmr: Record<string, { before: number; after: number; delta: number; league: League }>;
+  /** Conquistas recém-obtidas nesta partida, por jogador (celebração no fim). */
+  unlocked?: Record<string, string[]>;
 }
 
 /** Alvo de uma carta ou ataque: assento + (opcional) criatura; sem iid = comandante. */

@@ -1548,6 +1548,77 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .link-btn:hover { color: var(--gold-2); }
 
+/* ── HUD de ritmo: turno atual + fadiga iminente ──────────────── */
+.pace-hud {
+  display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+  justify-content: center; margin-top: 6px; font-size: 0.8rem;
+}
+.pace-turn { color: var(--dim); }
+.pace-fatigue { color: var(--red); font-weight: 600; }
+
+/* ── Tutorial da 1ª partida ────────────────────────────────────── */
+.panel.tutorial { max-width: 440px; text-align: center; }
+.panel.tutorial h2 { font-family: var(--font-display); color: var(--gold); margin: 6px 0; }
+.tutorial-icon { font-size: 2.6rem; line-height: 1; }
+.tutorial-text { color: var(--text); margin: 4px 0 14px; }
+.tutorial-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 14px; }
+.tutorial-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.tutorial-dot.on { background: var(--gold); }
+.tutorial-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* ── Cosméticos por mérito: bloqueados + celebração de conquista ── */
+.cz-cmd.locked, .cz-swatch.locked { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5); }
+.cz-cmd.locked .cz-cmd-title { font-size: 0.72rem; color: var(--dim); }
+.go-unlocks {
+  margin: 6px 0 4px; padding: 10px 12px;
+  background: var(--panel-2); border: 1px solid var(--gold); border-radius: 8px;
+  display: flex; flex-direction: column; gap: 4px; align-items: center;
+}
+.go-unlocks-title { margin: 0; color: var(--gold); font-weight: 600; }
+.go-unlock { color: var(--text); }
+
+/* ── Sequência diária + missão do dia (retenção) ──────────────── */
+.daily-strip {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  margin-bottom: 14px; padding: 8px 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  font-size: 0.92rem;
+}
+.daily-strip .streak { color: var(--gold); font-weight: 600; }
+.daily-strip .daily-mission { color: var(--dim); }
+.daily-strip .daily-mission.done { color: var(--green); }
+
+/* ── Ranking: sua posição e alvo de subida ────────────────────── */
+.my-rank {
+  margin-bottom: 12px; padding: 10px 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+}
+.my-rank-pos { margin: 0 0 4px; }
+.my-rank .hint { margin: 0; }
+
+/* ── Fila magra: rota de escape (convidar) quando se está sozinho ─ */
+.queue-thin {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+
+/* ── Mulligan: troca da mão inicial ───────────────────────────── */
+.panel.mulligan { max-width: 960px; text-align: center; }
+.panel.mulligan h2 { font-family: var(--font-display); color: var(--gold); margin-bottom: 6px; }
+.mulligan-hint { color: var(--dim); margin: 0 auto 18px; max-width: 540px; }
+.mulligan-hand {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  justify-content: center; align-items: flex-end; margin-bottom: 20px;
+}
+.mulligan-slot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.mulligan-slot.swapping .card { outline: 2px solid var(--red); outline-offset: 2px; opacity: 0.78; }
+.mulligan-slot.locked .card { cursor: default; }
+.mulligan-flag { font-size: 12px; color: var(--dim); letter-spacing: 0.02em; }
+.mulligan-slot.swapping .mulligan-flag { color: var(--red); }
+.mulligan-waiting { color: var(--dim); font-style: italic; margin-top: 8px; }
+.mulligan-confirm { margin-top: 4px; }
+
 /* ── Acessibilidade: sem animação decorativa contínua ─────────── */
 @media (prefers-reduced-motion: reduce) {
   .card.playable .card-shine::after,

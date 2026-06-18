@@ -1,11 +1,15 @@
+import { randomInt } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
-import type { ClientMsg, ServerMsg, MatchHistoryEntry } from '@legendsclash/shared';
+import { TAUNTS, achievementsOf } from '@legendsclash/shared';
+import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
 import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
 import { Match, GameError, type EngineResult, type MatchPlayer } from './game/engine.js';
 import { applyElo, leagueOf } from './elo.js';
 import { filterText, MAX_CHAT_LENGTH } from './wordfilter.js';
+import { RateLimiter } from './ratelimit.js';
 
 /**
  * Orquestra sessões WebSocket: autenticação, fila, salas, chat e partidas.
@@ -13,6 +17,22 @@ import { filterText, MAX_CHAT_LENGTH } from './wordfilter.js';
  */
 
 const QUEUE_TICK_MS = 2000;
+/** Nº de denunciantes distintos por alvo que sinaliza revisão (moderação). */
+const REPORT_FLAG_THRESHOLD = 3;
+
+/**
+ * IP do cliente para a guarda anti alt-farm. Atrás do Caddy (produção) o IP real
+ * vem em X-Forwarded-For; loopback (dev/e2e) é tratado como desconhecido para não
+ * confundir dois jogadores locais com a mesma origem.
+ */
+function clientIp(req?: IncomingMessage): string {
+  if (!req) return '';
+  const xff = req.headers['x-forwarded-for'];
+  const fwd = (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0].trim();
+  if (fwd) return fwd;
+  const ra = req.socket.remoteAddress ?? '';
+  return /^(::1$|::ffff:127\.|127\.)/.test(ra) ? '' : ra;
+}
 
 /** Nome exibido a terceiros — contas com onboarding pendente têm nome vazio. */
 function displayName(u: UserRecord): string {
@@ -26,6 +46,14 @@ export class App {
   private rooms = new RoomManager();
   private matches = new Map<string, Match>(); // userId → partida ativa
   private recentChat = new Map<string, string[]>(); // userId → últimas mensagens (contexto de report)
+  private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
+  private userIp = new Map<string, string>(); // userId → IP da conexão ativa
+  private reportsByTarget = new Map<string, Set<string>>(); // denunciado → denunciantes distintos
+  // Rate-limits por usuário (token bucket): defesa autoritativa contra flood/DoS
+  // e spam de provocação — os cooldowns do cliente são só UX.
+  private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
+  private chatLimiter = new RateLimiter(5, 1); // chat livre: ~1 msg/s, burst 5
+  private tauntLimiter = new RateLimiter(1, 0.4); // provocação: ~1 a cada 2,5 s
   private queueTimer: NodeJS.Timeout;
 
   constructor(private store: Store) {
@@ -34,7 +62,9 @@ export class App {
 
   // ─── Conexão e autenticação ─────────────────────────────────────
 
-  handleConnection(ws: WebSocket): void {
+  handleConnection(ws: WebSocket, req?: IncomingMessage): void {
+    const ip = clientIp(req);
+    if (ip) this.socketIp.set(ws, ip);
     ws.on('message', (raw) => {
       let msg: ClientMsg;
       try {
@@ -65,6 +95,11 @@ export class App {
     const user = this.store.userById(userId);
     if (!user) throw new KnownError('Usuário não encontrado.');
 
+    // Teto geral anti-flood por usuário (DoS barato). Generoso o bastante para
+    // não tocar no jogo normal (um humano fica muito abaixo); acima do limite,
+    // descarta em silêncio para não realimentar o atacante.
+    if (!this.msgLimiter.take(userId)) return;
+
     switch (msg.t) {
       case 'profile:update': return this.profileUpdate(user, msg);
       case 'queue:join': return this.queueJoin(user);
@@ -74,9 +109,11 @@ export class App {
       case 'room:leave': return this.roomLeave(user);
       case 'room:start': return this.roomStart(user);
       case 'chat:send': return this.chatSend(user, msg.text);
+      case 'chat:taunt': return this.tauntSend(user, msg.id);
       case 'chat:mute': return this.chatMute(user, msg.playerId, true);
       case 'chat:unmute': return this.chatMute(user, msg.playerId, false);
       case 'chat:report': return this.chatReport(user, msg.playerId, msg.reason);
+      case 'game:mulligan': return this.withMatch(user, (m) => m.mulligan(user.id, msg.iids));
       case 'game:play': return this.withMatch(user, (m) => m.playCard(user.id, msg.iid, msg.target));
       case 'game:attack': return this.withMatch(user, (m) => m.attack(user.id, msg.attackerIid, msg.target));
       case 'game:endTurn': return this.withMatch(user, (m) => m.endTurn(user.id));
@@ -99,8 +136,11 @@ export class App {
     if (old && old !== ws) old.close(4001, 'Conexão substituída por outra aba/dispositivo.');
     this.sockets.set(user.id, ws);
     this.socketUser.set(ws, user.id);
+    const ip = this.socketIp.get(ws);
+    if (ip) this.userIp.set(user.id, ip);
 
     this.send(ws, { t: 'hello:ok', profile: this.store.profileOf(user) });
+    this.store.recordEvent('session_start', { userId: user.id, props: { guest: user.guest } });
 
     // Reconexão a partida em andamento (janela anti-abandono de 2 min)
     const match = this.matches.get(user.id);
@@ -123,7 +163,14 @@ export class App {
     if (this.sockets.get(userId) !== ws) return; // conexão antiga substituída
 
     this.sockets.delete(userId);
+    const wasQueued = this.queue.has(userId);
     this.queue.leave(userId);
+    if (wasQueued) this.store.recordEvent('queue_abandon', { userId });
+    // libera os baldes de rate-limit (reconexão recomeça com balde cheio)
+    this.msgLimiter.forget(userId);
+    this.chatLimiter.forget(userId);
+    this.tauntLimiter.forget(userId);
+    this.userIp.delete(userId);
 
     const match = this.matches.get(userId);
     if (match && !match.finished) {
@@ -160,20 +207,43 @@ export class App {
     if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
     if (this.rooms.roomOf(user.id)) throw new KnownError('Saia da sala antes de entrar na fila.');
     this.queue.join(user.id, user.mmr);
-    this.sendTo(user.id, { t: 'queue:status', inQueue: true, size: this.queue.size });
+    this.store.recordEvent('queue_join', { userId: user.id, props: { mmr: user.mmr } });
+    this.broadcastQueue(); // o recém-chegado e quem já esperava veem o novo estado
   }
 
   private queueLeave(user: UserRecord): void {
+    const wasQueued = this.queue.has(user.id);
     this.queue.leave(user.id);
+    if (wasQueued) this.store.recordEvent('queue_leave', { userId: user.id });
     this.sendTo(user.id, { t: 'queue:status', inQueue: false, size: this.queue.size });
+    this.broadcastQueue(); // quem continua pode ter ficado sozinho
   }
 
   private tickQueue(): void {
-    for (const [a, b] of this.queue.tick()) {
+    // anti alt-farm: não pareia dois da mesma origem (IP conhecido e igual)
+    const sameOrigin = (a: { userId: string }, b: { userId: string }): boolean => {
+      const ia = this.userIp.get(a.userId);
+      return !!ia && ia === this.userIp.get(b.userId);
+    };
+    for (const [a, b] of this.queue.tick(undefined, sameOrigin)) {
       const ua = this.store.userById(a.userId);
       const ub = this.store.userById(b.userId);
       if (!ua || !ub) continue;
       this.startMatch([ua, ub]);
+    }
+    this.broadcastQueue(); // remanescentes (ex.: ímpar sozinho) recebem waitingAlone
+  }
+
+  /**
+   * Difunde o estado da fila a todos que aguardam: tamanho e se estão sozinhos.
+   * waitingAlone vira a rota de escape da 1ª sessão — em vez de um spinner sem
+   * fim, o cliente sugere criar uma sala e convidar um amigo.
+   */
+  private broadcastQueue(): void {
+    const size = this.queue.size;
+    const waitingAlone = size === 1;
+    for (const uid of this.queue.userIds()) {
+      this.sendTo(uid, { t: 'queue:status', inQueue: true, size, waitingAlone });
     }
   }
 
@@ -237,14 +307,29 @@ export class App {
       id: u.id, name: displayName(u), avatar: u.avatar,
       commander: u.commander, accent: u.accent, mmr: u.mmr,
     }));
+    // Sorteia a ordem dos assentos: sem isso, o seat 0 (que joga primeiro) seria
+    // sempre o de menor MMR do par, porque o matchmaking ordena a fila por MMR —
+    // a vantagem de iniciativa ficaria correlacionada ao rating. Fisher–Yates com
+    // aleatoriedade do servidor (mesma garantia anti-cheat do embaralhamento de deck).
+    for (let i = players.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [players[i], players[j]] = [players[j], players[i]];
+    }
     let match: Match;
     match = new Match(
       players,
       () => this.broadcastMatch(match),
       (result) => this.finishMatch(match, result),
+      undefined, // turnSeconds: usa o padrão (TURN_SECONDS)
+      true, // habilita a fase de mulligan (troca de mão) antes do turno 1
     );
     for (const u of users) this.matches.set(u.id, match);
     match.start();
+    // telemetria: ordem de assentos (sorteada) p/ derivar winrate por assento
+    this.store.recordEvent('match_start', {
+      matchId: match.id,
+      props: { seats: players.map((p, seat) => ({ seat, playerId: p.id, mmr: p.mmr })) },
+    });
   }
 
   private withMatch(user: UserRecord, fn: (m: Match) => void): void {
@@ -262,12 +347,21 @@ export class App {
   private finishMatch(match: Match, result: EngineResult): void {
     const ids = match.playerIds();
     const winnerId = ids[result.winnerSeat];
-    const loserId = ids.find((id) => id !== winnerId)!;
     const winner = this.store.userById(winnerId)!;
-    const loser = this.store.userById(loserId)!;
+    const loserIds = ids.filter((id) => id !== winnerId);
+    const winnerBefore = winner.mmr;
 
-    const before = { winner: winner.mmr, loser: loser.mmr };
-    const after = applyElo(winner.mmr, loser.mmr);
+    // Quem concluiu a 1ª partida — capturado ANTES de recordMatch incrementar V/D.
+    const firstTimers = ids.filter((id) => {
+      const u = this.store.userById(id);
+      return !!u && u.wins + u.losses === 0;
+    });
+    // Conquistas ANTES da partida, para detectar as recém-obtidas (celebração).
+    const achBefore: Record<string, string[]> = {};
+    for (const id of ids) {
+      const u = this.store.userById(id);
+      achBefore[id] = u ? achievementsOf(u.wins, u.wins + u.losses) : [];
+    }
 
     const entryFor = (won: boolean, opp: UserRecord, delta: number): MatchHistoryEntry => ({
       matchId: match.id,
@@ -281,19 +375,57 @@ export class App {
       endedAt: Date.now(),
     });
 
-    this.store.recordMatch(winnerId, entryFor(true, loser, after.winner - before.winner), after.winner, true);
-    this.store.recordMatch(loserId, entryFor(false, winner, after.loser - before.loser), after.loser, false);
+    // Elo é pareado contra o rating do vencedor ANTES da partida; o vencedor
+    // acumula o ganho de cada perdedor. Em 1v1 (N=2) é idêntico ao Elo clássico;
+    // em N>2 (arquitetura N-player) nenhum perdedor fica sem registro de derrota
+    // nem ajuste de MMR — antes só um perdedor era contabilizado.
+    const mmr: Record<string, { before: number; after: number; delta: number; league: League }> = {};
+    let winnerGain = 0;
+    let toughestLoser = this.store.userById(loserIds[0])!;
+    for (const loserId of loserIds) {
+      const loser = this.store.userById(loserId);
+      if (!loser) continue;
+      const loserBefore = loser.mmr;
+      const after = applyElo(winnerBefore, loserBefore);
+      const loserDelta = after.loser - loserBefore;
+      winnerGain += after.winner - winnerBefore;
+      if (loserBefore >= toughestLoser.mmr) toughestLoser = loser;
+      this.store.recordMatch(loserId, entryFor(false, winner, loserDelta), after.loser, false);
+      mmr[loserId] = {
+        before: loserBefore, after: after.loser,
+        delta: loserDelta, league: leagueOf(after.loser),
+      };
+    }
 
-    const mmr = {
-      [winnerId]: {
-        before: before.winner, after: after.winner,
-        delta: after.winner - before.winner, league: leagueOf(after.winner),
-      },
-      [loserId]: {
-        before: before.loser, after: after.loser,
-        delta: after.loser - before.loser, league: leagueOf(after.loser),
-      },
+    const winnerAfter = winnerBefore + winnerGain;
+    this.store.recordMatch(winnerId, entryFor(true, toughestLoser, winnerGain), winnerAfter, true);
+    mmr[winnerId] = {
+      before: winnerBefore, after: winnerAfter,
+      delta: winnerGain, league: leagueOf(winnerAfter),
     };
+
+    this.store.recordEvent('match_end', {
+      matchId: match.id,
+      props: {
+        winnerId, winnerSeat: result.winnerSeat, reason: result.reason,
+        turns: result.turns, durationMs: result.durationMs,
+        deltas: Object.fromEntries(Object.entries(mmr).map(([id, m]) => [id, m.delta])),
+      },
+    });
+    for (const id of firstTimers) {
+      this.store.recordEvent('first_match_completed', {
+        userId: id, matchId: match.id, props: { won: id === winnerId },
+      });
+    }
+
+    // conquistas recém-obtidas nesta partida (celebração no fim)
+    const unlocked: Record<string, string[]> = {};
+    for (const id of ids) {
+      const u = this.store.userById(id);
+      if (!u) continue;
+      const fresh = achievementsOf(u.wins, u.wins + u.losses).filter((a) => !achBefore[id].includes(a));
+      if (fresh.length) unlocked[id] = fresh;
+    }
 
     this.broadcastMatch(match); // estado final
     for (const pid of ids) {
@@ -302,7 +434,7 @@ export class App {
         t: 'game:over',
         result: {
           matchId: match.id, winnerId, reason: result.reason,
-          turns: result.turns, durationMs: result.durationMs, mmr,
+          turns: result.turns, durationMs: result.durationMs, mmr, unlocked,
         },
       });
       const u = this.store.userById(pid);
@@ -317,7 +449,25 @@ export class App {
     // chat é restrito à sala/partida (efêmero) — convidados participam normalmente
     const text = filterText(String(rawText).slice(0, MAX_CHAT_LENGTH).trim());
     if (!text) return;
+    // flood: acima do limite, descarta em silêncio (o cliente também throttla)
+    if (!this.chatLimiter.take(user.id)) return;
+    this.deliverChat(user, text);
+  }
 
+  /**
+   * Provocação tipada: só aceita ids do catálogo TAUNTS e aplica o cooldown no
+   * servidor. O cooldown do cliente (GameView) é só UX — um socket cru o ignora,
+   * então o limite que conta vive aqui.
+   */
+  private tauntSend(user: UserRecord, id: string): void {
+    const taunt = TAUNTS.find((t) => t.id === id);
+    if (!taunt) throw new KnownError('Provocação inválida.');
+    if (!this.tauntLimiter.take(user.id)) return; // dentro do cooldown: descarta
+    this.deliverChat(user, taunt.text);
+  }
+
+  /** Entrega uma mensagem ao chat da sala/partida, respeitando mute do destinatário. */
+  private deliverChat(user: UserRecord, text: string): void {
     const recent = this.recentChat.get(user.id) ?? [];
     recent.push(text);
     this.recentChat.set(user.id, recent.slice(-10));
@@ -346,11 +496,20 @@ export class App {
   }
 
   private chatMute(user: UserRecord, targetId: string, muted: boolean): void {
+    if (targetId === user.id) return; // silenciar a si mesmo não faz sentido
     this.store.setMuted(user.id, targetId, muted);
     this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(user) });
   }
 
   private chatReport(user: UserRecord, targetId: string, reason: string): void {
+    // valida o alvo: sem auto-denúncia e só quem está na mesma sala/partida
+    // (evita poluição da base e report-bombing de ids arbitrários)
+    if (targetId === user.id) throw new KnownError('Você não pode se denunciar.');
+    if (!this.chatRecipients(user.id).includes(targetId)) {
+      throw new KnownError('Só dá para denunciar quem está na sua sala ou partida.');
+    }
+    // alívio imediato: silencia o denunciado para o denunciante (atalho do mute)
+    this.store.setMuted(user.id, targetId, true);
     this.store.addReport({
       reporterId: user.id,
       reportedId: targetId,
@@ -358,17 +517,31 @@ export class App {
       context: (this.recentChat.get(targetId) ?? []).join(' | '),
       at: Date.now(),
     });
+    // sinal de volume: denunciantes DISTINTOS por alvo (fecha o ciclo da denúncia)
+    const reporters = this.reportsByTarget.get(targetId) ?? new Set<string>();
+    reporters.add(user.id);
+    this.reportsByTarget.set(targetId, reporters);
+    if (reporters.size >= REPORT_FLAG_THRESHOLD) {
+      console.warn(`[moderação] ${targetId} acumulou ${reporters.size} denunciantes distintos — revisar`);
+    }
     this.sendTo(user.id, { t: 'chat:report:ok' });
   }
 
   // ─── Ranking ────────────────────────────────────────────────────
 
   private sendLeaderboard(user: UserRecord): void {
-    const entries = this.store.leaderboard().map((u) => ({
+    const toEntry = (u: UserRecord): LeaderboardEntry => ({
       id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr,
       league: leagueOf(u.mmr), wins: u.wins, losses: u.losses,
-    }));
-    this.sendTo(user.id, { t: 'leaderboard', entries });
+    });
+    const entries = this.store.leaderboard().map(toEntry);
+    const rv = this.store.rankView(user.id); // posição + vizinhos (alvo de subida)
+    this.sendTo(user.id, {
+      t: 'leaderboard',
+      entries,
+      myRank: rv?.rank,
+      around: rv?.around.map(toEntry),
+    });
   }
 
   // ─── Infra ──────────────────────────────────────────────────────
@@ -380,6 +553,25 @@ export class App {
   private sendTo(userId: string, msg: ServerMsg): void {
     const ws = this.sockets.get(userId);
     if (ws) this.send(ws, msg);
+  }
+
+  /**
+   * Encerramento gracioso (SIGTERM/restart de deploy): tira os jogadores das
+   * partidas em andamento de volta ao menu SEM perda de Elo — a partida foi
+   * interrompida pelo servidor, não perdida —, em vez de sumir junto com o
+   * processo (que deixava os clientes pendurados até a reconexão).
+   */
+  shutdown(): void {
+    for (const match of new Set(this.matches.values())) {
+      if (match.finished) continue;
+      for (const pid of match.playerIds()) {
+        this.store.recordEvent('match_aborted', { userId: pid, matchId: match.id });
+        this.sendTo(pid, { t: 'game:state', view: null });
+      }
+      match.dispose();
+    }
+    this.matches.clear();
+    this.dispose();
   }
 
   dispose(): void {
