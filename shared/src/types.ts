@@ -7,10 +7,12 @@ export type League = 'Bronze' | 'Prata' | 'Ouro';
 export interface Profile {
   id: string;
   name: string;
-  email: string;
+  email: string; // vazio em convidados
   avatar: string; // emoji escolhido pelo jogador (perfil/listas/chat)
   commander: string; // retrato do comandante exibido na arena
   accent: string; // cor de destaque do comandante (hex)
+  /** Convidado: joga sem cadastro, mas chat/histórico/ranking pedem conta. */
+  guest: boolean;
   mmr: number;
   league: League;
   wins: number;

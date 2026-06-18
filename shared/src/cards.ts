@@ -8,11 +8,15 @@
 
 export type CardType = 'creature' | 'spell' | 'artifact' | 'tactic';
 
+/** Raridade — só apresentação (gema/moldura da carta); sem efeito de regra. */
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+
 export interface CardDef {
   id: string;
   name: string;
   type: CardType;
   cost: number;
+  rarity: Rarity;
   text: string;
   /** Arte da carta (emoji) — placeholder até a direção de arte do beta */
   art: string;
@@ -34,88 +38,88 @@ export interface CardDef {
 export const CARDS: Record<string, CardDef> = {
   // ─── Criaturas ────────────────────────────────────────────────
   c_recruta: {
-    id: 'c_recruta', art: '🪖', name: 'Recruta da Vanguarda', type: 'creature', cost: 1,
+    id: 'c_recruta', art: '🪖', name: 'Recruta da Vanguarda', type: 'creature', cost: 1, rarity: 'common',
     attack: 1, health: 2, target: 'none',
     text: 'Um soldado leal, sempre o primeiro na linha de frente.',
   },
   c_lobo: {
-    id: 'c_lobo', art: '🐺', name: 'Lobo das Sombras', type: 'creature', cost: 2,
+    id: 'c_lobo', art: '🐺', name: 'Lobo das Sombras', type: 'creature', cost: 2, rarity: 'common',
     attack: 3, health: 2, target: 'none',
     text: 'Rápido e letal, mas frágil sob luz direta.',
   },
   c_arqueira: {
-    id: 'c_arqueira', art: '🏹', name: 'Arqueira Élfica', type: 'creature', cost: 2,
+    id: 'c_arqueira', art: '🏹', name: 'Arqueira Élfica', type: 'creature', cost: 2, rarity: 'common',
     attack: 2, health: 3, target: 'none',
     text: 'Nunca erra duas vezes o mesmo alvo.',
   },
   c_cavaleiro: {
-    id: 'c_cavaleiro', art: '⚔️', name: 'Cavaleiro de Ferro', type: 'creature', cost: 3,
+    id: 'c_cavaleiro', art: '⚔️', name: 'Cavaleiro de Ferro', type: 'creature', cost: 3, rarity: 'rare',
     attack: 3, health: 4, target: 'none',
     text: 'Sua armadura já atravessou três guerras.',
   },
   c_golem: {
-    id: 'c_golem', art: '🗿', name: 'Golem de Pedra', type: 'creature', cost: 4,
+    id: 'c_golem', art: '🗿', name: 'Golem de Pedra', type: 'creature', cost: 4, rarity: 'rare',
     attack: 3, health: 6, target: 'none', keywords: ['taunt'],
     text: 'Provocar: enquanto estiver na mesa, inimigos precisam atacá-lo primeiro.',
   },
   c_campea: {
-    id: 'c_campea', art: '🌟', name: 'Campeã da Aurora', type: 'creature', cost: 5,
+    id: 'c_campea', art: '🌟', name: 'Campeã da Aurora', type: 'creature', cost: 5, rarity: 'epic',
     attack: 5, health: 5, target: 'none',
     text: 'Onde ela avança, a linha inimiga recua.',
   },
   c_dragao: {
-    id: 'c_dragao', art: '🐉', name: 'Dragão Cinzento', type: 'creature', cost: 7,
+    id: 'c_dragao', art: '🐉', name: 'Dragão Cinzento', type: 'creature', cost: 7, rarity: 'legendary',
     attack: 7, health: 7, target: 'none',
     text: 'A última carta que muitos comandantes viram.',
   },
 
   // ─── Magias ───────────────────────────────────────────────────
   s_faisca: {
-    id: 's_faisca', art: '⚡', name: 'Faísca', type: 'spell', cost: 1,
+    id: 's_faisca', art: '⚡', name: 'Faísca', type: 'spell', cost: 1, rarity: 'common',
     target: 'enemy-any',
     text: 'Causa 2 de dano a uma criatura inimiga ou ao comandante inimigo.',
   },
   s_bola_de_fogo: {
-    id: 's_bola_de_fogo', art: '🔥', name: 'Bola de Fogo', type: 'spell', cost: 4,
+    id: 's_bola_de_fogo', art: '🔥', name: 'Bola de Fogo', type: 'spell', cost: 4, rarity: 'rare',
     target: 'enemy-any',
     text: 'Causa 5 de dano a uma criatura inimiga ou ao comandante inimigo.',
   },
   s_bencao: {
-    id: 's_bencao', art: '💖', name: 'Bênção Vital', type: 'spell', cost: 2,
+    id: 's_bencao', art: '💖', name: 'Bênção Vital', type: 'spell', cost: 2, rarity: 'common',
     target: 'none',
     text: 'Restaura 4 de vida ao seu comandante (máx. 30).',
   },
   s_fortalecer: {
-    id: 's_fortalecer', art: '💪', name: 'Fortalecer', type: 'spell', cost: 2,
+    id: 's_fortalecer', art: '💪', name: 'Fortalecer', type: 'spell', cost: 2, rarity: 'common',
     target: 'friendly-creature',
     text: 'Uma criatura aliada ganha +2/+2.',
   },
 
   // ─── Artefatos ────────────────────────────────────────────────
   a_escudo: {
-    id: 'a_escudo', art: '🛡️', name: 'Escudo de Aço', type: 'artifact', cost: 2,
+    id: 'a_escudo', art: '🛡️', name: 'Escudo de Aço', type: 'artifact', cost: 2, rarity: 'rare',
     target: 'none',
     text: 'Seu comandante ganha 4 de escudo (absorve dano antes da vida).',
   },
   a_estandarte: {
-    id: 'a_estandarte', art: '🚩', name: 'Estandarte de Guerra', type: 'artifact', cost: 3,
+    id: 'a_estandarte', art: '🚩', name: 'Estandarte de Guerra', type: 'artifact', cost: 3, rarity: 'epic',
     target: 'none',
     text: 'Permanente: suas criaturas atacam com +1 de ataque.',
   },
 
   // ─── Táticas ──────────────────────────────────────────────────
   t_reforcos: {
-    id: 't_reforcos', art: '📜', name: 'Reforços', type: 'tactic', cost: 2,
+    id: 't_reforcos', art: '📜', name: 'Reforços', type: 'tactic', cost: 2, rarity: 'common',
     target: 'none',
     text: 'Compre 2 cartas.',
   },
   t_surto: {
-    id: 't_surto', art: '🔋', name: 'Surto de Energia', type: 'tactic', cost: 1,
+    id: 't_surto', art: '🔋', name: 'Surto de Energia', type: 'tactic', cost: 1, rarity: 'rare',
     target: 'none',
     text: 'Ganhe 2 de energia neste turno.',
   },
   t_recuo: {
-    id: 't_recuo', art: '🌀', name: 'Recuo Tático', type: 'tactic', cost: 3,
+    id: 't_recuo', art: '🌀', name: 'Recuo Tático', type: 'tactic', cost: 3, rarity: 'epic',
     target: 'enemy-creature',
     text: 'Devolve uma criatura inimiga à mão do dono.',
   },

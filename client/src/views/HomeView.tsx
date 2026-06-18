@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { logout, send, useAppState } from '../store';
+import { logout, openAccountPrompt, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { ProfileModal } from '../components/ProfileModal';
 import { RulesModal } from '../components/RulesModal';
+import { CodexView } from './CodexView';
 
 /** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
 function leagueProgress(mmr: number): { label: string; pct: number } | null {
@@ -17,6 +18,7 @@ export function HomeView() {
   const [joinCode, setJoinCode] = useState('');
   const [showRules, setShowRules] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
+  const [showCodex, setShowCodex] = useState(false);
   const p = s.profile;
 
   if (!p) return <div className="centered">Carregando perfil…</div>;
@@ -32,12 +34,15 @@ export function HomeView() {
         <div className="profile-chip">
           <span className="avatar-lg">{p.avatar}</span>
           <div>
-            <strong>{p.name}</strong>
+            <strong>{p.name}</strong> {p.guest && <span className="guest-badge">convidado</span>}
             <div className="profile-sub">
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
             </div>
           </div>
           <button className="btn ghost" onClick={() => setShowCustomize(true)}>✨ Personalizar</button>
+          {p.guest && (
+            <button className="btn primary" onClick={openAccountPrompt}>Criar conta</button>
+          )}
           <button className="btn ghost" onClick={logout}>Sair</button>
         </div>
       </header>
@@ -68,9 +73,14 @@ export function HomeView() {
                 </div>
               )}
               {!progress && <p className="hint">🥇 Você está na liga máxima — defenda o topo!</p>}
-              <button className="btn ghost" onClick={() => setShowRules(true)}>
-                📖 Como jogar
-              </button>
+              <div className="home-secondary">
+                <button className="btn ghost" onClick={() => setShowRules(true)}>
+                  📖 Como jogar
+                </button>
+                <button className="btn ghost" onClick={() => setShowCodex(true)}>
+                  📜 Arquivo de Aurélia
+                </button>
+              </div>
               <div className="divider">ou jogue com amigos</div>
               <button className="btn" onClick={() => send({ t: 'room:create' })}>
                 Criar sala privada
@@ -96,6 +106,13 @@ export function HomeView() {
 
         <section className="panel">
           <h2>Ranking · Ligas</h2>
+          {p.guest && (
+            <p className="account-cta">
+              🔒 Convidados não pontuam no ranking.{' '}
+              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+              para disputar as ligas.
+            </p>
+          )}
           {s.leaderboard.length === 0 ? (
             <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
           ) : (
@@ -117,6 +134,13 @@ export function HomeView() {
 
         <section className="panel">
           <h2>Histórico de partidas</h2>
+          {p.guest && (
+            <p className="account-cta">
+              ⏳ Histórico de convidado vale só nesta sessão.{' '}
+              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+              para levar seu progresso com você.
+            </p>
+          )}
           {s.history.length === 0 ? (
             <p className="hint">Suas partidas aparecerão aqui.</p>
           ) : (
@@ -137,6 +161,7 @@ export function HomeView() {
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCustomize && <ProfileModal onClose={() => setShowCustomize(false)} />}
+      {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
     </div>
   );
 }

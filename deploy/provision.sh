@@ -67,9 +67,13 @@ systemctl restart legendsclash
 
 log "Caddy (proxy reverso)"
 install -d /etc/caddy
-install -m 644 "$APP_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile
-systemctl enable caddy >/dev/null
-systemctl restart caddy
+# reload (graceful) e só quando a config muda: restart incondicional cortava
+# todas as conexões (inclusive WebSockets de batalhas) a cada provisão
+if ! cmp -s "$APP_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile; then
+  install -m 644 "$APP_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile
+  systemctl reload caddy || systemctl restart caddy
+fi
+systemctl enable --now caddy >/dev/null
 
 log "Firewall (ufw)"
 ufw allow OpenSSH >/dev/null 2>&1 || ufw allow 22/tcp >/dev/null 2>&1 || true

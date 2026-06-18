@@ -22,6 +22,16 @@ try {
 const PORT = Number(process.env.PORT ?? 8787);
 const CLIENT_DIST = join(__dirname, '..', '..', 'client', 'dist');
 
+// Partidas vivem em memória: um erro não tratado fora do fluxo de um request
+// não pode derrubar o processo — perderia todas as batalhas em andamento e
+// desconectaria todos os jogadores de uma vez.
+process.on('uncaughtException', (err) => {
+  console.error('[fatal-evitado] uncaughtException:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal-evitado] unhandledRejection:', reason);
+});
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -43,11 +53,18 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? '/', 'http://localhost');
+  // Paths malformados (ex.: "GET //" de scanners) lançam em new URL — jamais
+  // deixe um request qualquer derrubar o servidor inteiro.
+  let url: URL;
+  try {
+    url = new URL(req.url ?? '/', 'http://localhost');
+  } catch {
+    return json(res, 400, { error: 'URL inválida.' });
+  }
   try {
     if (url.pathname === '/api/health') return json(res, 200, { ok: true });
 
-    // Login por código OTP via e-mail — rotas em auth.ts.
+    // Convidado, e-mail+senha, perfil e logout — rotas em auth.ts.
     if (url.pathname.startsWith('/api/auth/')) {
       if (await handleAuthRoute(auth, req, res, url)) return;
     }
@@ -75,7 +92,31 @@ const server = createServer(async (req, res) => {
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });
-wss.on('connection', (ws) => app.handleConnection(ws));
+
+// Heartbeat: NATs, proxies e redes móveis derrubam conexões ociosas sem
+// avisar — o socket fica "aberto" porém morto. O ping periódico gera tráfego
+// que mantém os intermediários vivos e o pong ausente denuncia o socket morto
+// (terminate → handleClose → janela de reconexão da partida).
+const HEARTBEAT_MS = 30_000;
+const alive = new WeakMap<import('ws').WebSocket, boolean>();
+
+wss.on('connection', (ws) => {
+  alive.set(ws, true);
+  ws.on('pong', () => alive.set(ws, true));
+  ws.on('message', () => alive.set(ws, true));
+  app.handleConnection(ws);
+});
+
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (alive.get(ws) === false) {
+      ws.terminate();
+      continue;
+    }
+    alive.set(ws, false);
+    ws.ping();
+  }
+}, HEARTBEAT_MS);
 
 server.listen(PORT, () => {
   console.log(`⚔️  Legends Clash — servidor autoritativo em http://localhost:${PORT}`);

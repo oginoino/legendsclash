@@ -7,6 +7,7 @@ import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
+import { CodexView } from './CodexView';
 import { sfx, soundOn, toggleSound } from '../sounds';
 
 type Selection =
@@ -30,6 +31,8 @@ interface Ghost {
   id: number;
   seatIdx: number;
   creature: CreatureOnBoard;
+  /** Slot (0-based) que ocupava na mesa — a morte anima no lugar exato. */
+  slot: number;
   at: number;
 }
 
@@ -49,6 +52,22 @@ interface CombatPreview {
   selfDmg?: number; // retaliação no atacante
   selfDies?: boolean;
   attackerIid?: string;
+}
+
+/**
+ * Posição (1-based) de cada criatura que tem uma cópia idêntica na mesma
+ * mesa — o cliente marca a carta exata com esse número, casando com o
+ * "(posição N)" do log do servidor. Quando a carta é única na mesa, fica de
+ * fora (sem poluição visual). É o mesmo critério do `creatureLabel` do motor.
+ */
+function dupPositions(board: CreatureOnBoard[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const c of board) counts.set(c.defId, (counts.get(c.defId) ?? 0) + 1);
+  const positions = new Map<string, number>();
+  board.forEach((c, i) => {
+    if ((counts.get(c.defId) ?? 0) >= 2) positions.set(c.iid, i + 1);
+  });
+  return positions;
 }
 
 let fxId = 1;
@@ -71,6 +90,10 @@ const SPELL_DMG: Record<string, number> = { s_faisca: 2, s_bola_de_fogo: 5 };
 
 /** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
+/** Inspeção no hover só com mouse real — no toque o mouseover sintético do
+ *  tap deixaria o overlay preso na tela (não há mouseleave correspondente). */
+const CAN_HOVER = typeof window !== 'undefined'
+  && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
 
@@ -117,11 +140,17 @@ export function GameView() {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [tauntOpen, setTauntOpen] = useState(false);
   const [banner, setBanner] = useState<{ text: string; at: number } | null>(null);
+  // investida da atacante: empurrão na direção do inimigo no momento do envio
+  const [attackFx, setAttackFx] = useState<{ iid: string; at: number } | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [sound, setSound] = useState(soundOn());
   const [showRules, setShowRules] = useState(false);
+  const [showCodex, setShowCodex] = useState(false);
   // carta sem alvo sendo "levantada" pelo gesto de arrasto (solta ≥48px acima = joga)
   const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
+  // inspeção no hover (desktop): carta ampliada flutuando acima da mão —
+  // a mão é um scroll container, então escalar a carta no lugar seria cortado
+  const [inspect, setInspect] = useState<{ iid: string; defId: string; x: number; y: number } | null>(null);
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
@@ -243,11 +272,11 @@ export function GameView() {
           hadHeal = true;
         }
       }
-      for (const pc of before.board) {
+      before.board.forEach((pc, slot) => {
         if (!seat.board.some((c) => c.iid === pc.iid)) {
-          newGhosts.push({ id: fxId++, seatIdx: i, creature: pc, at: ts });
+          newGhosts.push({ id: fxId++, seatIdx: i, creature: pc, slot, at: ts });
         }
-      }
+      });
     });
 
     // revelação: cartas jogadas pelo oponente desde o último estado
@@ -341,6 +370,11 @@ export function GameView() {
   const enemyTaunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
   const mustHitTaunt = selection?.kind === 'attacker' && enemyTaunts.length > 0;
 
+  // Cartas iguais na mesa ganham o número da posição (casa com o log do
+  // servidor) — assim o efeito/dano nunca fica ambíguo entre cópias idênticas.
+  const enemyPos = dupPositions(enemy.board);
+  const myPos = dupPositions(me.board);
+
   // ── Prévia de combate (hover no alvo) ──────────────────────────
   function previewFor(target: HoverTarget): CombatPreview | null {
     if (!target || !myTurn) return null;
@@ -417,6 +451,7 @@ export function GameView() {
       }
       send({ t: 'game:attack', attackerIid: attacker.iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
     }
+    setAttackFx({ iid: attacker.iid, at: Date.now() });
     sfx.attack();
     clearAim();
   }
@@ -708,6 +743,7 @@ export function GameView() {
           {unreadChat > 0 && sidePane !== 'chat' && <span className="unread-badge">{unreadChat}</span>}
         </button>
         <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar">📖</button>
+        <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia">📜</button>
         <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som">
           {sound ? '🔊' : '🔇'}
         </button>
@@ -745,7 +781,7 @@ export function GameView() {
         />
 
         <div className={`board-row enemy-row ${targetingEnemy ? 'targetable' : ''}`}>
-          {enemy.board.map((c) => {
+          {enemy.board.map((c, i) => {
             const isTaunt = CARDS[c.defId].keywords?.includes('taunt');
             const blocked = !!mustHitTaunt && !isTaunt;
             const hovered = hover?.kind === 'creature' && hover.iid === c.iid;
@@ -759,11 +795,13 @@ export function GameView() {
                 c={c}
                 bonus={enemy.attackBonus}
                 blocked={blocked}
+                posIndex={enemyPos.get(c.iid)}
                 preview={hovered ? preview : staticPv}
                 previewDim={!hovered && !!staticPv}
                 onHover={(on) => setHover(on ? { kind: 'creature', iid: c.iid } : null)}
                 fx={fxFor(`cr-${c.iid}`)}
                 onClick={() => clickEnemyCreature(c)}
+                style={{ order: i * 2 }}
               />
             );
           })}
@@ -819,7 +857,7 @@ export function GameView() {
         </div>
 
         <div className={`board-row my-row ${targetingFriendly ? 'friendly-targetable' : ''}`}>
-          {me.board.map((c) => (
+          {me.board.map((c, i) => (
             <Creature
               key={c.iid}
               c={c}
@@ -827,11 +865,14 @@ export function GameView() {
               mine
               selected={selection?.kind === 'attacker' && selection.iid === c.iid}
               buffTarget={targetingFriendly}
+              lunging={attackFx?.iid === c.iid && now - attackFx.at < 500}
               warn={cantAttackWarn?.iid === c.iid && now - cantAttackWarn.at < 600}
+              posIndex={myPos.get(c.iid)}
               retaliation={preview?.attackerIid === c.iid ? preview : null}
               fx={fxFor(`cr-${c.iid}`)}
               onClick={() => clickMyCreature(c)}
               onPointerDown={(e) => onTargetPointerDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
+              style={{ order: i * 2 }}
             />
           ))}
           {ghostsFor(game.yourSeat).map((g) => <GhostCreature key={g.id} g={g} />)}
@@ -865,8 +906,13 @@ export function GameView() {
                 lifting={lifting}
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
-                onMouseEnter={() => myTurn && affordable && setHoverCost(CARDS[c.defId].cost)}
-                onMouseLeave={() => setHoverCost(0)}
+                onMouseEnter={(e) => {
+                  if (myTurn && affordable) setHoverCost(CARDS[c.defId].cost);
+                  if (!CAN_HOVER) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setInspect({ iid: c.iid, defId: c.defId, x: r.left + r.width / 2, y: r.top - 10 });
+                }}
+                onMouseLeave={() => { setHoverCost(0); setInspect(null); }}
                 style={lifting ? {
                   // a carta segue o dedo na vertical; soltar bem acima joga
                   transform: `translateY(${lift!.dy}px) scale(1.12)`,
@@ -891,6 +937,9 @@ export function GameView() {
             </button>
             <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar">
               📖
+            </button>
+            <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia">
+              📜
             </button>
           </span>
           <button
@@ -978,8 +1027,21 @@ export function GameView() {
         ))}
       </div>
 
+      {inspect && !selection && !lift && game.status === 'active' && game.hand.some((c) => c.iid === inspect.iid) && (
+        <div
+          className="card-inspect"
+          style={{
+            left: Math.min(Math.max(inspect.x, 130), window.innerWidth - 130),
+            top: inspect.y,
+          }}
+        >
+          <CardView defId={inspect.defId} />
+        </div>
+      )}
+
       {banner && <div className="turn-banner" key={banner.at}>{banner.text}</div>}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
       {s.gameOver && <GameOverOverlay />}
     </div>
   );
@@ -1089,7 +1151,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, style }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
@@ -1097,6 +1159,9 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
   buffTarget?: boolean;
   blocked?: boolean;
   warn?: boolean;
+  /** Número da posição quando há cópias iguais na mesa (senão indefinido). */
+  posIndex?: number;
+  lunging?: boolean;
   preview?: CombatPreview | null;
   previewDim?: boolean;
   retaliation?: CombatPreview | null;
@@ -1104,10 +1169,16 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
   fx: FloatFx[];
   onClick: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
+  style?: React.CSSProperties;
 }) {
   const def = CARDS[c.defId];
   const hit = fx.some((f) => f.kind === 'dmg');
+  const healed = fx.some((f) => f.kind === 'heal');
   const isTaunt = def.keywords?.includes('taunt');
+  // convenção de card game: número verde = acima do impresso; vermelho = ferida
+  const atkBuffed = c.attack + bonus > (def.attack ?? 0);
+  const hpHurt = c.health < c.baseHealth;
+  const hpBuffed = !hpHurt && c.baseHealth > (def.health ?? 0);
   const classes = [
     'creature',
     mine ? 'mine' : '',
@@ -1116,14 +1187,17 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
     buffTarget && mine ? 'buff-target' : '',
     blocked ? 'blocked' : '',
     warn ? 'cant-attack' : '',
+    lunging ? 'lunging' : '',
     isTaunt ? 'taunt' : '',
     c.health < c.baseHealth ? 'wounded' : '',
-    hit ? 'hit' : '',
+    hit ? 'hit struck' : '',
+    healed ? 'healed' : '',
   ].join(' ');
   return (
     <button
       className={classes}
       data-anchor={`cr-${c.iid}`}
+      style={style}
       onClick={onClick}
       onPointerDown={onPointerDown}
       title={
@@ -1131,18 +1205,23 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
           ? 'Protegido por Provocar — ataque o Golem primeiro'
           : mine && !c.canAttack
             ? 'Essa criatura não pode atacar agora (acabou de entrar ou já atacou neste turno)'
-            : def.text
+            : posIndex
+              ? `${def.name} · posição ${posIndex} na mesa`
+              : def.text
       }
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >
       {isTaunt && <span className="taunt-badge" title="Provocar">🛡</span>}
+      {posIndex && (
+        <span className="pos-badge" title={`Posição ${posIndex} na mesa — cópia idêntica em campo`}>
+          {posIndex}
+        </span>
+      )}
       <CardArt defId={c.defId} className="creature-art" />
       <span className="creature-name">{def.name}</span>
-      <span className="creature-stats">
-        <b className="atk">{c.attack + bonus}</b>
-        <b className="hp">{c.health}</b>
-      </span>
+      <span className={`stat-gem atk ${atkBuffed ? 'buffed' : ''}`}>{c.attack + bonus}</span>
+      <span className={`stat-gem hp ${hpHurt ? 'hurt' : hpBuffed ? 'buffed' : ''}`}>{c.health}</span>
       {mine && c.canAttack && <span className="ready-dot" />}
       {preview && <PreviewChip p={preview} dim={previewDim} />}
       {retaliation && <PreviewChip p={retaliation} self />}
@@ -1154,7 +1233,9 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, preview
 function GhostCreature({ g }: { g: Ghost }) {
   const def = CARDS[g.creature.defId];
   return (
-    <span className="creature ghost">
+    // order = slot*2 - 1: a caveira fica imediatamente antes de quem assumiu
+    // o lugar, animando a morte na posição exata em que a carta estava.
+    <span className="creature ghost" style={{ order: g.slot * 2 - 1 }}>
       <CardArt defId={g.creature.defId} className="creature-art" />
       <span className="creature-name">{def.name}</span>
       <span className="ghost-skull">💀</span>

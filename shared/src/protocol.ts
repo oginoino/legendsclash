@@ -8,6 +8,8 @@ import type {
 export type ClientMsg =
   | { t: 'hello'; token: string }
   | { t: 'profile:update'; name?: string; avatar?: string; commander?: string; accent?: string }
+  // keepalive do cliente: detecta conexão morta e mantém NAT/proxy abertos
+  | { t: 'ping' }
   | { t: 'queue:join' }
   | { t: 'queue:leave' }
   | { t: 'room:create' }
@@ -29,11 +31,14 @@ export type ClientMsg =
 
 export type ServerMsg =
   | { t: 'hello:ok'; profile: Profile }
+  | { t: 'pong' }
   | { t: 'error'; message: string }
   | { t: 'profile'; profile: Profile }
   | { t: 'queue:status'; inQueue: boolean; size: number }
   | { t: 'room:state'; room: RoomState | null }
-  | { t: 'game:state'; view: GameView }
+  // view null = verdade do servidor: você não está em partida (destrava
+  // clientes que ficaram com uma batalha fantasma após restart do servidor)
+  | { t: 'game:state'; view: GameView | null }
   | { t: 'game:over'; result: MatchResult }
   | { t: 'chat:message'; message: ChatMessage }
   | { t: 'chat:report:ok' }

@@ -13,5 +13,10 @@
 
 srv1745709.hstgr.cloud {
 	encode zstd gzip
-	reverse_proxy localhost:8787
+	reverse_proxy localhost:8787 {
+		# Em reload de config o Caddy fecharia todos os WebSockets na hora,
+		# derrubando as batalhas em andamento; com o delay, as conexões
+		# antigas seguem vivas e migram naturalmente.
+		stream_close_delay 1h
+	}
 }
