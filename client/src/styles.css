@@ -23,9 +23,9 @@
   /* título compacto (nome de carta, rótulos pequenos): Cinzel reto, da mesma
      família, preserva a legibilidade onde a Decorative borraria */
   --font-heading: 'Cinzel', 'Palatino', 'Georgia', serif;
-  /* corpo, descrições, parágrafos e subtítulos: Cormorant Garamond —
-     elegante, literária e histórica, com itálico p/ subtítulos */
-  --font-body: 'Cormorant Garamond', 'Palatino', 'Georgia', serif;
+  /* corpo, descrições, parágrafos e subtítulos: Mozilla Text —
+     sans-serif humanista, x-height alta e traço firme p/ leitura limpa */
+  --font-body: 'Mozilla Text', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* raridades (gema da carta) */
   --rar-common: #9aa7b6;
   --rar-rare: #5da0ff;
@@ -70,7 +70,7 @@
 * { box-sizing: border-box; }
 
 /* controles de formulário não herdam fonte nem peso do corpo por padrão —
-   força a coesão tipográfica (Cormorant Garamond + peso legível) em campos,
+   força a coesão tipográfica (Mozilla Text + peso legível) em campos,
    botões e seletores; pesos próprios (.btn.primary, títulos) ainda prevalecem */
 button, input, textarea, select { font-family: inherit; font-weight: inherit; }
 
@@ -91,12 +91,12 @@ body {
     radial-gradient(800px 400px at 85% 110%, #2a1d4233 0%, transparent 60%),
     var(--bg);
   color: var(--text);
-  /* corpo na Cormorant Garamond: leitura literária e fluida. Peso 600 e
-     entrelinha generosa compensam a x-height baixa e o traço fino da fonte,
-     dando legibilidade firme sobre o tema escuro */
+  /* corpo na Mozilla Text: sans-serif de leitura limpa. A x-height alta e o
+     traço firme dispensam o reforço de peso da fonte serifada anterior —
+     peso normal já garante legibilidade firme sobre o tema escuro */
   font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 17px;
+  font-weight: 400;
+  font-size: 16px;
   line-height: 1.55;
   min-height: 100vh;
   min-height: 100dvh; /* barra de endereço móvel não "vaza" o layout */
