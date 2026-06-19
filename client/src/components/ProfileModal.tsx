@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import {
   ACCENTS, ACCENT_UNLOCKS, AVATARS, COMMANDERS, COMMANDER_UNLOCKS,
-  accentUnlocked, achievementLabel, commanderTitle, commanderUnlocked,
+  accentUnlocked, achievementLabel, achievementProgress, commanderTitle, commanderUnlocked, cosmeticTier,
 } from '@legendsclash/shared';
 import { updateProfile, useAppState } from '../store';
+
+const TIER_BADGE = { common: '', rare: '⭐', legendary: '🏅' } as const;
 
 /**
  * Personalização do jogador: perfil (nome + avatar) e comandante (retrato + cor
@@ -19,6 +21,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
   const [accent, setAccent] = useState(p?.accent ?? ACCENTS[0]);
   if (!p) return null;
   const earned = p.achievements ?? [];
+  const games = p.wins + p.losses;
 
   function save() {
     const trimmed = name.trim();
@@ -70,19 +73,28 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
         <h4>Comandante na arena</h4>
         <div className="cz-grid commanders">
           {COMMANDERS.map((c) => {
+            const unlockReq = COMMANDER_UNLOCKS[c.portrait];
             const locked = !commanderUnlocked(c.portrait, earned);
-            const req = locked ? achievementLabel(COMMANDER_UNLOCKS[c.portrait]) : '';
+            const req = locked ? achievementLabel(unlockReq) : '';
+            const prog = locked ? achievementProgress(unlockReq, p.wins, games) : null;
+            const tier = TIER_BADGE[cosmeticTier(unlockReq)];
             return (
               <button
                 key={c.portrait}
                 type="button"
                 className={`cz-cmd ${c.portrait === commander ? 'sel' : ''} ${locked ? 'locked' : ''}`}
-                title={locked ? `🔒 Desbloqueie: ${req}` : c.title}
+                title={locked ? `🔒 Desbloqueie: ${req}${prog ? ` (${prog.current}/${prog.target})` : ''}` : c.title}
                 disabled={locked}
                 onClick={() => !locked && setCommander(c.portrait)}
               >
+                {!locked && tier && <span className="cz-tier" title="Cosmético de prestígio">{tier}</span>}
                 <span className="cz-cmd-portrait">{locked ? '🔒' : c.portrait}</span>
                 <span className="cz-cmd-title">{locked ? req : c.title}</span>
+                {prog && (
+                  <span className="cz-progress" title={`${prog.current}/${prog.target}`}>
+                    <span style={{ width: `${(prog.current / prog.target) * 100}%` }} />
+                  </span>
+                )}
               </button>
             );
           })}
@@ -92,6 +104,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
         <div className="cz-swatches">
           {ACCENTS.map((col) => {
             const locked = !accentUnlocked(col, earned);
+            const prog = locked ? achievementProgress(ACCENT_UNLOCKS[col], p.wins, games) : null;
             return (
               <button
                 key={col}
@@ -100,7 +113,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
                 style={{ background: col }}
                 disabled={locked}
                 onClick={() => !locked && setAccent(col)}
-                title={locked ? `🔒 Desbloqueie: ${achievementLabel(ACCENT_UNLOCKS[col])}` : `Cor ${col}`}
+                title={locked ? `🔒 Desbloqueie: ${achievementLabel(ACCENT_UNLOCKS[col])}${prog ? ` (${prog.current}/${prog.target})` : ''}` : `Cor ${col}`}
                 aria-label={`Cor ${col}${locked ? ' (bloqueada)' : ''}`}
               />
             );

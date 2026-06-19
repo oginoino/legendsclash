@@ -332,3 +332,112 @@ describe('app · telemetria (analytics)', () => {
     expect(store.recentEvents().filter((e) => e.type === 'first_match_completed')).toHaveLength(2);
   });
 });
+
+describe('app · continuidade social (revanche/amigos/perfil)', () => {
+  /** Dois convidados que jogaram uma partida (A desiste) → viram oponentes recentes. */
+  async function playedTogether(store: Store, connect: () => FakeSocket) {
+    const a = store.createGuest('A', '🦊');
+    const b = store.createGuest('B', '🦉');
+    const wsA = connect();
+    wsA.msg({ t: 'hello', token: store.createSession(a.id) });
+    const wsB = connect();
+    wsB.msg({ t: 'hello', token: store.createSession(b.id) });
+    wsA.msg({ t: 'room:create' });
+    const code = wsA.byType('room:state').at(-1)!.room!.code;
+    wsB.msg({ t: 'room:join', code });
+    wsA.msg({ t: 'room:start' });
+    wsA.msg({ t: 'game:mulligan', iids: [] });
+    wsB.msg({ t: 'game:mulligan', iids: [] });
+    wsA.msg({ t: 'game:surrender' }); // encerra → recentOpponents populado
+    return { a, b, wsA, wsB };
+  }
+
+  it('adiciona amigo (eco no profile) e o card de perfil não vaza e-mail', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const { a, b, wsA } = await playedTogether(store, connect);
+
+    wsA.msg({ t: 'friend:add', playerId: b.id });
+    expect(wsA.byType('profile').at(-1)!.profile.friends).toContain(b.id);
+
+    wsA.msg({ t: 'profile:get', playerId: b.id });
+    const view = wsA.byType('profile:view').at(-1)!.profile as unknown as Record<string, unknown>;
+    expect(view.id).toBe(b.id);
+    expect('email' in view).toBe(false); // visão pública redigida
+    expect('muted' in view).toBe(false);
+
+    // gate de relação: não dá para ver o perfil de um id qualquer
+    wsA.msg({ t: 'profile:get', playerId: 'fantasma' });
+    expect(wsA.byType('error').some((e) => e.message.includes('quem enfrentou'))).toBe(true);
+  });
+
+  it('revanche: A pede, B recebe e ao pedir de volta começa uma nova partida', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const { a, wsA, wsB } = await playedTogether(store, connect);
+
+    wsA.msg({ t: 'rematch:request' });
+    expect(wsA.byType('rematch:state').at(-1)!.status).toBe('sent');
+    expect(wsB.byType('rematch:state').at(-1)).toMatchObject({ status: 'incoming', from: { id: a.id } });
+
+    const oldMatchId = wsA.byType('game:state').at(-1)!.view!.matchId;
+    wsB.msg({ t: 'rematch:request' }); // B aceita pedindo de volta → pareia
+    const newView = wsA.byType('game:state').at(-1)!.view!;
+    expect(newView.matchId).not.toBe(oldMatchId);
+    expect(wsB.byType('game:state').at(-1)!.view).not.toBeNull();
+  });
+
+  it('revanche com oponente offline responde indisponível', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const { wsA, wsB } = await playedTogether(store, connect);
+
+    wsB.close(); // oponente sai
+    wsA.msg({ t: 'rematch:request' });
+    expect(wsA.byType('rematch:state').at(-1)!.status).toBe('unavailable');
+  });
+});
+
+describe('app · modo treino (vs CPU, sem MMR)', () => {
+  it('treino entrega o recap mas não altera MMR/V-D nem registra evento ranked', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const u = store.createGuest('Solo', '🦊');
+    const ws = connect();
+    ws.msg({ t: 'hello', token: store.createSession(u.id) });
+    const before = store.userById(u.id)!;
+    const { mmr, wins, losses } = before;
+
+    ws.msg({ t: 'practice:start' });
+    ws.msg({ t: 'game:mulligan', iids: [] }); // o humano confirma (o bot já confirmou sozinho)
+    ws.msg({ t: 'game:surrender' });           // encerra → derrota de treino
+
+    const after = store.userById(u.id)!;
+    expect(after.mmr).toBe(mmr);
+    expect(after.wins).toBe(wins);
+    expect(after.losses).toBe(losses);
+    expect(store.recentEvents().filter((e) => e.type === 'match_end')).toHaveLength(0);
+    expect(store.recentEvents().filter((e) => e.type === 'match_start')).toHaveLength(0);
+
+    const over = ws.byType('game:over').at(-1);
+    expect(over).toBeDefined();
+    expect(Object.keys(over!.result.mmr)).toHaveLength(0); // mmr vazio = treino
+  });
+});
+
+describe('app · variedade de conteúdo (Fase 6)', () => {
+  it('faction:pick rejeita facção desconhecida e aceita uma válida', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const u = store.createGuest('Solo', '🦊');
+    const ws = connect();
+    ws.msg({ t: 'hello', token: store.createSession(u.id) });
+
+    ws.msg({ t: 'faction:pick', factionId: 'inexistente' });
+    expect(ws.byType('error').some((e) => e.message.includes('Facção desconhecida'))).toBe(true);
+
+    const errsBefore = ws.byType('error').length;
+    ws.msg({ t: 'faction:pick', factionId: 'eter' }); // válida → sem novo erro
+    expect(ws.byType('error').length).toBe(errsBefore);
+  });
+});

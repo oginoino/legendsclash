@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle } from '@legendsclash/shared';
+import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
-import { dismissGameOver, send, useAppState } from '../store';
+import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
 import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
@@ -9,7 +9,8 @@ import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
 import { Tutorial } from '../components/Tutorial';
 import { CodexView } from './CodexView';
-import { sfx, soundOn, toggleSound } from '../sounds';
+import { SoundControl } from '../components/SoundControl';
+import { sfx } from '../sounds';
 
 type Selection =
   | { kind: 'hand'; iid: string }
@@ -18,10 +19,11 @@ type Selection =
 
 type HoverTarget = { kind: 'face' } | { kind: 'creature'; iid: string } | null;
 
-/** Efeito flutuante transitório (dano/cura), ancorado a um elemento da arena. */
+/** Efeito flutuante transitório, ancorado a um elemento da arena.
+ *  dmg/heal = vida; shield = dano absorvido pelo escudo; buff = empoderamento. */
 interface FloatFx {
   id: number;
-  kind: 'dmg' | 'heal';
+  kind: 'dmg' | 'heal' | 'shield' | 'buff';
   value: number;
   anchor: string; // `face-{seat}` ou `cr-{iid}`
   at: number;
@@ -69,6 +71,12 @@ function dupPositions(board: CreatureOnBoard[]): Map<string, number> {
     if ((counts.get(c.defId) ?? 0) >= 2) positions.set(c.iid, i + 1);
   });
   return positions;
+}
+
+/** Tooltip da criatura na arena: explica as palavras-chave + o texto da carta. */
+function creatureHint(def: { keywords?: readonly string[]; text: string }): string {
+  const kw = (def.keywords ?? []).map((k) => `${keywordLabel(k)}: ${keywordDesc(k)}`).join(' · ');
+  return kw ? `${kw}\n${def.text}` : def.text;
 }
 
 let fxId = 1;
@@ -141,10 +149,11 @@ export function GameView() {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [tauntOpen, setTauntOpen] = useState(false);
   const [banner, setBanner] = useState<{ text: string; at: number } | null>(null);
+  // ensino contextual one-shot (Provocar, fadiga) — uma vez por dispositivo
+  const [teach, setTeach] = useState<{ id: string; text: string; at: number } | null>(null);
   // investida da atacante: empurrão na direção do inimigo no momento do envio
   const [attackFx, setAttackFx] = useState<{ iid: string; at: number } | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
-  const [sound, setSound] = useState(soundOn());
   const [showRules, setShowRules] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
   // tutorial da 1ª partida: uma vez por dispositivo (flag em localStorage)
@@ -185,6 +194,7 @@ export function GameView() {
       setReveals((r) => (r.length && ts - r[0].at > REVEAL_TTL ? r.filter((x) => ts - x.at < REVEAL_TTL) : r));
       setBubbles((b) => (b.length && ts - b[0].at > BUBBLE_TTL ? b.filter((x) => ts - x.at < BUBBLE_TTL) : b));
       setBanner((b) => (b && ts - b.at > 1500 ? null : b));
+      setTeach((t) => (t && ts - t.at > 7000 ? null : t));
     }, 250);
     return () => clearInterval(t);
   }, []);
@@ -255,6 +265,9 @@ export function GameView() {
     const newGhosts: Ghost[] = [];
     let hadDamage = false;
     let hadHeal = false;
+    let hadShield = false;
+    let hadBuff = false;
+    let hadDeath = false;
 
     game.seats.forEach((seat, i) => {
       const before = prev.seats[i];
@@ -266,23 +279,43 @@ export function GameView() {
         newFx.push({ id: fxId++, kind: 'heal', value: seat.hp - before.hp, anchor: `face-${i}`, at: ts });
         hadHeal = true;
       }
+      // escudo diminuindo = dano absorvido (antes da vida) — agora visível/audível
+      if (seat.shield < before.shield) {
+        newFx.push({ id: fxId++, kind: 'shield', value: before.shield - seat.shield, anchor: `face-${i}`, at: ts });
+        hadShield = true;
+      }
       const prevById = new Map(before.board.map((c) => [c.iid, c]));
       for (const c of seat.board) {
         const pc = prevById.get(c.iid);
-        if (pc && c.health < pc.health) {
+        if (!pc) continue;
+        if (c.health < pc.health) {
           newFx.push({ id: fxId++, kind: 'dmg', value: pc.health - c.health, anchor: `cr-${c.iid}`, at: ts });
           hadDamage = true;
-        } else if (pc && c.health > pc.health) {
+        } else if (c.health > pc.health) {
           newFx.push({ id: fxId++, kind: 'heal', value: c.health - pc.health, anchor: `cr-${c.iid}`, at: ts });
           hadHeal = true;
+        }
+        // empoderamento (ex.: Fortalecer +2/+2) — anel de buff one-shot
+        if (c.attack > pc.attack || c.baseHealth > pc.baseHealth) {
+          newFx.push({ id: fxId++, kind: 'buff', value: 0, anchor: `cr-${c.iid}`, at: ts });
+          hadBuff = true;
         }
       }
       before.board.forEach((pc, slot) => {
         if (!seat.board.some((c) => c.iid === pc.iid)) {
           newGhosts.push({ id: fxId++, seatIdx: i, creature: pc, slot, at: ts });
+          hadDeath = true;
         }
       });
     });
+
+    // compra: minha mão cresceu (compra de turno, Reforços etc.)
+    if (game.hand.length > prev.hand.length) sfx.draw();
+    // ganho de energia no meio do turno (Surto/Moeda) — não na virada de turno
+    const sameTurn = prev.turnSeat === game.turnSeat;
+    const myNow = game.seats[game.yourSeat];
+    const myBefore = prev.seats[game.yourSeat];
+    if (sameTurn && myNow && myBefore && myNow.energy > myBefore.energy) sfx.energyUp();
 
     // revelação: cartas jogadas pelo oponente desde o último estado
     const newPlays = game.plays.slice(prev.plays.length);
@@ -294,8 +327,22 @@ export function GameView() {
 
     if (newFx.length) setFx((f) => [...f, ...newFx]);
     if (newGhosts.length) setGhosts((g) => [...g, ...newGhosts]);
+    if (hadDeath) sfx.death();
     if (hadDamage) sfx.damage();
     else if (hadHeal) sfx.heal();
+    if (hadShield) sfx.shield();
+    if (hadBuff) sfx.buff();
+
+    // "venceu a mesa": a mesa inimiga foi zerada (sem fim de jogo) — momento de virada
+    const enemyIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
+    if (
+      enemyIdx >= 0 && game.status === 'active' &&
+      prev.seats[enemyIdx] && prev.seats[enemyIdx].board.length > 0 &&
+      game.seats[enemyIdx].board.length === 0
+    ) {
+      setBanner({ text: '🎯 Venceu a mesa!', at: ts });
+      sfx.tableWin();
+    }
 
     if (prev.turnSeat !== game.turnSeat && game.status === 'active') {
       const mine = game.turnSeat === game.yourSeat;
@@ -303,6 +350,27 @@ export function GameView() {
       if (mine) sfx.myTurn();
       setSelection(null);
       setHover(null);
+    }
+  }, [game]);
+
+  // ensino contextual one-shot: explica Provocar e fadiga na 1ª vez que surgem
+  useEffect(() => {
+    if (!game || game.yourSeat < 0 || game.status !== 'active') return;
+    const seen = (k: string) => { try { return localStorage.getItem(k) === '1'; } catch { return true; } };
+    const mark = (k: string) => { try { localStorage.setItem(k, '1'); } catch { /* ignore */ } };
+    const enemyIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
+    const mine = game.seats[game.yourSeat];
+    if (
+      enemyIdx >= 0 && !seen('lc_taught_taunt') &&
+      game.seats[enemyIdx].board.some((c) => CARDS[c.defId].keywords?.includes('taunt'))
+    ) {
+      setTeach({ id: 'taunt', text: '🛡 Provocar: criaturas com Provocar precisam ser atacadas antes das outras. Derrote-a primeiro.', at: Date.now() });
+      mark('lc_taught_taunt');
+      return;
+    }
+    if (mine && mine.fatigue > 0 && !seen('lc_taught_fatigue')) {
+      setTeach({ id: 'fatigue', text: '💀 Fadiga: seu baralho esgotou — cada compra agora tira vida. Feche a partida logo.', at: Date.now() });
+      mark('lc_taught_fatigue');
     }
   }, [game]);
 
@@ -359,6 +427,8 @@ export function GameView() {
   const enemySeatIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
   const enemy = game.seats[enemySeatIdx];
   const timerPct = Math.min(100, (secondsLeft / TURN_SECONDS) * 100);
+  // últimos 10s do seu turno: cue de texto (⏰) reduced-motion-safe + aviso a11y
+  const timeUrgent = myTurn && secondsLeft <= 10 && secondsLeft > 0;
 
   const selectedHandDef = selection?.kind === 'hand'
     ? CARDS[game.hand.find((c) => c.iid === selection.iid)?.defId ?? '']
@@ -756,9 +826,7 @@ export function GameView() {
         </button>
         <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar">📖</button>
         <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia">📜</button>
-        <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som" aria-label={sound ? 'Desligar som' : 'Ligar som'}>
-          {sound ? '🔊' : '🔇'}
-        </button>
+        <SoundControl />
         <button
           className="btn small ghost danger"
           onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
@@ -826,12 +894,16 @@ export function GameView() {
 
         <div className="board-divider">
           <div className={myTurn ? 'turn-pill mine' : 'turn-pill'}>
-            <span className={myTurn && secondsLeft <= 10 ? 'time-urgent' : ''}>
+            <span className={timeUrgent ? 'time-urgent' : ''} role="timer">
               {game.status !== 'active'
                 ? 'Partida encerrada'
                 : myTurn
-                  ? `Seu turno · ${secondsLeft}s`
+                  ? `${timeUrgent ? '⏰ ' : ''}Seu turno · ${secondsLeft}s`
                   : `Turno de ${game.seats[game.turnSeat].name} · ${secondsLeft}s`}
+            </span>
+            {/* aviso único para leitor de tela ao entrar nos últimos 10s (sem repetir a cada segundo) */}
+            <span className="sr-only" role="status" aria-live="assertive">
+              {timeUrgent ? 'Tempo do seu turno acabando' : ''}
             </span>
             <span className="timer-track">
               <span
@@ -953,9 +1025,7 @@ export function GameView() {
         </button>
         <div className="side-top">
           <span>
-            <button className="btn small ghost" onClick={() => setSound(toggleSound())} title="Som">
-              {sound ? '🔊' : '🔇'}
-            </button>
+            <SoundControl />
             <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar">
               📖
             </button>
@@ -1061,6 +1131,12 @@ export function GameView() {
       )}
 
       {banner && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
+      {teach && (
+        <div className="teach-toast" key={teach.id} role="status" aria-live="polite">
+          <span>{teach.text}</span>
+          <button className="btn small ghost" onClick={() => setTeach(null)} aria-label="Fechar dica">✕</button>
+        </div>
+      )}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
       {showTutorial && !s.gameOver && <Tutorial onClose={() => setShowTutorial(false)} />}
@@ -1070,11 +1146,15 @@ export function GameView() {
 }
 
 function FxLayer({ fx }: { fx: FloatFx[] }) {
+  // prefixo de forma (▼/▲/🛡/⬆) além da cor: leitura segura para daltônicos
   return (
     <>
       {fx.map((f) => (
         <span key={f.id} className={`float-fx ${f.kind}`}>
-          {f.kind === 'dmg' ? `-${f.value}` : `+${f.value}`}
+          {f.kind === 'dmg' ? `▼ -${f.value}`
+            : f.kind === 'heal' ? `▲ +${f.value}`
+            : f.kind === 'shield' ? `🛡 -${f.value}`
+            : '⬆'}
         </span>
       ))}
     </>
@@ -1117,6 +1197,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   bubble?: Bubble | null;
 }) {
   const hit = fx.some((f) => f.kind === 'dmg');
+  const shielded = fx.some((f) => f.kind === 'shield');
   const title = commanderTitle(seat.commander);
   return (
     <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={{ ['--accent' as string]: seat.accent }}>
@@ -1130,6 +1211,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
           blocked ? 'blocked' : '',
           lethal ? 'lethal' : '',
           hit ? 'hit' : '',
+          shielded ? 'shielded' : '',
         ].join(' ')}
         data-anchor={`face-${seatIdx}`}
         onClick={onFaceClick}
@@ -1196,6 +1278,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
   const def = CARDS[c.defId];
   const hit = fx.some((f) => f.kind === 'dmg');
   const healed = fx.some((f) => f.kind === 'heal');
+  const buffed = fx.some((f) => f.kind === 'buff');
   const isTaunt = def.keywords?.includes('taunt');
   // convenção de card game: número verde = acima do impresso; vermelho = ferida
   const atkBuffed = c.attack + bonus > (def.attack ?? 0);
@@ -1214,6 +1297,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     c.health < c.baseHealth ? 'wounded' : '',
     hit ? 'hit struck' : '',
     healed ? 'healed' : '',
+    buffed ? 'buffed-flash' : '',
   ].join(' ');
   return (
     <button
@@ -1229,7 +1313,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
             ? 'Essa criatura não pode atacar agora (acabou de entrar ou já atacou neste turno)'
             : posIndex
               ? `${def.name} · posição ${posIndex} na mesa`
-              : def.text
+              : creatureHint(def)
       }
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
@@ -1265,10 +1349,21 @@ function GhostCreature({ g }: { g: Ghost }) {
   );
 }
 
+/** Segundos da fase de mulligan (casa com MULLIGAN_SECONDS do motor). */
+const MULLIGAN_SECONDS = 30;
+
 /** Fase de mulligan: ajustar a mão inicial (trocar cartas) antes do turno 1. */
 function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
   const [swap, setSwap] = useState<Set<string>>(() => new Set());
+  const [now, setNow] = useState(Date.now());
   const confirmed = me.mulliganDone;
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+  const secondsLeft = Math.max(0, Math.ceil((game.turnEndsAt - now) / 1000));
+  const pct = Math.min(100, (secondsLeft / MULLIGAN_SECONDS) * 100);
 
   function toggle(iid: string, defId: string) {
     if (confirmed || CARDS[defId].token) return; // a Moeda não é trocável
@@ -1281,7 +1376,7 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
   }
 
   function confirm() {
-    sfx.click();
+    sfx.mulligan();
     send({ t: 'game:mulligan', iids: [...swap] });
   }
 
@@ -1293,12 +1388,27 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
           Toque nas cartas que quer devolver ao baralho — você compra outras no lugar.
           A Moeda do Tempo fica.
         </p>
+        <p className="mulligan-tip">
+          💡 Dica: cartas baratas (custo ≤2) dão jogadas cedo; segure as caras para os turnos seguintes.
+        </p>
+        {!confirmed && (
+          <div className="mulligan-timer" title="Tempo para confirmar a mão">
+            <span className="timer-track">
+              <span className={`timer-fill ${secondsLeft <= 10 ? 'urgent' : ''}`} style={{ width: `${pct}%` }} />
+            </span>
+            <span className={`mulligan-secs ${secondsLeft <= 10 ? 'urgent' : ''}`}>{secondsLeft}s</span>
+          </div>
+        )}
         <div className="mulligan-hand">
           {game.hand.map((c) => {
-            const token = !!CARDS[c.defId].token;
+            const def = CARDS[c.defId];
+            const token = !!def.token;
             const picked = swap.has(c.iid);
+            // tag de custo: ajuda a decidir o que trocar (sem ser regra)
+            const costTag = token ? null : def.cost <= 2 ? '⚡ barata' : def.cost >= 5 ? '💰 cara' : null;
             return (
               <div key={c.iid} className={`mulligan-slot ${picked ? 'swapping' : ''} ${token ? 'locked' : ''}`}>
+                {costTag && <span className="mulligan-cost-tag">{costTag}</span>}
                 <CardView
                   defId={c.defId}
                   selected={picked}
@@ -1367,6 +1477,32 @@ function GameOverOverlay() {
           </p>
         )}
         {(() => {
+          const stats = result.stats?.[myId];
+          const mvp = result.mvp?.[myId];
+          if (!stats) return null;
+          return (
+            <div className="go-recap">
+              {mvp && CARDS[mvp.defId] && (
+                <div className="go-mvp">
+                  <CardArt defId={mvp.defId} className="go-mvp-art" />
+                  <div className="go-mvp-info">
+                    <span className="go-mvp-name">⭐ {CARDS[mvp.defId].name}</span>
+                    <span className="go-mvp-line">
+                      {mvp.damage} de dano{mvp.kills > 0 ? ` · ${mvp.kills} abate${mvp.kills > 1 ? 's' : ''}` : ''}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="go-stats">
+                <span><b>{stats.creaturesSummoned}</b> criaturas</span>
+                <span><b>{stats.spellsCast}</b> magias</span>
+                <span><b>{stats.damageDealt}</b> dano</span>
+                {stats.shieldAbsorbed > 0 && <span><b>{stats.shieldAbsorbed}</b> escudo</span>}
+              </div>
+            </div>
+          );
+        })()}
+        {(() => {
           const newly = (myId && result.unlocked?.[myId]) || [];
           return newly.length ? (
             <div className="go-unlocks">
@@ -1375,9 +1511,49 @@ function GameOverOverlay() {
             </div>
           ) : null;
         })()}
-        <button className="btn primary big" onClick={() => { sfx.click(); dismissGameOver(); }}>
-          ⚔️ Jogar de novo
-        </button>
+        {(() => {
+          // oponente = a outra chave do mapa de MMR; habilita revanche/amizade/perfil
+          const opponentId = Object.keys(result.mmr).find((id) => id !== myId);
+          const opponentName = opponentId
+            ? s.game?.seats.find((st) => st.playerId === opponentId)?.name ?? 'oponente'
+            : null;
+          const isFriend = !!opponentId && (s.profile?.friends?.includes(opponentId) ?? false);
+          const rematch = s.rematch;
+          return (
+            <>
+              {opponentId && (
+                <p className="go-opponent">
+                  vs{' '}
+                  <button className="link-btn" onClick={() => viewProfile(opponentId)}>
+                    {opponentName}
+                  </button>
+                </p>
+              )}
+              {rematch?.status === 'incoming' ? (
+                <div className="go-rematch-incoming">
+                  <p>{rematch.from?.avatar} {rematch.from?.name} quer revanche!</p>
+                  <div className="go-actions">
+                    <button className="btn primary" onClick={() => { sfx.click(); requestRematch(); }}>✅ Aceitar revanche</button>
+                    <button className="btn ghost" onClick={() => declineRematch()}>Recusar</button>
+                  </div>
+                </div>
+              ) : rematch?.status === 'sent' ? (
+                <p className="go-rematch-sent">🔁 Revanche enviada — aguardando o oponente…</p>
+              ) : null}
+              <div className="go-actions">
+                {opponentId && rematch?.status !== 'incoming' && rematch?.status !== 'sent' && (
+                  <button className="btn" onClick={() => { sfx.click(); requestRematch(); }}>🔁 Revanche</button>
+                )}
+                {opponentId && !isFriend && (
+                  <button className="btn ghost" onClick={() => addFriend(opponentId)}>➕ Amigo</button>
+                )}
+              </div>
+              <button className="btn primary big" onClick={() => { sfx.click(); dismissGameOver(); }}>
+                ⚔️ Jogar de novo
+              </button>
+            </>
+          );
+        })()}
       </div>
     </div>
   );

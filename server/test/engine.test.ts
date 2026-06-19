@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Match, type EngineResult, type MatchPlayer } from '../src/game/engine.js';
-import { CARDS, STARTING_HP, RECONNECT_GRACE_MS } from '@legendsclash/shared';
+import { CARDS, STARTING_HP, RECONNECT_GRACE_MS, DECK_SIZE, deckComposition } from '@legendsclash/shared';
 
 function players(n: number): MatchPlayer[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -738,5 +738,101 @@ describe('anti-cheat: visão redigida', () => {
     for (const iid of p0HandIids) {
       expect(serialized.includes(`"${iid}"`)).toBe(false);
     }
+  });
+});
+
+describe('recap pós-partida: estatísticas e MVP', () => {
+  it('agrega criaturas/dano e elege o MVP ao encerrar', () => {
+    const { m, result } = makeMatch();
+    track(m).start();
+    // garante um Recruta na mão do seat 0 e o invoca (custo 1, maxEnergy 1)
+    m.seats[0].hand.push({ iid: 'tr1', defId: 'c_recruta' });
+    m.playCard('p0', 'tr1');
+    m.endTurn('p0');
+    m.endTurn('p1');
+    // agora o Recruta pode atacar; zera a vida do oponente para encerrar
+    m.seats[1].hp = 1;
+    const attacker = m.seats[0].board.find((c) => c.defId === 'c_recruta')!;
+    m.attack('p0', attacker.iid, { seat: 1 });
+    const r = result()!;
+    expect(r.winnerSeat).toBe(0);
+    expect(r.stats[0].creaturesSummoned).toBe(1);
+    expect(r.stats[0].damageDealt).toBeGreaterThanOrEqual(1);
+    expect(r.mvp[0]).toMatchObject({ defId: 'c_recruta' });
+    expect(r.mvp[1]).toBeNull(); // seat 1 não atacou
+  });
+
+  it('contabiliza o dano absorvido pelo escudo e as magias lançadas', () => {
+    const { m, result } = makeMatch();
+    track(m).start();
+    m.seats[1].shield = 4;
+    m.seats[0].hand.push({ iid: 'sf1', defId: 's_faisca' });
+    m.playCard('p0', 'sf1', { seat: 1 }); // 2 de dano ao comandante (escudo absorve)
+    expect(m.seats[1].shield).toBe(2);
+    m.surrender('p1');
+    const r = result()!;
+    expect(r.stats[1].shieldAbsorbed).toBe(2);
+    expect(r.stats[0].spellsCast).toBe(1);
+    expect(r.stats[0].damageDealt).toBe(2);
+  });
+});
+
+describe('bot de treino (vs CPU)', () => {
+  it('runBotTurn joga legal, nunca lança e encerra o turno', () => {
+    const m = new Match(players(2), () => {}, () => {}, 60, false, ['p1']);
+    track(m).start();
+    m.endTurn('p0'); // passa a vez ao bot (p1)
+    expect(() => m.runBotTurn('p1')).not.toThrow();
+    expect(m.viewFor('p0').turnSeat).toBe(0); // o bot encerrou e a vez voltou
+  });
+
+  it('respeita Provocar ao escolher o alvo de ataque', () => {
+    const m = new Match(players(2), () => {}, () => {}, 60, false, ['p1']);
+    track(m).start();
+    // monta um cenário: o bot (p1) tem uma criatura pronta; o humano tem um Golem (Provocar) + um Lobo
+    m.seats[1].board.push({ iid: 'b1', defId: 'c_dragao', attack: 7, health: 7, baseHealth: 7, canAttack: true, attacked: false });
+    m.seats[0].board.push({ iid: 'lobo', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: false, attacked: false });
+    m.seats[0].board.push({ iid: 'golem', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false });
+    m.endTurn('p0'); // vez do bot
+    m.runBotTurn('p1');
+    // o Golem (Provocar) precisa ser atacado primeiro → leva 7 e morre; o Lobo sobrevive
+    expect(m.seats[0].board.some((c) => c.iid === 'golem')).toBe(false);
+    expect(m.seats[0].board.some((c) => c.iid === 'lobo')).toBe(true);
+  });
+
+  it('o bot leva uma partida ao fim sem travar', () => {
+    const m = new Match(players(2), () => {}, () => {}, 60, false, ['p1']);
+    track(m).start();
+    for (let i = 0; i < 120 && !m.finished; i++) {
+      if (m.viewFor('p0').turnSeat === 0) m.endTurn('p0'); // humano passivo
+      else m.runBotTurn('p1');
+    }
+    expect(m.finished).toBe(true);
+  });
+});
+
+describe('Fase 6: variedade de conteúdo (deck, facção, Resistência)', () => {
+  const count = (d: Array<[string, number]>) => d.reduce((s, [, n]) => s + n, 0);
+
+  it('deckComposition mantém 30 cartas no neutro, na facção e com comeback', () => {
+    expect(count(deckComposition())).toBe(DECK_SIZE);
+    expect(count(deckComposition('eter'))).toBe(DECK_SIZE);
+    expect(count(deckComposition('silvanos', true))).toBe(DECK_SIZE);
+    // a facção muda a composição; o comeback inclui o Renegado
+    expect(JSON.stringify(deckComposition('eter'))).not.toBe(JSON.stringify(deckComposition()));
+    expect(deckComposition(undefined, true).some(([id]) => id === 'c_renegado')).toBe(true);
+    expect(deckComposition().some(([id]) => id === 'c_renegado')).toBe(false);
+  });
+
+  it('Resistência liga/desliga o +2 de ataque conforme a vida cruza 10', () => {
+    const m = new Match(players(2), () => {}, () => {}, 60, false, [], { comeback: true });
+    track(m).start();
+    m.seats[0].board.push({ iid: 'r1', defId: 'c_renegado', attack: 2, health: 3, baseHealth: 3, canAttack: false, attacked: false });
+    m.seats[0].hp = 8; // ≤10 → Resistência ativa
+    m.endTurn('p0'); // qualquer ação dispara o checkEnd que reavalia
+    expect(m.viewFor('p0').seats[0].board.find((c) => c.defId === 'c_renegado')!.attack).toBe(4);
+    m.seats[0].hp = 20; // cura acima de 10 → perde o bônus (sem acumular)
+    m.endTurn('p1');
+    expect(m.viewFor('p0').seats[0].board.find((c) => c.defId === 'c_renegado')!.attack).toBe(2);
   });
 });

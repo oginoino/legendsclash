@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { League, MatchHistoryEntry, Profile } from '@legendsclash/shared';
+import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import {
   DEFAULT_ACCENT, DEFAULT_COMMANDER, isValidAccent, isValidAvatar, isValidCommander,
   achievementsOf, accentUnlocked, commanderUnlocked,
@@ -65,6 +65,8 @@ export interface UserRecord {
   wins: number;
   losses: number;
   muted: string[];
+  /** Amigos adicionados (ids) — continuidade social pós-partida. */
+  friends: string[];
   history: MatchHistoryEntry[];
   createdAt: number;
   /** Sequência de dias consecutivos com partida (gancho de retorno). */
@@ -142,6 +144,7 @@ class JsonPersistence implements Persistence {
       u.guest = false; // só contas persistem; convidados vivem em memória
       u.streak ??= 0;
       u.lastPlayDay ??= 0;
+      u.friends ??= [];
       delete (u as { token?: string }).token;
     }
     // o Store muta este mesmo objeto; o snapshot sempre grava o estado atual
@@ -243,6 +246,7 @@ class SupabasePersistence implements Persistence {
       wins: p.wins,
       losses: p.losses,
       muted: p.muted ?? [],
+      friends: p.friends ?? [],
       history: byPlayer.get(p.id) ?? [],
       createdAt: new Date(p.created_at).getTime(),
       streak: p.streak ?? 0,
@@ -277,6 +281,7 @@ class SupabasePersistence implements Persistence {
         wins: user.wins,
         losses: user.losses,
         muted: user.muted,
+        friends: user.friends,
         created_at: new Date(user.createdAt).toISOString(),
         streak: user.streak,
         last_play_day: user.lastPlayDay,
@@ -498,6 +503,7 @@ export class Store {
       wins: 0,
       losses: 0,
       muted: [],
+      friends: [],
       history: [],
       createdAt: Date.now(),
       streak: 0,
@@ -527,6 +533,7 @@ export class Store {
       wins: 0,
       losses: 0,
       muted: [],
+      friends: [],
       history: [],
       createdAt: Date.now(),
       streak: 0,
@@ -592,6 +599,7 @@ export class Store {
     target.wins = guest.wins;
     target.losses = guest.losses;
     target.muted = [...guest.muted];
+    target.friends = [...guest.friends];
     target.history = [...guest.history];
     target.streak = guest.streak;
     target.lastPlayDay = guest.lastPlayDay;
@@ -706,6 +714,33 @@ export class Store {
       playedToday: u.lastPlayDay === epochDay(Date.now()),
       achievements: achievementsOf(u.wins, u.wins + u.losses),
       muted: u.muted,
+      friends: u.friends,
     };
+  }
+
+  /** Card de perfil público (oponente) — sem e-mail nem lista de silenciados. */
+  publicProfileOf(u: UserRecord): PublicProfile {
+    return {
+      id: u.id,
+      name: u.name,
+      avatar: u.avatar,
+      commander: u.commander,
+      accent: u.accent,
+      league: leagueOf(u.mmr) as League,
+      mmr: u.mmr,
+      wins: u.wins,
+      losses: u.losses,
+      achievements: achievementsOf(u.wins, u.wins + u.losses),
+      streak: u.streak,
+    };
+  }
+
+  /** Adiciona/remove um amigo (cap defensivo). Convidado guarda só em memória. */
+  setFriend(userId: string, friendId: string, add: boolean): void {
+    const u = this.byId.get(userId);
+    if (!u || userId === friendId) return;
+    if (add && !u.friends.includes(friendId) && u.friends.length < 500) u.friends.push(friendId);
+    if (!add) u.friends = u.friends.filter((id) => id !== friendId);
+    if (!u.guest) this.persistence.saveUser(u);
   }
 }

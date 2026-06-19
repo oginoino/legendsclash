@@ -104,6 +104,33 @@ export function accentUnlocked(accent: string, earned: string[]): boolean {
   return !req || earned.includes(req);
 }
 
+/**
+ * Progresso rumo a uma conquista (para barras "7/10 vitórias"). Retorna null
+ * quando já obtida ou desconhecida. Mesma fonte de verdade do `achievementsOf`.
+ */
+export function achievementProgress(
+  id: string,
+  wins: number,
+  games: number,
+): { current: number; target: number } | null {
+  switch (id) {
+    case 'first_win': return wins >= 1 ? null : { current: wins, target: 1 };
+    case 'winner_10': return wins >= 10 ? null : { current: wins, target: 10 };
+    case 'veteran_10': return games >= 10 ? null : { current: games, target: 10 };
+    case 'veteran_50': return games >= 50 ? null : { current: games, target: 50 };
+    default: return null;
+  }
+}
+
+export type CosmeticTier = 'common' | 'rare' | 'legendary';
+
+/** Tier de prestígio de um cosmético, derivado da conquista que o desbloqueia. */
+export function cosmeticTier(req: string | undefined): CosmeticTier {
+  if (!req) return 'common';
+  if (req === 'veteran_50') return 'legendary';
+  return 'rare'; // winner_10, veteran_10 etc.
+}
+
 /** Título do comandante associado a um retrato (para exibição na arena). */
 export function commanderTitle(portrait: string | undefined): string | null {
   return COMMANDERS.find((c) => c.portrait === portrait)?.title ?? null;

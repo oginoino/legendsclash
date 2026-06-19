@@ -31,8 +31,9 @@ export interface CardDef {
    * - `charge` (Investida): pode atacar no turno em que entra.
    * - `battlecry` (Grito de Batalha): dispara um efeito ao ser invocada.
    * - `deathrattle` (Estertor): dispara um efeito ao ser destruída.
+   * - `comeback` (Resistência): ganha +2/+2 e Investida enquanto o dono tem ≤10 de vida.
    */
-  keywords?: Array<'taunt' | 'charge' | 'battlecry' | 'deathrattle'>;
+  keywords?: Array<'taunt' | 'charge' | 'battlecry' | 'deathrattle' | 'comeback'>;
   /**
    * Efeito especial de dano direto: ignora a proteção das criaturas e pode
    * mirar o comandante mesmo com a mesa inimiga ocupada. Nenhuma carta do
@@ -44,6 +45,26 @@ export interface CardDef {
    * faz parte do baralho nem do catálogo colecionável — fica fora do Arquivo/Codex.
    */
   token?: boolean;
+}
+
+/**
+ * Glossário de palavras-chave: rótulo curto (chip) + explicação em uma frase
+ * (tooltip). Fonte única para CardView, CodexView e os tooltips em jogo —
+ * antes os rótulos viviam duplicados em dois componentes do cliente.
+ */
+export const KEYWORD_GLOSSARY: Record<string, { label: string; desc: string }> = {
+  taunt: { label: '🛡 Provocar', desc: 'Inimigos precisam atacar esta criatura antes das outras.' },
+  charge: { label: '⚡ Investida', desc: 'Pode atacar já no turno em que entra em jogo.' },
+  battlecry: { label: '📣 Grito de Batalha', desc: 'Dispara um efeito ao ser jogada da mão.' },
+  deathrattle: { label: '💀 Estertor', desc: 'Dispara um efeito quando é destruída.' },
+  comeback: { label: '🔥 Resistência', desc: 'Ganha +2 de ataque e Investida enquanto seu comandante tem 10 de vida ou menos.' },
+};
+
+export function keywordLabel(k: string): string {
+  return KEYWORD_GLOSSARY[k]?.label ?? k;
+}
+export function keywordDesc(k: string): string {
+  return KEYWORD_GLOSSARY[k]?.desc ?? '';
 }
 
 export const CARDS: Record<string, CardDef> = {
@@ -82,6 +103,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'c_dragao', art: '🐉', name: 'Dragão Cinzento', type: 'creature', cost: 7, rarity: 'legendary',
     attack: 7, health: 7, target: 'none', keywords: ['charge'],
     text: 'Investida: pode atacar no turno em que entra. A última carta que muitos comandantes viram.',
+  },
+  c_renegado: {
+    id: 'c_renegado', art: '🗡️', name: 'Renegado Ferido', type: 'creature', cost: 2, rarity: 'rare',
+    attack: 2, health: 3, target: 'none', keywords: ['comeback'],
+    text: 'Resistência: com o comandante em 10 de vida ou menos, ganha +2 de ataque e Investida. A dor o aguça.',
   },
 
   // ─── Magias ───────────────────────────────────────────────────
@@ -177,3 +203,47 @@ export const MAX_BOARD = 6;
 export const STARTING_HAND = 4;
 export const TURN_SECONDS = 60;
 export const RECONNECT_GRACE_MS = 2 * 60 * 1000; // janela anti-abandono de 2 min
+
+// ─── Fase 6: variedade de conteúdo (atrás de flags + playtest) ──
+// Tudo simétrico (ambos têm acesso), sem poder novo: troca CÓPIAS de cartas
+// existentes. Ativado só por env flag — o balance fino é gate de playtest.
+
+export interface DeckSwap { remove: string; add: string; }
+
+/** Inclinações de facção: ~2 trocas que mudam o "sabor" sem mexer no tamanho. */
+export const FACTION_TILTS: Record<string, DeckSwap[]> = {
+  vanguarda: [{ remove: 's_faisca', add: 'c_recruta' }, { remove: 't_recuo', add: 'c_cavaleiro' }],
+  silvanos: [{ remove: 's_bencao', add: 'c_lobo' }, { remove: 'a_escudo', add: 'c_arqueira' }],
+  eter: [{ remove: 'c_recruta', add: 's_faisca' }, { remove: 'a_estandarte', add: 's_tempestade' }],
+  profundezas: [{ remove: 'c_lobo', add: 'c_golem' }, { remove: 'c_recruta', add: 'a_escudo' }],
+};
+
+function applySwaps(base: Array<[string, number]>, swaps: DeckSwap[]): Array<[string, number]> {
+  const counts = new Map<string, number>(base.map(([id, n]) => [id, n]));
+  for (const { remove, add } of swaps) {
+    const have = counts.get(remove) ?? 0;
+    if (have <= 0) continue; // nada a remover → ignora (preserva o tamanho do deck)
+    counts.set(remove, have - 1);
+    counts.set(add, (counts.get(add) ?? 0) + 1);
+  }
+  return [...counts.entries()].filter(([, n]) => n > 0);
+}
+
+/** Composição do deck para uma facção (+ carta de Resistência opcional). Sempre 30. */
+export function deckComposition(factionId?: string, includeComeback = false): Array<[string, number]> {
+  const swaps: DeckSwap[] = [];
+  if (factionId && FACTION_TILTS[factionId]) swaps.push(...FACTION_TILTS[factionId]);
+  if (includeComeback) swaps.push({ remove: 'c_recruta', add: 'c_renegado' });
+  return swaps.length ? applySwaps(DEFAULT_DECK, swaps) : DEFAULT_DECK;
+}
+
+/** Carta em destaque do dia (cosmético, determinístico) — gancho de retorno. */
+export const CARD_OF_DAY_POOL = [
+  'c_recruta', 'c_lobo', 'c_arqueira', 'c_cavaleiro', 'c_golem', 'c_campea', 'c_dragao',
+  's_faisca', 's_bola_de_fogo', 's_fortalecer', 's_tempestade', 'a_escudo',
+];
+export function cardOfDay(nowMs: number): string {
+  const day = Math.floor(nowMs / 86_400_000);
+  const n = CARD_OF_DAY_POOL.length;
+  return CARD_OF_DAY_POOL[((day % n) + n) % n];
+}
