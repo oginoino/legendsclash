@@ -13,6 +13,19 @@ import {
   GiWizardFace, GiWolfHead,
 } from 'react-icons/gi';
 import { accentStyleDef, DEFAULT_AVATAR, normalizeIconId } from '@legendsclash/shared';
+import { SIGIL_ICONS, TAUNT_ICONS } from './icons';
+
+/** Sigilo de facção / ícone de nota do Arquivo de Aurélia (id → ícone). */
+export function Sigil({ id, className }: { id: string; className?: string }) {
+  const Icon = SIGIL_ICONS[id];
+  return Icon ? <Icon className={className} /> : null;
+}
+
+/** Ícone de uma provocação da arena (id de TAUNTS → ícone). */
+export function TauntIcon({ id, className }: { id: string; className?: string }) {
+  const Icon = TAUNT_ICONS[id];
+  return Icon ? <Icon className={className} /> : null;
+}
 
 /**
  * Reduz a imagem enviada para um quadrado de `max`px (recorte central) e devolve

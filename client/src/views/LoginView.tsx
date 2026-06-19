@@ -5,6 +5,7 @@ import {
   registerAccount, useAppState,
 } from '../store';
 import { CosmeticIcon } from '../cosmetics';
+import { IcoPlay } from '../icons';
 
 /**
  * Porta de entrada: jogar é imediato (convidado escolhe nome e avatar).
@@ -114,7 +115,7 @@ export function LoginView() {
             {avatarPicker}
             {error && <p className="form-error">{error}</p>}
             <button className="btn primary big" disabled={busy || !name.trim()}>
-              {busy ? 'Entrando…' : '🎮 Jogar agora'}
+              {busy ? 'Entrando…' : <><IcoPlay className="ic" /> Jogar agora</>}
             </button>
             <p className="login-note">Sem cadastro: você entra como convidado e já pode duelar.</p>
             <div className="divider">já é uma lenda?</div>
