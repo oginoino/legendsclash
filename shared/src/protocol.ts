@@ -1,6 +1,6 @@
 import type {
   ChatMessage, GameView, LeaderboardEntry, MatchHistoryEntry,
-  MatchResult, Profile, RoomState, Target,
+  MatchResult, Profile, PublicProfile, RoomState, Target,
 } from './types.js';
 
 // ─── Mensagens cliente → servidor ───────────────────────────────
@@ -12,6 +12,7 @@ export type ClientMsg =
   | { t: 'ping' }
   | { t: 'queue:join' }
   | { t: 'queue:leave' }
+  | { t: 'practice:start' } // partida de treino contra a IA (sem MMR)
   | { t: 'room:create' }
   | { t: 'room:join'; code: string }
   | { t: 'room:leave' }
@@ -28,12 +29,21 @@ export type ClientMsg =
   | { t: 'game:endTurn' }
   | { t: 'game:surrender' }
   | { t: 'leaderboard:get' }
-  | { t: 'history:get' };
+  | { t: 'history:get' }
+  // continuidade social: revanche com o último oponente, amigos e card de perfil
+  | { t: 'rematch:request' } // revanche com o oponente mais recente
+  | { t: 'rematch:decline' } // recusa uma revanche recebida
+  | { t: 'friend:add'; playerId: string }
+  | { t: 'friend:remove'; playerId: string }
+  | { t: 'profile:get'; playerId: string }
+  // Fase 6: facção escolhida (deck inclinado, simétrico) — ''=neutro
+  | { t: 'faction:pick'; factionId: string };
 
 // ─── Mensagens servidor → cliente ───────────────────────────────
 
 export type ServerMsg =
-  | { t: 'hello:ok'; profile: Profile }
+  // content: capacidades de conteúdo ligadas no servidor (Fase 6, dark launch)
+  | { t: 'hello:ok'; profile: Profile; content?: { factions: boolean } }
   | { t: 'pong' }
   | { t: 'error'; message: string }
   | { t: 'profile'; profile: Profile }
@@ -49,4 +59,7 @@ export type ServerMsg =
   // myRank/around: posição do jogador e seus vizinhos por MMR (alvo de subida
   // para quem está fora do top-20) — derivado do mesmo Elo, só apresentação.
   | { t: 'leaderboard'; entries: LeaderboardEntry[]; myRank?: number; around?: LeaderboardEntry[] }
-  | { t: 'history'; entries: MatchHistoryEntry[] };
+  | { t: 'history'; entries: MatchHistoryEntry[] }
+  // status da revanche: enviada / recebida (com quem) / indisponível / recusada
+  | { t: 'rematch:state'; status: 'sent' | 'incoming' | 'unavailable' | 'declined'; from?: { id: string; name: string; avatar: string } }
+  | { t: 'profile:view'; profile: PublicProfile };

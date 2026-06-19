@@ -1,8 +1,14 @@
 import { useSyncExternalStore } from 'react';
 import type {
   ChatMessage, ClientMsg, GameView, LeaderboardEntry, MatchHistoryEntry,
-  MatchResult, Profile, RoomState, ServerMsg,
+  MatchResult, Profile, PublicProfile, RoomState, ServerMsg,
 } from '@legendsclash/shared';
+
+/** Estado da oferta de revanche (pós-partida). */
+export interface RematchState {
+  status: 'sent' | 'incoming' | 'unavailable' | 'declined';
+  from?: { id: string; name: string; avatar: string };
+}
 
 /**
  * Estado do cliente + conexão WebSocket. O cliente é uma casca de
@@ -33,6 +39,14 @@ export interface AppState {
   accountPrompt: boolean;
   /** Conexão assumida por outra aba/dispositivo — não reconectar sozinho. */
   replaced: boolean;
+  /** Estado da revanche pós-partida (oferta enviada/recebida/indisponível). */
+  rematch: RematchState | null;
+  /** Card de perfil de um oponente aberto (clique no nome). */
+  viewedProfile: PublicProfile | null;
+  /** Fase 6: o servidor habilitou a escolha de facção (dark launch). */
+  factionsEnabled: boolean;
+  /** Facção escolhida pelo jogador (''=neutro). */
+  faction: string;
 }
 
 let state: AppState = {
@@ -54,6 +68,10 @@ let state: AppState = {
   reportSent: false,
   accountPrompt: false,
   replaced: false,
+  rematch: null,
+  viewedProfile: null,
+  factionsEnabled: false,
+  faction: localStorage.getItem('lc_faction') ?? '',
 };
 
 const listeners = new Set<() => void>();
@@ -168,9 +186,11 @@ export function resumeHere(): void {
 function handleServerMsg(msg: ServerMsg): void {
   switch (msg.t) {
     case 'hello:ok':
-      setState({ connected: true, profile: msg.profile });
+      setState({ connected: true, profile: msg.profile, factionsEnabled: !!msg.content?.factions });
       send({ t: 'leaderboard:get' });
       send({ t: 'history:get' });
+      // re-anuncia a facção escolhida (o servidor guarda em memória por sessão)
+      if (state.faction) send({ t: 'faction:pick', factionId: state.faction });
       joinPendingRoom();
       break;
     case 'pong':
@@ -207,7 +227,7 @@ function handleServerMsg(msg: ServerMsg): void {
         game: msg.view,
         inQueue: false,
         room: null,
-        ...(entering ? { chat: [], gameOver: null } : {}),
+        ...(entering ? { chat: [], gameOver: null, rematch: null } : {}),
       });
       break;
     }
@@ -228,6 +248,14 @@ function handleServerMsg(msg: ServerMsg): void {
       break;
     case 'history':
       setState({ history: msg.entries });
+      break;
+    case 'rematch:state':
+      setState({ rematch: { status: msg.status, from: msg.from } });
+      if (msg.status === 'unavailable') showToast('Oponente indisponível para a revanche.');
+      if (msg.status === 'declined') showToast('O oponente recusou a revanche.');
+      break;
+    case 'profile:view':
+      setState({ viewedProfile: msg.profile });
       break;
   }
 }
@@ -375,7 +403,43 @@ export function logout(): void {
 }
 
 export function dismissGameOver(): void {
-  setState({ game: null, gameOver: null, chat: [] });
+  // celebração ao voltar pra Home: vitória + sequência diária (já atualizada no profile)
+  const over = state.gameOver;
+  const won = !!over && over.winnerId === state.profile?.id;
+  const isPractice = !!over && Object.keys(over.mmr).length === 0; // treino não conta
+  const streak = state.profile?.streak ?? 0;
+  setState({ game: null, gameOver: null, chat: [], rematch: null });
+  if (won && !isPractice && streak >= 2) showToast(`🏆 Vitória! 🔥 ${streak} dias de sequência.`);
+  else if (won && !isPractice) showToast('🏆 Vitória registrada!');
+}
+
+// ─── Continuidade social (revanche, amigos, card de perfil) ─────
+
+export function requestRematch(): void {
+  send({ t: 'rematch:request' });
+}
+export function declineRematch(): void {
+  send({ t: 'rematch:decline' });
+  setState({ rematch: null });
+}
+export function addFriend(playerId: string): void {
+  send({ t: 'friend:add', playerId });
+  showToast('Amigo adicionado.');
+}
+export function removeFriend(playerId: string): void {
+  send({ t: 'friend:remove', playerId });
+}
+export function viewProfile(playerId: string): void {
+  send({ t: 'profile:get', playerId });
+}
+export function closeProfile(): void {
+  setState({ viewedProfile: null });
+}
+
+export function pickFaction(factionId: string): void {
+  try { localStorage.setItem('lc_faction', factionId); } catch { /* ignore */ }
+  setState({ faction: factionId });
+  send({ t: 'faction:pick', factionId });
 }
 
 export function clearReportSent(): void {

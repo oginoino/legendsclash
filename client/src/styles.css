@@ -334,10 +334,15 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .league-ouro { background: #e3b34126; color: var(--gold); }
 
 .history-list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
-.history-list li {
-  display: flex; gap: 10px; align-items: center;
-  padding: 8px 4px; border-bottom: 1px solid var(--line);
+.history-list li { border-bottom: 1px solid var(--line); }
+/* Fase 3: a linha vira botão expansível com o detalhe da partida abaixo */
+.history-row {
+  display: flex; gap: 10px; align-items: center; width: 100%;
+  padding: 8px 4px; background: none; border: none; color: inherit;
+  font: inherit; cursor: pointer; text-align: left;
 }
+.history-row:hover { background: var(--bg-2); }
+.history-detail { padding: 0 4px 8px; font-size: 12px; color: var(--dim); }
 .history-list .result { font-weight: 700; width: 64px; }
 .history-list li.won .result { color: var(--green); }
 .history-list li.lost .result { color: var(--red); }
@@ -1323,6 +1328,55 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   100% { box-shadow: 0 0 0 0 #3fb95000; }
 }
 
+/* ── Fase 1: feedback de escudo, buff, morte e controle de som ── */
+/* escudo absorvendo dano: clarão ciano no retrato (ensina que o escudo trabalhou) */
+.portrait.shielded { animation: shake .3s, shield-flash .5s ease-out; }
+@keyframes shield-flash {
+  0% { box-shadow: 0 0 0 2px #6fd3e6, 0 0 0 0 #6fd3e600; }
+  35% { box-shadow: 0 0 0 2px #6fd3e6, 0 0 26px 6px #6fd3e6aa; }
+  100% { box-shadow: 0 0 0 0 #6fd3e600; }
+}
+.float-fx.shield { color: #6fd3e6; }
+/* empoderamento (Fortalecer): anel dourado one-shot na carta exata */
+.float-fx.buff { color: var(--gold); font-size: 18px; }
+.creature.buffed-flash { animation: buff-ring .7s ease-out; }
+@keyframes buff-ring {
+  0% { box-shadow: 0 0 0 2px #e3b341, 0 0 0 0 #e3b34100; }
+  35% { box-shadow: 0 0 0 2px #e3b341, 0 0 24px 5px #e3b341aa; }
+  100% { box-shadow: 0 0 0 0 #e3b34100; }
+}
+/* morte mais dramática: a caveira "estoura" enquanto a carta afunda */
+.ghost-skull { animation: skull-pop .55s ease-out; }
+@keyframes skull-pop {
+  0% { transform: scale(.4); opacity: 0; }
+  45% { transform: scale(1.5); opacity: 1; }
+  100% { transform: scale(1); opacity: .9; }
+}
+/* seleção: glow estático mais forte, para não esquecer o que está mirado */
+.creature.selected { box-shadow: 0 0 26px #e3b341cc, 0 10px 22px #00000088; }
+
+/* só para leitor de tela (aviso de tempo do turno) */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* ── Controle de som: popover com dois sliders (SFX/Música) ──── */
+.sound-control { position: relative; display: inline-flex; }
+.volume-popover {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  z-index: 70; min-width: 190px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  box-shadow: 0 10px 30px #000a;
+  animation: msg-in .15s ease;
+}
+.volume-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text); }
+.volume-row > span { flex: 0 0 76px; white-space: nowrap; }
+.volume-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); cursor: pointer; }
+
 @media (max-width: 640px) {
   .codex { padding: 0 16px 22px; width: calc(100% - 16px); max-height: 94dvh; }
   .codex-realm { font-size: 34px; letter-spacing: 3px; }
@@ -1515,7 +1569,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   .board-table td:nth-child(3) { grid-area: league; }
   .board-table td:nth-child(4) { grid-area: mmr; text-align: right; font-weight: 800; color: var(--gold); }
   .board-table td:nth-child(5) { grid-area: vd; text-align: right; color: var(--dim-strong); font-size: var(--fs-xs); }
-  .history-list li { flex-wrap: wrap; row-gap: 2px; font-size: 13px; }
+  .history-list .history-row { flex-wrap: wrap; row-gap: 2px; font-size: 13px; }
 
   /* sala */
   .room-screen { padding: 14px 12px; gap: 12px; }
@@ -1708,6 +1762,14 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 /* ── Cosméticos por mérito: bloqueados + celebração de conquista ── */
 .cz-cmd.locked, .cz-swatch.locked { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5); }
 .cz-cmd.locked .cz-cmd-title { font-size: 0.72rem; color: var(--dim); }
+/* Fase 3: barra de progresso + selo de prestígio nos cosméticos */
+.cz-cmd { position: relative; }
+.cz-tier { position: absolute; top: 3px; right: 5px; font-size: 11px; line-height: 1; }
+.cz-progress {
+  display: block; width: 82%; height: 4px; margin: 5px auto 0;
+  background: var(--line); border-radius: 99px; overflow: hidden;
+}
+.cz-progress > span { display: block; height: 100%; background: var(--gold); border-radius: 99px; }
 .go-unlocks {
   margin: 6px 0 4px; padding: 10px 12px;
   background: var(--panel-2); border: 1px solid var(--gold); border-radius: 8px;
@@ -1715,6 +1777,44 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 }
 .go-unlocks-title { margin: 0; color: var(--gold); font-weight: 600; }
 .go-unlock { color: var(--text); }
+
+/* ── Fase 3: recap pós-partida (MVP + estatísticas) ─────────────── */
+.go-recap {
+  margin: 4px 0 2px; padding: 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.go-mvp { display: flex; align-items: center; gap: 12px; text-align: left; }
+.go-mvp-art.card-art-frame { width: 56px; height: 44px; font-size: 30px; flex-shrink: 0; }
+.go-mvp-info { display: flex; flex-direction: column; min-width: 0; }
+.go-mvp-name { font-weight: 700; color: var(--gold); }
+.go-mvp-line { font-size: 12px; color: var(--dim); }
+.go-stats { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; font-size: 13px; color: var(--dim); }
+.go-stats b { color: var(--text); font-size: 15px; }
+
+/* ── Fase 4: revanche/amizade no fim de jogo + card de perfil ───── */
+.go-opponent { margin: 2px 0; color: var(--dim); font-size: 13px; }
+.go-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 6px 0; }
+.go-rematch-incoming {
+  margin: 6px 0; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--gold-soft); background: var(--panel-2);
+}
+.go-rematch-incoming p { margin: 0 0 6px; }
+.go-rematch-sent { margin: 6px 0; color: var(--gold); font-size: 13px; }
+.player-profile { max-width: 360px; width: 100%; text-align: center; }
+.pp-head { display: flex; align-items: center; gap: 14px; text-align: left; margin-bottom: 10px; }
+.pp-portrait {
+  font-size: 38px; width: 64px; height: 64px; flex-shrink: 0;
+  display: grid; place-items: center; border-radius: 14px;
+  border: 2px solid var(--accent); background: var(--panel-2);
+}
+.pp-id { display: flex; flex-direction: column; min-width: 0; }
+.pp-name { font-size: 20px; }
+.pp-sub { color: var(--dim); font-size: 13px; }
+.pp-streak { color: var(--gold); margin: 4px 0; }
+.pp-achievements { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 8px 0; }
+.pp-ach { font-size: 12px; color: var(--text); background: var(--bg-2); border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
+.pp-actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
 
 /* ── Sequência diária + missão do dia (retenção) ──────────────── */
 .daily-strip {
@@ -1726,6 +1826,26 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .daily-strip .streak { color: var(--gold); font-weight: 600; }
 .daily-strip .daily-mission { color: var(--dim); }
 .daily-strip .daily-mission.done { color: var(--green); }
+
+/* ── Fase 5/6: treino, carta do dia e facções ──────────────────── */
+.practice-btn { width: 100%; }
+.card-of-day {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px; padding: 8px 12px;
+  background: var(--panel-2); border: 1px solid var(--gold-soft); border-radius: 8px;
+}
+.cod-art.card-art-frame { width: 48px; height: 38px; font-size: 26px; flex-shrink: 0; }
+.cod-info { display: flex; flex-direction: column; min-width: 0; }
+.cod-label { font-size: 11px; color: var(--gold); font-weight: 700; }
+.cod-name { font-weight: 600; }
+.faction-pick { margin-bottom: 12px; }
+.faction-label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+.faction-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.faction-chip {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 99px;
+  color: var(--text); font-size: 12px; font-weight: 600; padding: 4px 10px; cursor: pointer;
+}
+.faction-chip.sel { border-color: var(--gold); background: #e3b34122; color: var(--gold-2); }
 
 /* ── Ranking: sua posição e alvo de subida ────────────────────── */
 .my-rank {
@@ -1757,6 +1877,37 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .mulligan-slot.swapping .mulligan-flag { color: var(--red); }
 .mulligan-waiting { color: var(--dim); font-style: italic; margin-top: 8px; }
 .mulligan-confirm { margin-top: 4px; }
+
+/* ── Fase 2: ensino contextual + dicas de mulligan ──────────────── */
+.mulligan-tip { color: var(--gold); font-size: 13px; margin: -8px auto 14px; max-width: 540px; }
+.mulligan-timer {
+  display: flex; align-items: center; gap: 10px;
+  justify-content: center; margin: 0 auto 16px; max-width: 360px;
+}
+.mulligan-timer .timer-track { flex: 1; }
+.mulligan-secs { font-weight: 800; font-size: 13px; color: var(--dim); min-width: 30px; }
+.mulligan-secs.urgent { color: var(--red); }
+.mulligan-slot { position: relative; }
+.mulligan-cost-tag {
+  position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+  z-index: 2; white-space: nowrap;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 99px;
+  font-size: 10px; font-weight: 700; color: var(--dim); padding: 1px 7px;
+}
+/* dica contextual one-shot (Provocar, fadiga) — toast no topo, dispensável */
+.teach-toast {
+  position: fixed; top: calc(54px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  z-index: 47; display: flex; align-items: center; gap: 10px;
+  max-width: min(440px, calc(100vw - 24px));
+  background: var(--panel-2); border: 1px solid var(--gold-soft);
+  border-radius: 12px; padding: 8px 8px 8px 14px;
+  font-size: 13px; line-height: 1.4; color: var(--text);
+  box-shadow: 0 10px 30px #000a;
+  animation: msg-in .25s ease;
+  pointer-events: none; /* nunca rouba toques da arena… */
+}
+.teach-toast > span { min-width: 0; }
+.teach-toast .btn { flex-shrink: 0; pointer-events: auto; } /* …exceto o botão de fechar */
 
 /* ── Acessibilidade: sem animação decorativa contínua ─────────── */
 @media (prefers-reduced-motion: reduce) {

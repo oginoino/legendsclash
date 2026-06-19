@@ -1,12 +1,13 @@
 import { randomInt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
-import { TAUNTS, achievementsOf } from '@legendsclash/shared';
-import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry } from '@legendsclash/shared';
+import { TAUNTS, achievementsOf, FACTION_TILTS } from '@legendsclash/shared';
+import { contentFlags } from './content.js';
+import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry, MatchResult } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
 import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
-import { Match, GameError, type EngineResult, type MatchPlayer } from './game/engine.js';
+import { Match, GameError, type EngineResult, type MatchPlayer, type MatchContent } from './game/engine.js';
 import { applyElo, leagueOf } from './elo.js';
 import { filterText, MAX_CHAT_LENGTH } from './wordfilter.js';
 import { RateLimiter } from './ratelimit.js';
@@ -45,15 +46,20 @@ export class App {
   private queue = new MatchmakingQueue();
   private rooms = new RoomManager();
   private matches = new Map<string, Match>(); // userId → partida ativa
+  private practiceMatches = new Set<string>(); // ids de partidas de treino (sem MMR)
+  private factionChoice = new Map<string, string>(); // userId → facção escolhida (Fase 6)
   private recentChat = new Map<string, string[]>(); // userId → últimas mensagens (contexto de report)
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
   private userIp = new Map<string, string>(); // userId → IP da conexão ativa
   private reportsByTarget = new Map<string, Set<string>>(); // denunciado → denunciantes distintos
+  private recentOpponents = new Map<string, string[]>(); // userId → oponentes recentes (revanche/perfil/amigo)
+  private pendingRematch = new Map<string, { opponentId: string; at: number }>(); // quem pediu revanche → com quem
   // Rate-limits por usuário (token bucket): defesa autoritativa contra flood/DoS
   // e spam de provocação — os cooldowns do cliente são só UX.
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
   private chatLimiter = new RateLimiter(5, 1); // chat livre: ~1 msg/s, burst 5
   private tauntLimiter = new RateLimiter(1, 0.4); // provocação: ~1 a cada 2,5 s
+  private socialLimiter = new RateLimiter(4, 0.5); // revanche/amigo/perfil: anti-enumeração
   private queueTimer: NodeJS.Timeout;
 
   constructor(private store: Store) {
@@ -104,6 +110,7 @@ export class App {
       case 'profile:update': return this.profileUpdate(user, msg);
       case 'queue:join': return this.queueJoin(user);
       case 'queue:leave': return this.queueLeave(user);
+      case 'practice:start': return this.startPractice(user);
       case 'room:create': return this.roomCreate(user);
       case 'room:join': return this.roomJoin(user, msg.code);
       case 'room:leave': return this.roomLeave(user);
@@ -122,6 +129,12 @@ export class App {
       case 'history:get':
         // convidado vê o histórico da sessão (em memória); conta, o persistido
         return this.sendTo(user.id, { t: 'history', entries: user.history });
+      case 'rematch:request': return this.rematchRequest(user);
+      case 'rematch:decline': return this.rematchDecline(user);
+      case 'friend:add': return this.friendSet(user, msg.playerId, true);
+      case 'friend:remove': return this.friendSet(user, msg.playerId, false);
+      case 'profile:get': return this.profileGet(user, msg.playerId);
+      case 'faction:pick': return this.factionPick(user, msg.factionId);
     }
   }
 
@@ -139,7 +152,11 @@ export class App {
     const ip = this.socketIp.get(ws);
     if (ip) this.userIp.set(user.id, ip);
 
-    this.send(ws, { t: 'hello:ok', profile: this.store.profileOf(user) });
+    this.send(ws, {
+      t: 'hello:ok',
+      profile: this.store.profileOf(user),
+      content: { factions: contentFlags.factions },
+    });
     this.store.recordEvent('session_start', { userId: user.id, props: { guest: user.guest } });
 
     // Reconexão a partida em andamento (janela anti-abandono de 2 min)
@@ -170,10 +187,23 @@ export class App {
     this.msgLimiter.forget(userId);
     this.chatLimiter.forget(userId);
     this.tauntLimiter.forget(userId);
+    this.socialLimiter.forget(userId);
     this.userIp.delete(userId);
+    // descarta ofertas de revanche pendentes (minhas e as direcionadas a mim)
+    this.pendingRematch.delete(userId);
+    for (const [requesterId, req] of this.pendingRematch) {
+      if (req.opponentId === userId) this.pendingRematch.delete(requesterId);
+    }
 
     const match = this.matches.get(userId);
     if (match && !match.finished) {
+      if (this.practiceMatches.has(match.id)) {
+        // treino: sem janela de reconexão — o bot não espera ninguém
+        this.practiceMatches.delete(match.id);
+        this.matches.delete(userId);
+        match.dispose();
+        return;
+      }
       match.handleDisconnect(userId);
       return; // permanece na partida durante a janela de reconexão
     }
@@ -315,6 +345,7 @@ export class App {
       const j = randomInt(i + 1);
       [players[i], players[j]] = [players[j], players[i]];
     }
+    const content = this.matchContentFor(users.map((u) => u.id));
     let match: Match;
     match = new Match(
       players,
@@ -322,13 +353,18 @@ export class App {
       (result) => this.finishMatch(match, result),
       undefined, // turnSeconds: usa o padrão (TURN_SECONDS)
       true, // habilita a fase de mulligan (troca de mão) antes do turno 1
+      [], // sem bots numa partida ranqueada
+      content, // conteúdo variável (Fase 6) — vazio quando as flags estão off
     );
     for (const u of users) this.matches.set(u.id, match);
     match.start();
-    // telemetria: ordem de assentos (sorteada) p/ derivar winrate por assento
+    // telemetria: ordem de assentos + condições de conteúdo p/ winrate-por-condição
     this.store.recordEvent('match_start', {
       matchId: match.id,
-      props: { seats: players.map((p, seat) => ({ seat, playerId: p.id, mmr: p.mmr })) },
+      props: {
+        seats: players.map((p, seat) => ({ seat, playerId: p.id, mmr: p.mmr })),
+        content: { factions: content.factions ?? null, comeback: !!content.comeback },
+      },
     });
   }
 
@@ -336,6 +372,63 @@ export class App {
     const match = this.matches.get(user.id);
     if (!match || match.finished) throw new KnownError('Você não está em uma partida.');
     fn(match);
+  }
+
+  // ─── Modo treino (vs CPU, sem MMR) ──────────────────────────────
+
+  private startPractice(user: UserRecord): void {
+    if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
+    this.queue.leave(user.id);
+    this.rooms.leave(user.id);
+    const bot: MatchPlayer = {
+      id: 'bot:' + randomInt(1_000_000_000), name: 'Treinador IA', avatar: '🤖',
+      commander: '🤖', accent: '#3fd3c6', mmr: user.mmr,
+    };
+    const human: MatchPlayer = {
+      id: user.id, name: displayName(user), avatar: user.avatar,
+      commander: user.commander, accent: user.accent, mmr: user.mmr,
+    };
+    // humano no assento 0 (age primeiro) — aprendizado mais gentil
+    let match: Match;
+    match = new Match(
+      [human, bot],
+      () => this.broadcastMatch(match),
+      (result) => this.finishPracticeMatch(match, result),
+      undefined,
+      true, // mulligan (o bot auto-confirma)
+      [bot.id],
+      this.matchContentFor([user.id]), // treino respeita as flags de conteúdo
+    );
+    this.matches.set(user.id, match); // só o humano é registrado (o bot não tem socket)
+    this.practiceMatches.add(match.id);
+    match.start();
+  }
+
+  /** Fim de partida de treino: entrega o recap mas NÃO toca Elo/histórico/streak/eventos. */
+  private finishPracticeMatch(match: Match, result: EngineResult): void {
+    const ids = match.playerIds();
+    const winnerId = ids[result.winnerSeat];
+    const humanId = ids.find((id) => this.store.userById(id)); // o bot não tem registro
+    const stats: MatchResult['stats'] = {};
+    const mvp: MatchResult['mvp'] = {};
+    ids.forEach((id, seat) => {
+      if (result.stats[seat]) stats![id] = result.stats[seat];
+      mvp![id] = result.mvp[seat] ?? null;
+    });
+    this.broadcastMatch(match); // estado final
+    for (const pid of ids) this.matches.delete(pid);
+    this.practiceMatches.delete(match.id);
+    if (humanId) {
+      this.sendTo(humanId, {
+        t: 'game:over',
+        result: {
+          matchId: match.id, winnerId, reason: result.reason,
+          turns: result.turns, durationMs: result.durationMs,
+          mmr: {}, stats, mvp, // mmr vazio = partida de treino (não conta)
+        },
+      });
+    }
+    match.dispose();
   }
 
   private broadcastMatch(match: Match): void {
@@ -427,6 +520,15 @@ export class App {
       if (fresh.length) unlocked[id] = fresh;
     }
 
+    // recap por jogador: do índice de assento (engine) para o id do jogador
+    const stats: MatchResult['stats'] = {};
+    const mvp: MatchResult['mvp'] = {};
+    ids.forEach((id, seat) => {
+      if (result.stats[seat]) stats![id] = result.stats[seat];
+      mvp![id] = result.mvp[seat] ?? null;
+    });
+
+    this.recordRecentOpponents(ids); // habilita revanche/perfil/amizade pós-partida
     this.broadcastMatch(match); // estado final
     for (const pid of ids) {
       this.matches.delete(pid);
@@ -434,7 +536,7 @@ export class App {
         t: 'game:over',
         result: {
           matchId: match.id, winnerId, reason: result.reason,
-          turns: result.turns, durationMs: result.durationMs, mmr, unlocked,
+          turns: result.turns, durationMs: result.durationMs, mmr, unlocked, stats, mvp,
         },
       });
       const u = this.store.userById(pid);
@@ -525,6 +627,104 @@ export class App {
       console.warn(`[moderação] ${targetId} acumulou ${reporters.size} denunciantes distintos — revisar`);
     }
     this.sendTo(user.id, { t: 'chat:report:ok' });
+  }
+
+  // ─── Continuidade social: revanche, amigos e card de perfil ─────
+  // Tudo gateado por `knows` (só quem você encontrou) + rate-limit anti-enumeração.
+
+  /** Registra os oponentes recentes de cada jogador (revanche/perfil/amizade). */
+  private recordRecentOpponents(ids: string[]): void {
+    for (const id of ids) {
+      const others = ids.filter((o) => o !== id);
+      const list = [...others, ...(this.recentOpponents.get(id) ?? [])];
+      this.recentOpponents.set(id, [...new Set(list)].slice(0, 10));
+    }
+  }
+
+  /** Relação válida: na mesma sala/partida agora, oponente recente ou já amigo. */
+  private knows(userId: string, otherId: string): boolean {
+    if (userId === otherId) return false;
+    if (this.chatRecipients(userId).includes(otherId)) return true;
+    if ((this.recentOpponents.get(userId) ?? []).includes(otherId)) return true;
+    const u = this.store.userById(userId);
+    return !!u && u.friends.includes(otherId);
+  }
+
+  private rematchRequest(user: UserRecord): void {
+    if (!this.socialLimiter.take(user.id)) return;
+    if (this.matches.has(user.id)) throw new KnownError('Termine a partida atual primeiro.');
+    const oppId = (this.recentOpponents.get(user.id) ?? [])[0];
+    const opp = oppId ? this.store.userById(oppId) : undefined;
+    // oponente precisa estar online e livre para a revanche valer
+    if (!opp || !this.sockets.has(opp.id) || this.matches.has(opp.id)) {
+      return this.sendTo(user.id, { t: 'rematch:state', status: 'unavailable' });
+    }
+    // o outro já pediu revanche comigo? então os dois querem — começa a partida
+    const theirs = this.pendingRematch.get(opp.id);
+    if (theirs && theirs.opponentId === user.id) {
+      this.pendingRematch.delete(opp.id);
+      this.pendingRematch.delete(user.id);
+      this.startMatch([user, opp]);
+      return;
+    }
+    this.pendingRematch.set(user.id, { opponentId: opp.id, at: Date.now() });
+    this.sendTo(user.id, { t: 'rematch:state', status: 'sent' });
+    this.sendTo(opp.id, {
+      t: 'rematch:state', status: 'incoming',
+      from: { id: user.id, name: displayName(user), avatar: user.avatar },
+    });
+  }
+
+  private rematchDecline(user: UserRecord): void {
+    // descarta um pedido recebido e avisa quem o enviou
+    for (const [requesterId, req] of this.pendingRematch) {
+      if (req.opponentId === user.id) {
+        this.pendingRematch.delete(requesterId);
+        this.sendTo(requesterId, { t: 'rematch:state', status: 'declined' });
+      }
+    }
+  }
+
+  private friendSet(user: UserRecord, friendId: string, add: boolean): void {
+    if (!this.socialLimiter.take(user.id)) return;
+    // só dá para adicionar quem você encontrou (remover é sempre permitido)
+    if (add && !this.knows(user.id, friendId)) {
+      throw new KnownError('Só dá para adicionar quem você enfrentou.');
+    }
+    this.store.setFriend(user.id, friendId, add);
+    this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(user) });
+  }
+
+  private factionPick(user: UserRecord, factionId: string): void {
+    // '' = neutro; senão precisa ser uma facção conhecida (anti-lixo)
+    if (factionId && !FACTION_TILTS[factionId]) throw new KnownError('Facção desconhecida.');
+    if (factionId) this.factionChoice.set(user.id, factionId);
+    else this.factionChoice.delete(user.id);
+  }
+
+  /** Monta o conteúdo variável da partida a partir das flags + escolhas (Fase 6). */
+  private matchContentFor(ids: string[]): MatchContent {
+    const content: MatchContent = {};
+    if (contentFlags.factions) {
+      const factions: Record<string, string> = {};
+      for (const id of ids) {
+        const f = this.factionChoice.get(id);
+        if (f) factions[id] = f;
+      }
+      if (Object.keys(factions).length) content.factions = factions;
+    }
+    if (contentFlags.comeback) content.comeback = true;
+    return content;
+  }
+
+  private profileGet(user: UserRecord, targetId: string): void {
+    if (!this.socialLimiter.take(user.id)) return;
+    if (!this.knows(user.id, targetId)) {
+      throw new KnownError('Você só pode ver o perfil de quem enfrentou.');
+    }
+    const target = this.store.userById(targetId);
+    if (!target) throw new KnownError('Jogador não encontrado.');
+    this.sendTo(user.id, { t: 'profile:view', profile: this.store.publicProfileOf(target) });
   }
 
   // ─── Ranking ────────────────────────────────────────────────────

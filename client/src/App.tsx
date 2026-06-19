@@ -3,6 +3,7 @@ import { LoginView } from './views/LoginView';
 import { HomeView } from './views/HomeView';
 import { RoomView } from './views/RoomView';
 import { GameView } from './views/GameView';
+import { PlayerProfileCard } from './components/PlayerProfile';
 
 export function App() {
   const s = useAppState();
@@ -17,6 +18,7 @@ export function App() {
   return (
     <>
       {view}
+      <PlayerProfileCard />
       {s.toast && <div className="toast">{s.toast}</div>}
       {s.token && !s.connected && (s.replaced ? (
         <div className="conn-banner">

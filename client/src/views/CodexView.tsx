@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CARDS } from '@legendsclash/shared';
+import { CARDS, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CardType } from '@legendsclash/shared';
 import { CardArt } from '../components/CardArt';
 import { CARD_LORE, FACTIONS, WORLD } from '../lore';
@@ -16,13 +16,6 @@ const TYPE_LABEL: Record<CardType, string> = {
   spell: 'Magia',
   artifact: 'Artefato',
   tactic: 'Tática',
-};
-
-const KEYWORD_LABEL: Record<string, string> = {
-  taunt: '🛡 Provocar',
-  charge: '⚡ Investida',
-  battlecry: '📣 Grito de Batalha',
-  deathrattle: '💀 Estertor',
 };
 
 const FACTION_ORDER = ['vanguarda', 'silvanos', 'eter', 'profundezas'];
@@ -192,7 +185,7 @@ function CardLorePage({ defId, onBack }: { defId: string; onBack: () => void }) 
               </>
             )}
             {def.keywords?.map((k) => (
-              <span key={k} className="codex-stat keyword">{KEYWORD_LABEL[k] ?? k}</span>
+              <span key={k} className="codex-stat keyword" title={keywordDesc(k)}>{keywordLabel(k)}</span>
             ))}
           </div>
         </div>

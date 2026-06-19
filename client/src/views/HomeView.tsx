@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { logout, openAccountPrompt, send, useAppState } from '../store';
+import { CARDS, cardOfDay } from '@legendsclash/shared';
+import { logout, openAccountPrompt, pickFaction, send, useAppState } from '../store';
 import { LeagueBadge } from '../components/LeagueBadge';
+import { CardArt } from '../components/CardArt';
 import { ProfileModal } from '../components/ProfileModal';
 import { RulesModal } from '../components/RulesModal';
 import { CodexView } from './CodexView';
+import { FACTIONS } from '../lore';
 
 /** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
 function leagueProgress(mmr: number): { label: string; pct: number } | null {
@@ -19,6 +22,7 @@ export function HomeView() {
   const [showRules, setShowRules] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
+  const [openMatch, setOpenMatch] = useState<string | null>(null);
   const p = s.profile;
 
   if (!p) return <div className="centered">Carregando perfil…</div>;
@@ -50,6 +54,19 @@ export function HomeView() {
       <main className="home-main">
         <section className="panel play-panel">
           <h2>Jogar</h2>
+          {(() => {
+            const cod = cardOfDay(Date.now());
+            const def = CARDS[cod];
+            return def ? (
+              <div className="card-of-day" title={def.text}>
+                <CardArt defId={cod} className="cod-art" />
+                <div className="cod-info">
+                  <span className="cod-label">⭐ Carta do dia</span>
+                  <span className="cod-name">{def.name}</span>
+                </div>
+              </div>
+            ) : null;
+          })()}
           {!p.guest && (
             <div className="daily-strip">
               <span className="streak" title="Dias seguidos com partida">
@@ -81,6 +98,27 @@ export function HomeView() {
             </div>
           ) : (
             <>
+              {s.factionsEnabled && (
+                <div className="faction-pick">
+                  <span className="faction-label">Sua facção (deck inclinado, simétrico):</span>
+                  <div className="faction-options">
+                    <button type="button" className={`faction-chip ${s.faction === '' ? 'sel' : ''}`} onClick={() => pickFaction('')}>
+                      Neutro
+                    </button>
+                    {Object.values(FACTIONS).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        className={`faction-chip ${s.faction === f.id ? 'sel' : ''}`}
+                        onClick={() => pickFaction(f.id)}
+                        title={f.motto}
+                      >
+                        {f.sigil} {f.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button className="btn primary big" onClick={() => send({ t: 'queue:join' })}>
                 ⚔️ Partida ranqueada
               </button>
@@ -94,6 +132,10 @@ export function HomeView() {
                 </div>
               )}
               {!progress && <p className="hint">🥇 Você está na liga máxima — defenda o topo!</p>}
+              <button className="btn practice-btn" onClick={() => send({ t: 'practice:start' })}>
+                🤖 Treino (vs CPU)
+              </button>
+              <p className="hint">Aprenda e teste jogadas contra a IA — não afeta seu MMR.</p>
               <div className="home-secondary">
                 <button className="btn ghost" onClick={() => setShowRules(true)}>
                   📖 Como jogar
@@ -182,16 +224,36 @@ export function HomeView() {
             <p className="hint">Suas partidas aparecerão aqui.</p>
           ) : (
             <ul className="history-list">
-              {s.history.slice(0, 10).map((h) => (
-                <li key={h.matchId + h.endedAt} className={h.won ? 'won' : 'lost'}>
-                  <span className="result">{h.won ? 'Vitória' : 'Derrota'}</span>
-                  <span>vs {h.opponentName}</span>
-                  <span className="dim">{h.turns} turnos · {Math.round(h.durationMs / 60000)} min</span>
-                  <span className={h.mmrDelta >= 0 ? 'delta up' : 'delta down'}>
-                    {h.mmrDelta >= 0 ? '+' : ''}{h.mmrDelta}
-                  </span>
-                </li>
-              ))}
+              {s.history.slice(0, 10).map((h) => {
+                const key = h.matchId + h.endedAt;
+                const open = openMatch === key;
+                const reason = h.reason === 'hp' ? 'Vida zerada'
+                  : h.reason === 'surrender' ? 'Desistência'
+                  : 'Tempo esgotado / desconexão';
+                return (
+                  <li key={key} className={`${h.won ? 'won' : 'lost'} ${open ? 'open' : ''}`}>
+                    <button
+                      type="button"
+                      className="history-row"
+                      onClick={() => setOpenMatch(open ? null : key)}
+                      aria-expanded={open}
+                    >
+                      <span className="result">{h.won ? 'Vitória' : 'Derrota'}</span>
+                      <span>vs {h.opponentName}</span>
+                      <span className="dim">{h.turns} turnos · {Math.round(h.durationMs / 60000)} min</span>
+                      <span className={h.mmrDelta >= 0 ? 'delta up' : 'delta down'}>
+                        {h.mmrDelta >= 0 ? '+' : ''}{h.mmrDelta}
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="history-detail">
+                        {h.won ? 'Você venceu' : 'Você perdeu'} · {reason} ·{' '}
+                        {new Date(h.endedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

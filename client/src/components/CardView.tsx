@@ -1,4 +1,4 @@
-import { CARDS } from '@legendsclash/shared';
+import { CARDS, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import { CardArt } from './CardArt';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -6,13 +6,6 @@ const TYPE_LABEL: Record<string, string> = {
   spell: 'Magia',
   artifact: 'Artefato',
   tactic: 'Tática',
-};
-
-const KEYWORD_LABEL: Record<string, string> = {
-  taunt: '🛡 Provocar',
-  charge: '⚡ Investida',
-  battlecry: '📣 Grito de Batalha',
-  deathrattle: '💀 Estertor',
 };
 
 const RARITY_LABEL: Record<string, string> = {
@@ -67,7 +60,7 @@ export function CardView({ defId, playable, selected, lifting, onClick, style, a
       <CardArt defId={defId} className="card-art" />
       <span className="card-type">{TYPE_LABEL[def.type]}</span>
       {def.keywords?.map((k) => (
-        <span key={k} className="keyword-chip">{KEYWORD_LABEL[k] ?? k}</span>
+        <span key={k} className="keyword-chip" title={keywordDesc(k)}>{keywordLabel(k)}</span>
       ))}
       <span className="card-text">{def.text}</span>
       {def.type === 'creature' && (

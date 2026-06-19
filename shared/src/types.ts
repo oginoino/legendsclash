@@ -24,6 +24,26 @@ export interface Profile {
   /** Conquistas obtidas (ids) — desbloqueiam cosméticos por mérito. */
   achievements: string[];
   muted: string[]; // ids de jogadores silenciados por este usuário
+  /** Amigos adicionados (ids) — quem você enfrentou e quis manter por perto. */
+  friends: string[];
+}
+
+/**
+ * Visão pública de um jogador (card de perfil do oponente). Sem e-mail nem
+ * lista de silenciados — mesma disciplina de redação das visões de jogo.
+ */
+export interface PublicProfile {
+  id: string;
+  name: string;
+  avatar: string;
+  commander: string;
+  accent: string;
+  league: League;
+  mmr: number;
+  wins: number;
+  losses: number;
+  achievements: string[];
+  streak: number;
 }
 
 export interface MatchHistoryEntry {
@@ -134,6 +154,23 @@ export interface PlayedCard {
   at: number;
 }
 
+/** Estatísticas agregadas da partida, por jogador (alimenta o recap pós-jogo). */
+export interface MatchStats {
+  creaturesSummoned: number;
+  spellsCast: number;
+  /** Dano causado ao comandante inimigo (o que decide a partida). */
+  damageDealt: number;
+  /** Dano que o escudo deste jogador absorveu antes da vida. */
+  shieldAbsorbed: number;
+}
+
+/** Criatura "MVP": a que mais causou dano em combate (desempate por abates). */
+export interface MatchMvp {
+  defId: string;
+  damage: number;
+  kills: number;
+}
+
 export interface MatchResult {
   matchId: string;
   winnerId: string;
@@ -143,6 +180,10 @@ export interface MatchResult {
   mmr: Record<string, { before: number; after: number; delta: number; league: League }>;
   /** Conquistas recém-obtidas nesta partida, por jogador (celebração no fim). */
   unlocked?: Record<string, string[]>;
+  /** Estatísticas da partida por jogador (recap). Opcional ⇒ compatível pra trás. */
+  stats?: Record<string, MatchStats>;
+  /** Carta MVP por jogador (pode ser null se ninguém atacou). */
+  mvp?: Record<string, MatchMvp | null>;
 }
 
 /** Alvo de uma carta ou ataque: assento + (opcional) criatura; sem iid = comandante. */

@@ -1,11 +1,11 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import {
-  CARDS, DEFAULT_DECK, MAX_BOARD, MAX_ENERGY, MAX_HAND,
+  CARDS, deckComposition, MAX_BOARD, MAX_ENERGY, MAX_HAND,
   RECONNECT_GRACE_MS, STARTING_HAND, STARTING_HP, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
-  CardInHand, CreatureOnBoard, GameLogEntry, GameView,
-  MatchEndReason, SeatView, Target,
+  CardDef, CardInHand, CreatureOnBoard, GameLogEntry, GameView,
+  MatchEndReason, MatchMvp, MatchStats, SeatView, Target,
 } from '@legendsclash/shared';
 
 /**
@@ -38,6 +38,8 @@ interface Creature extends CardInstance {
   baseHealth: number;
   canAttack: boolean;
   attacked: boolean;
+  /** Resistência (comeback): bônus de ataque ativo enquanto o dono está em ≤10 de vida. */
+  comebackOn?: boolean;
 }
 
 interface Seat {
@@ -56,6 +58,10 @@ interface Seat {
   out: boolean;
   mulliganDone: boolean;
   reconnectTimer: NodeJS.Timeout | null;
+  /** Estatísticas acumuladas para o recap pós-partida. */
+  stats: MatchStats;
+  /** Dano/abates por criatura (iid), persiste após a morte → eleger o MVP. */
+  creatureLog: Map<string, { defId: string; dmg: number; kills: number }>;
 }
 
 export interface EngineResult {
@@ -63,6 +69,10 @@ export interface EngineResult {
   reason: MatchEndReason;
   turns: number;
   durationMs: number;
+  /** Estatísticas por assento (index = seat). */
+  stats: MatchStats[];
+  /** Criatura MVP por assento (null se o assento não atacou). */
+  mvp: (MatchMvp | null)[];
 }
 
 export class GameError extends Error {}
@@ -75,6 +85,8 @@ const MULLIGAN_SECONDS = 30;
  * morte súbita por vantagem — garante encerramento previsível.
  */
 const MAX_TURNS = 40;
+/** Pausa antes do bot de treino agir, para a jogada dele ser legível. */
+const BOT_TURN_DELAY_MS = 750;
 
 let nextIid = 1;
 function newIid(): string {
@@ -89,13 +101,19 @@ function shuffle<T>(arr: T[]): void {
   }
 }
 
-function buildDeck(): CardInstance[] {
+function buildDeck(factionId?: string, includeComeback = false): CardInstance[] {
   const deck: CardInstance[] = [];
-  for (const [defId, copies] of DEFAULT_DECK) {
+  for (const [defId, copies] of deckComposition(factionId, includeComeback)) {
     for (let i = 0; i < copies; i++) deck.push({ iid: newIid(), defId });
   }
   shuffle(deck);
   return deck;
+}
+
+/** Conteúdo variável da partida (Fase 6): facção por jogador + carta de Resistência. */
+export interface MatchContent {
+  factions?: Record<string, string>; // playerId → factionId
+  comeback?: boolean; // inclui o Renegado (keyword Resistência) no deck dos dois
 }
 
 export class Match {
@@ -106,6 +124,7 @@ export class Match {
   private turnEndsAt = 0;
   private turnTimer: NodeJS.Timeout | null = null;
   private mulliganTimer: NodeJS.Timeout | null = null;
+  private botTimer: NodeJS.Timeout | null = null;
   private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
   private readonly startedAt = Date.now();
@@ -120,6 +139,10 @@ export class Match {
     private turnSeconds = TURN_SECONDS,
     /** Habilita a fase de mulligan antes do turno 1 (default off p/ testes do motor). */
     private useMulligan = false,
+    /** Ids dos assentos controlados pela IA (modo treino). Vazio = só humanos. */
+    private botIds: string[] = [],
+    /** Conteúdo variável (Fase 6): facções por jogador + carta de Resistência. */
+    private content: MatchContent = {},
   ) {
     if (players.length < 2) throw new Error('partida exige ao menos 2 jogadores');
     this.seats = players.map((player) => ({
@@ -128,7 +151,7 @@ export class Match {
       shield: 0,
       energy: 0,
       maxEnergy: 0,
-      deck: buildDeck(),
+      deck: buildDeck(content.factions?.[player.id], content.comeback ?? false),
       hand: [],
       board: [],
       artifacts: [],
@@ -138,7 +161,17 @@ export class Match {
       out: false,
       mulliganDone: false,
       reconnectTimer: null,
+      stats: { creaturesSummoned: 0, spellsCast: 0, damageDealt: 0, shieldAbsorbed: 0 },
+      creatureLog: new Map(),
     }));
+  }
+
+  /** Acumula dano/abates de uma atacante para eleger o MVP (sobrevive à morte). */
+  private bumpCreature(seat: Seat, creature: Creature, dmg: number, kills: number): void {
+    const e = seat.creatureLog.get(creature.iid) ?? { defId: creature.defId, dmg: 0, kills: 0 };
+    e.dmg += dmg;
+    e.kills += kills;
+    seat.creatureLog.set(creature.iid, e);
   }
 
   start(): void {
@@ -157,6 +190,10 @@ export class Match {
       this.turnEndsAt = Date.now() + MULLIGAN_SECONDS * 1000;
       this.mulliganTimer = setTimeout(() => this.forceFinishMulligan(), MULLIGAN_SECONDS * 1000);
       this.addLog('Fase de troca: ajuste a mão inicial');
+      // o bot de treino não troca cartas — confirma a mão na hora
+      for (const id of this.botIds) {
+        try { this.mulligan(id, []); } catch { /* ignore */ }
+      }
       this.onUpdate();
       return;
     }
@@ -235,6 +272,10 @@ export class Match {
     this.addLog(`Turno ${this.turnNumber}: vez de ${seat.player.name}`);
     this.armTurnTimer();
     this.checkEnd();
+    // modo treino: se a vez é da IA, agenda a jogada dela (após uma pausa legível)
+    if (this.status === 'active' && this.botIds.includes(seat.player.id)) {
+      this.scheduleBotTurn(seat.player.id);
+    }
   }
 
   private armTurnTimer(): void {
@@ -368,6 +409,9 @@ export class Match {
       }
     }
 
+    if (def.type === 'creature') seat.stats.creaturesSummoned++;
+    else if (def.type === 'spell') seat.stats.spellsCast++;
+
     seat.energy -= def.cost;
     seat.hand.splice(handIdx, 1);
     // jogada concluída é informação pública — alimenta a revelação no cliente
@@ -409,6 +453,7 @@ export class Match {
           this.cleanupBoard(enemy);
         } else {
           this.damagePlayer(enemy, dmg);
+          caster.stats.damageDealt += dmg;
           this.addLog(`${def.name} causou ${dmg} de dano em ${enemy.player.name}`);
         }
         break;
@@ -519,6 +564,8 @@ export class Match {
       const retaliation = defender.attack + enemy.attackBonus;
       defender.health -= power;
       attacker.health -= retaliation;
+      const defenderDied = defender.health <= 0;
+      this.bumpCreature(seat, attacker, power, defenderDied ? 1 : 0);
       this.addLog(`${attackerName} atacou ${defenderName}`);
       if (retaliation > 0) {
         this.addLog(`${defenderName} revidou: ${attackerName} sofreu ${retaliation} de dano`);
@@ -527,12 +574,15 @@ export class Match {
       this.cleanupBoard(enemy);
       // Dano excedente: ao destruir a última criatura em campo, o saldo do
       // golpe (não a retaliação) desconta dos pontos de vida do comandante.
-      if (wasLast && defender.health <= 0 && excess > 0) {
+      if (wasLast && defenderDied && excess > 0) {
         this.damagePlayer(enemy, excess);
+        seat.stats.damageDealt += excess;
         this.addLog(`O dano excedente atingiu ${enemy.player.name} (−${excess})`);
       }
     } else {
       this.damagePlayer(enemy, power);
+      seat.stats.damageDealt += power;
+      this.bumpCreature(seat, attacker, power, 0);
       this.addLog(`${attackerName} causou ${power} de dano em ${enemy.player.name}`);
     }
 
@@ -597,6 +647,7 @@ export class Match {
     const absorbed = Math.min(seat.shield, amount);
     seat.shield -= absorbed;
     seat.hp -= amount - absorbed;
+    seat.stats.shieldAbsorbed += absorbed;
   }
 
   private cleanupBoard(seat: Seat): void {
@@ -662,8 +713,28 @@ export class Match {
     this.checkEnd();
   }
 
+  /** Resistência (comeback): liga/desliga o +2 de ataque conforme a vida do dono
+   *  cruza 10, de forma idempotente (não acumula). Concede Investida ao ligar. */
+  private refreshComeback(): void {
+    for (const seat of this.seats) {
+      const active = seat.hp <= 10 && !seat.out;
+      for (const c of seat.board) {
+        if (!CARDS[c.defId].keywords?.includes('comeback')) continue;
+        if (active && !c.comebackOn) {
+          c.attack += 2;
+          c.comebackOn = true;
+          if (!c.attacked) c.canAttack = true; // Investida enquanto resiste
+        } else if (!active && c.comebackOn) {
+          c.attack -= 2;
+          c.comebackOn = false;
+        }
+      }
+    }
+  }
+
   private checkEnd(reasonHint?: MatchEndReason): void {
     if (this.status !== 'active') return;
+    this.refreshComeback(); // reavalia a Resistência a cada mudança de estado
     for (const seat of this.seats) {
       if (!seat.out && seat.hp <= 0) {
         seat.out = true;
@@ -684,9 +755,100 @@ export class Match {
       reason: reasonHint ?? 'hp',
       turns: this.turnNumber,
       durationMs: Date.now() - this.startedAt,
+      stats: this.seats.map((s) => ({ ...s.stats })),
+      mvp: this.seats.map((s) => {
+        let best: MatchMvp | null = null;
+        for (const e of s.creatureLog.values()) {
+          if (!best || e.dmg > best.damage || (e.dmg === best.damage && e.kills > best.kills)) {
+            best = { defId: e.defId, damage: e.dmg, kills: e.kills };
+          }
+        }
+        return best;
+      }),
     };
     this.addLog(`Vitória de ${this.seats[winnerSeat].player.name}!`);
     this.onFinish(this.result);
+  }
+
+  // ─── Bot de treino (assento virtual, sem MMR) ──────────────────
+  // Heurística gananciosa que usa SÓ os métodos públicos validados — o bot não
+  // tem socket e não pode trapacear (taunt/escudo/energia são checados de toda forma).
+
+  private scheduleBotTurn(playerId: string): void {
+    if (this.botTimer) clearTimeout(this.botTimer);
+    this.botTimer = setTimeout(() => {
+      this.botTimer = null;
+      try { this.runBotTurn(playerId); } catch { /* o bot nunca derruba a partida */ }
+    }, BOT_TURN_DELAY_MS);
+  }
+
+  /** Joga a vez do bot: gasta cartas acessíveis, ataca e encerra o turno. */
+  runBotTurn(playerId: string): void {
+    const idx = this.seatOf(playerId);
+    if (idx < 0 || this.status !== 'active' || this.turnSeat !== idx) return;
+    const seat = this.seats[idx];
+
+    // 1) jogar cartas acessíveis (uma por passada; repete até travar)
+    let played = true;
+    let guard = 0;
+    while (played && this.status === 'active' && this.turnSeat === idx && guard++ < 20) {
+      played = false;
+      for (const card of [...seat.hand]) {
+        const def = CARDS[card.defId];
+        if (def.cost > seat.energy) continue;
+        const wants = def.target ?? 'none';
+        const target = wants === 'none' ? undefined : this.botTargetFor(idx, def);
+        if (wants !== 'none' && !target) continue; // sem alvo válido → tenta outra
+        try { this.playCard(playerId, card.iid, target); played = true; break; }
+        catch { /* carta inválida agora; tenta a próxima */ }
+      }
+    }
+
+    // 2) atacar com todas as criaturas prontas
+    for (const c of [...seat.board]) {
+      if (this.status !== 'active' || this.turnSeat !== idx) break;
+      const live = seat.board.find((x) => x.iid === c.iid);
+      if (!live || !live.canAttack || live.attacked) continue;
+      const target = this.botAttackTarget(idx);
+      if (!target) break;
+      try { this.attack(playerId, live.iid, target); } catch { /* alvo sumiu; segue */ }
+    }
+
+    // 3) encerra o turno
+    if (this.status === 'active' && this.turnSeat === idx) {
+      try { this.endTurn(playerId); } catch { /* ignore */ }
+    }
+  }
+
+  /** Alvo para uma carta com alvo (magia/tática), do ponto de vista do bot. */
+  private botTargetFor(casterIdx: number, def: CardDef): Target | undefined {
+    const enemyIdx = this.seats.findIndex((_, i) => i !== casterIdx && !this.seats[i].out);
+    const enemy = enemyIdx >= 0 ? this.seats[enemyIdx] : null;
+    if (def.target === 'friendly-creature') {
+      const mine = this.seats[casterIdx].board[0];
+      return mine ? { seat: casterIdx, iid: mine.iid } : undefined;
+    }
+    if (def.target === 'enemy-creature') {
+      if (!enemy || enemy.board.length === 0) return undefined;
+      return { seat: enemyIdx, iid: enemy.board[0].iid };
+    }
+    if (def.target === 'enemy-any') {
+      if (!enemy) return undefined;
+      // mira o comandante se a mesa permite (vazia ou a carta atravessa); senão a 1ª criatura
+      if (enemy.board.length === 0 || def.pierce) return { seat: enemyIdx };
+      return { seat: enemyIdx, iid: enemy.board[0].iid };
+    }
+    return undefined;
+  }
+
+  /** Alvo de ataque do bot: respeita Provocar e a proteção do comandante. */
+  private botAttackTarget(casterIdx: number): Target | undefined {
+    const enemyIdx = this.seats.findIndex((_, i) => i !== casterIdx && !this.seats[i].out);
+    if (enemyIdx < 0) return undefined;
+    const enemy = this.seats[enemyIdx];
+    if (enemy.board.length === 0) return { seat: enemyIdx }; // mesa livre → comandante
+    const taunt = enemy.board.find((c) => CARDS[c.defId].keywords?.includes('taunt'));
+    return { seat: enemyIdx, iid: (taunt ?? enemy.board[0]).iid };
   }
 
   // ─── Visões redigidas por jogador (anti-cheat) ─────────────────
@@ -759,6 +921,7 @@ export class Match {
   dispose(): void {
     this.clearTurnTimer();
     if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
+    if (this.botTimer) clearTimeout(this.botTimer);
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
     }
