@@ -16,8 +16,16 @@
   --green: #3fb950;
   --red: #f85149;
   --purple: #b083f0;
-  /* fonte display: títulos, nomes de carta, banners */
-  --font-display: 'Cinzel', 'Palatino', 'Georgia', serif;
+  /* ── Direção tipográfica medieval/editorial ───────────────────────
+     título cerimonial (logo, banners, nomes de seção, destaques):
+     Cinzel Decorative — imponência, ornamentação, ar de brasão/manuscrito */
+  --font-display: 'Cinzel Decorative', 'Cinzel', 'Palatino', 'Georgia', serif;
+  /* título compacto (nome de carta, rótulos pequenos): Cinzel reto, da mesma
+     família, preserva a legibilidade onde a Decorative borraria */
+  --font-heading: 'Cinzel', 'Palatino', 'Georgia', serif;
+  /* corpo, descrições, parágrafos e subtítulos: Cormorant Garamond —
+     elegante, literária e histórica, com itálico p/ subtítulos */
+  --font-body: 'Cormorant Garamond', 'Palatino', 'Georgia', serif;
   /* raridades (gema da carta) */
   --rar-common: #9aa7b6;
   --rar-rare: #5da0ff;
@@ -61,6 +69,11 @@
 
 * { box-sizing: border-box; }
 
+/* controles de formulário não herdam fonte nem peso do corpo por padrão —
+   força a coesão tipográfica (Cormorant Garamond + peso legível) em campos,
+   botões e seletores; pesos próprios (.btn.primary, títulos) ainda prevalecem */
+button, input, textarea, select { font-family: inherit; font-weight: inherit; }
+
 html {
   -webkit-text-size-adjust: 100%;
   /* rolagens discretas, no clima do tema (herdado por toda a árvore) */
@@ -78,15 +91,21 @@ body {
     radial-gradient(800px 400px at 85% 110%, #2a1d4233 0%, transparent 60%),
     var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* corpo na Cormorant Garamond: leitura literária e fluida. Peso 600 e
+     entrelinha generosa compensam a x-height baixa e o traço fino da fonte,
+     dando legibilidade firme sobre o tema escuro */
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.55;
   min-height: 100vh;
   min-height: 100dvh; /* barra de endereço móvel não "vaza" o layout */
   overscroll-behavior-y: none; /* sem pull-to-refresh no meio da partida */
 }
 
 h1, h2, h3 { margin: 0 0 12px; font-family: var(--font-display); letter-spacing: .4px; }
-.dim { color: var(--dim); font-size: 13px; }
-.hint { color: var(--dim); font-size: 13px; margin: 8px 0; }
+.dim { color: var(--dim); font-size: 14px; }
+.hint { color: var(--dim); font-size: 14px; margin: 8px 0; }
 .centered { display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; }
 
 .logo {
@@ -94,6 +113,9 @@ h1, h2, h3 { margin: 0 0 12px; font-family: var(--font-display); letter-spacing:
   font-size: var(--fs-display);
   letter-spacing: clamp(2px, .4vw, 3px);
   font-weight: 900;
+  /* entrelinha justa: quando LEGENDS/CLASH empilham (largura insuficiente),
+     o lockup parece um emblema, não duas linhas soltas do corpo */
+  line-height: 1.05;
   background: linear-gradient(180deg, #fff 20%, #b9c8de 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -829,7 +851,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   z-index: 3;
 }
 .card-name {
-  font-family: var(--font-display);
+  font-family: var(--font-heading);
   font-weight: 800; font-size: 11.5px; line-height: 1.18;
   letter-spacing: .2px;
   text-shadow: 0 1px 2px #000a;

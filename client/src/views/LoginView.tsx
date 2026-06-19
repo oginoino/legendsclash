@@ -93,7 +93,8 @@ export function LoginView() {
     <div className="login-screen">
       <div className="login-card">
         <h1 className="logo">
-          LEGENDS<span>CLASH</span>
+          {/* <wbr>: empilha LEGENDS / CLASH só quando a largura não comporta a linha */}
+          LEGENDS<wbr /><span>CLASH</span>
         </h1>
         <p className="tagline">Duelo de cartas em tempo real — partidas de ~10 minutos, justas e sociais.</p>
 
