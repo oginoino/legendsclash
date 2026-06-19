@@ -35,20 +35,35 @@ export interface PasswordProvider {
   readonly local: boolean;
   register(email: string, password: string): Promise<{ authUserId: string | null }>;
   login(email: string, password: string): Promise<{ authUserId: string | null }>;
+  /**
+   * Dispara a redefinição de senha. `redirectTo` é a página que recebe o link
+   * mágico. Nunca revela se o e-mail existe; quando há um link a entregar fora
+   * de produção (provider local), devolve-o para console/testes.
+   */
+  requestPasswordReset(email: string, redirectTo: string): Promise<{ resetLink?: string }>;
+  /**
+   * Conclui a redefinição: `token` é o access_token do link mágico (Supabase)
+   * ou o token opaco do provider local. Retorna o dono para emitir a sessão.
+   */
+  resetPassword(token: string, newPassword: string): Promise<{ email: string; authUserId: string | null }>;
 }
+
+/** Caminho da página de redefinição (SPA) que recebe o link mágico. */
+export const RESET_PATH = '/auth/reset';
 
 // ─── Provider local: dev e testes, sem Supabase ──────────────────
 
 export class LocalPasswordProvider implements PasswordProvider {
   readonly local = true;
   private accounts = new Map<string, { salt: Buffer; hash: Buffer }>();
+  /** Tokens de redefinição em memória (dev/testes): token → e-mail + validade. */
+  private resetTokens = new Map<string, { email: string; expiresAt: number }>();
 
   async register(email: string, password: string): Promise<{ authUserId: string | null }> {
     if (this.accounts.has(email)) {
       throw new AuthError(409, 'Este e-mail já tem uma conta. Entre com a sua senha.');
     }
-    const salt = randomBytes(16);
-    this.accounts.set(email, { salt, hash: scryptSync(password, salt, 32) });
+    this.setPassword(email, password);
     return { authUserId: null };
   }
 
@@ -59,7 +74,37 @@ export class LocalPasswordProvider implements PasswordProvider {
     }
     return { authUserId: null };
   }
+
+  async requestPasswordReset(email: string): Promise<{ resetLink?: string }> {
+    // não revela se o e-mail existe: sem conta, nada de link
+    if (!this.accounts.has(email)) return {};
+    const token = randomBytes(24).toString('hex');
+    this.resetTokens.set(token, { email, expiresAt: Date.now() + RESET_TTL_MS });
+    // link relativo (mesma origem): funciona no dev/e2e sem depender de APP_BASE_URL
+    return { resetLink: `${RESET_PATH}#access_token=${token}&type=recovery` };
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ email: string; authUserId: string | null }> {
+    const rec = this.resetTokens.get(token);
+    if (!rec || rec.expiresAt < Date.now()) {
+      throw new AuthError(400, 'Link de redefinição inválido ou expirado. Peça um novo.');
+    }
+    if (!this.accounts.has(rec.email)) {
+      throw new AuthError(400, 'Link de redefinição inválido ou expirado. Peça um novo.');
+    }
+    this.setPassword(rec.email, newPassword);
+    this.resetTokens.delete(token); // uso único
+    return { email: rec.email, authUserId: null };
+  }
+
+  private setPassword(email: string, password: string): void {
+    const salt = randomBytes(16);
+    this.accounts.set(email, { salt, hash: scryptSync(password, salt, 32) });
+  }
 }
+
+/** Validade do link/token de redefinição de senha. */
+const RESET_TTL_MS = 30 * 60_000;
 
 // ─── Provider Supabase Auth (GoTrue) ─────────────────────────────
 
@@ -88,6 +133,37 @@ export class SupabasePasswordProvider implements PasswordProvider {
     const { data, error } = await this.client.auth.signInWithPassword({ email, password });
     if (error) throw mapSupabaseError(error, 'login');
     return { authUserId: data.user?.id ?? null };
+  }
+
+  async requestPasswordReset(email: string, redirectTo: string): Promise<{ resetLink?: string }> {
+    // O GoTrue envia o e-mail (SMTP do Supabase) e mascara e-mails inexistentes:
+    // a resposta é genérica de qualquer forma. O link cai em `redirectTo` com o
+    // access_token de recuperação no fragment (#access_token=...&type=recovery).
+    const { error } = await this.client.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error && error.status !== 422) {
+      console.error('[auth] resetPasswordForEmail falhou:', error.message);
+    }
+    return {}; // nunca devolve link em produção
+  }
+
+  async resetPassword(accessToken: string, newPassword: string): Promise<{ email: string; authUserId: string | null }> {
+    // Valida o access_token de recuperação contra o GoTrue e identifica o dono;
+    // o cliente nunca fala com o Supabase — o servidor faz a troca via admin.
+    //
+    // getUser aceita qualquer access_token válido do projeto, não só os de
+    // recuperação. Aqui isso é aceitável: nesta arquitetura o cliente JAMAIS
+    // recebe um access_token do Supabase a não ser pelo fragment do link de
+    // recuperação (login normal devolve um token opaco do servidor, não um JWT
+    // do GoTrue). Logo, o único token que chega aqui é o de recuperação.
+    const { data, error } = await this.client.auth.getUser(accessToken);
+    if (error || !data.user) {
+      throw new AuthError(400, 'Link de redefinição inválido ou expirado. Peça um novo.');
+    }
+    const { error: updErr } = await this.client.auth.admin.updateUserById(data.user.id, {
+      password: newPassword,
+    });
+    if (updErr) throw mapSupabaseError(updErr, 'login');
+    return { email: data.user.email ?? '', authUserId: data.user.id };
   }
 }
 
@@ -139,8 +215,13 @@ export interface SessionResult {
   needsProfile: boolean;
 }
 
+/** Teto de e-mails de redefinição por endereço (anti-bombing de uma vítima). */
+const RESET_EMAIL_MAX = 3;
+const RESET_EMAIL_WINDOW_MS = 15 * 60_000;
+
 export class AuthService {
   private attemptsByIp = new Map<string, number[]>();
+  private resetsByEmail = new Map<string, number[]>();
 
   constructor(
     private store: Store,
@@ -188,6 +269,50 @@ export class AuthService {
     const { authUserId } = await this.provider.login(email, password);
     // login em conta existente não herda nada: o progresso dela prevalece
     return this.sessionFor(email, authUserId);
+  }
+
+  /**
+   * Esqueci minha senha: dispara o link mágico de redefinição. Resposta sempre
+   * genérica (não revela se o e-mail existe). Em modo local, devolve o link
+   * para console/testes — em produção, nunca.
+   */
+  async requestPasswordReset(emailRaw: string, ip: string): Promise<{ devLink?: string }> {
+    this.checkLimits(ip);
+    const email = String(emailRaw ?? '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) throw new AuthError(400, 'Informe um e-mail válido.');
+    // teto por e-mail (além do limite por IP): impede bombardear uma vítima.
+    // Silencioso ao estourar — devolve a mesma resposta genérica (anti-enumeração).
+    if (this.resetEmailThrottled(email)) return {};
+    const redirectTo = `${appBaseUrl()}${RESET_PATH}`;
+    const { resetLink } = await this.provider.requestPasswordReset(email, redirectTo);
+    if (resetLink) console.log(`[auth] link de redefinição (${email}): ${resetLink}`);
+    return this.provider.local && resetLink ? { devLink: resetLink } : {};
+  }
+
+  /**
+   * Conclui a redefinição com o token do link mágico e já loga a pessoa com a
+   * senha nova (UX: cai direto na home, sem um segundo login).
+   */
+  async resetPassword(tokenRaw: string, passwordRaw: string, ip: string): Promise<SessionResult> {
+    this.checkLimits(ip);
+    const token = String(tokenRaw ?? '').trim();
+    if (!token) throw new AuthError(400, 'Link de redefinição inválido. Peça um novo.');
+    const password = String(passwordRaw ?? '');
+    if (password.length < MIN_PASSWORD) {
+      throw new AuthError(400, `A senha precisa de pelo menos ${MIN_PASSWORD} caracteres.`);
+    }
+    if (password.length > MAX_PASSWORD) throw new AuthError(400, 'Senha longa demais.');
+    const { email, authUserId } = await this.provider.resetPassword(token, password);
+    return this.sessionFor(email, authUserId);
+  }
+
+  private resetEmailThrottled(email: string): boolean {
+    const now = Date.now();
+    const hits = (this.resetsByEmail.get(email) ?? []).filter((t) => now - t < RESET_EMAIL_WINDOW_MS);
+    this.resetsByEmail.set(email, hits);
+    if (hits.length >= RESET_EMAIL_MAX) return true;
+    hits.push(now);
+    return false;
   }
 
   /** Conta autenticada → jogador (vinculando contas legadas) → sessão. */
@@ -246,6 +371,11 @@ export class AuthService {
 }
 
 // ─── Fábrica e rotas HTTP ────────────────────────────────────────
+
+/** Base pública do app: destino do link mágico (mesma var usada no deploy). */
+function appBaseUrl(): string {
+  return (process.env.APP_BASE_URL || 'https://srv1745709.hstgr.cloud').replace(/\/+$/, '');
+}
 
 export function createAuthService(store: Store): AuthService {
   const url = process.env.SUPABASE_URL;
@@ -324,6 +454,23 @@ export async function handleAuthRoute(
         const body = await readBody(req);
         const result = await auth.login(
           String(body.email ?? ''),
+          String(body.password ?? ''),
+          clientIp(req),
+        );
+        json(res, 200, result);
+        return true;
+      }
+      case 'POST /api/auth/forgot': {
+        const body = await readBody(req);
+        const result = await auth.requestPasswordReset(String(body.email ?? ''), clientIp(req));
+        // resposta genérica (anti-enumeração); devLink só vem em modo local
+        json(res, 200, { ok: true, ...result });
+        return true;
+      }
+      case 'POST /api/auth/reset': {
+        const body = await readBody(req);
+        const result = await auth.resetPassword(
+          String(body.token ?? ''),
           String(body.password ?? ''),
           clientIp(req),
         );
