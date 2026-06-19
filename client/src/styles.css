@@ -1973,6 +1973,8 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .lc-inline svg { width: 100%; height: 100%; }
 .lc-inline-photo { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 .inline-ico { vertical-align: middle; }
+/* ícone inline alinhado ao texto (registro central icons.ts) — herda cor/tamanho */
+.ic { vertical-align: -0.14em; flex-shrink: 0; }
 
 /* Molduras (armações): camada decorativa em volta de qualquer .lc-avatar
    (medalhão do perfil e retrato da arena). */

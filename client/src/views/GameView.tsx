@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
-import { GiShield } from 'react-icons/gi';
 import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
-import { Avatar, CosmeticIcon, accentVars } from '../cosmetics';
+import { Avatar, CosmeticIcon, TauntIcon, accentVars } from '../cosmetics';
+import {
+  IcoAddFriend, IcoAttack, IcoBanner, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
+  IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHint, IcoLethal, IcoMedal,
+  IcoOverflow, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap,
+  IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
+} from '../icons';
 import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
@@ -342,13 +347,13 @@ export function GameView() {
       prev.seats[enemyIdx] && prev.seats[enemyIdx].board.length > 0 &&
       game.seats[enemyIdx].board.length === 0
     ) {
-      setBanner({ text: '🎯 Venceu a mesa!', at: ts });
+      setBanner({ text: 'Venceu a mesa!', at: ts });
       sfx.tableWin();
     }
 
     if (prev.turnSeat !== game.turnSeat && game.status === 'active') {
       const mine = game.turnSeat === game.yourSeat;
-      setBanner({ text: mine ? '⚔️ Seu turno!' : `Turno de ${game.seats[game.turnSeat].name}`, at: ts });
+      setBanner({ text: mine ? 'Seu turno!' : `Turno de ${game.seats[game.turnSeat].name}`, at: ts });
       if (mine) sfx.myTurn();
       setSelection(null);
       setHover(null);
@@ -366,12 +371,12 @@ export function GameView() {
       enemyIdx >= 0 && !seen('lc_taught_taunt') &&
       game.seats[enemyIdx].board.some((c) => CARDS[c.defId].keywords?.includes('taunt'))
     ) {
-      setTeach({ id: 'taunt', text: '🛡 Provocar: criaturas com Provocar precisam ser atacadas antes das outras. Derrote-a primeiro.', at: Date.now() });
+      setTeach({ id: 'taunt', text: 'Provocar: criaturas com Provocar precisam ser atacadas antes das outras. Derrote-a primeiro.', at: Date.now() });
       mark('lc_taught_taunt');
       return;
     }
     if (mine && mine.fatigue > 0 && !seen('lc_taught_fatigue')) {
-      setTeach({ id: 'fatigue', text: '💀 Fadiga: seu baralho esgotou — cada compra agora tira vida. Feche a partida logo.', at: Date.now() });
+      setTeach({ id: 'fatigue', text: 'Fadiga: seu baralho esgotou — cada compra agora tira vida. Feche a partida logo.', at: Date.now() });
       mark('lc_taught_fatigue');
     }
   }, [game]);
@@ -429,7 +434,7 @@ export function GameView() {
   const enemySeatIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
   const enemy = game.seats[enemySeatIdx];
   const timerPct = Math.min(100, (secondsLeft / TURN_SECONDS) * 100);
-  // últimos 10s do seu turno: cue de texto (⏰) reduced-motion-safe + aviso a11y
+  // últimos 10s do seu turno: cue de ícone (timer) reduced-motion-safe + aviso a11y
   const timeUrgent = myTurn && secondsLeft <= 10 && secondsLeft > 0;
 
   const selectedHandDef = selection?.kind === 'hand'
@@ -815,7 +820,7 @@ export function GameView() {
           title="Eventos"
           aria-label="Eventos da partida"
         >
-          📜
+          <IcoEvents />
         </button>
         <button
           className={`btn small ghost ${sidePane === 'chat' ? 'active' : ''}`}
@@ -823,11 +828,11 @@ export function GameView() {
           title="Chat"
           aria-label={`Chat${unreadChat > 0 ? ` (${unreadChat} não lidas)` : ''}`}
         >
-          💬
+          <IcoChat />
           {unreadChat > 0 && sidePane !== 'chat' && <span className="unread-badge">{unreadChat}</span>}
         </button>
-        <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar">📖</button>
-        <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia">📜</button>
+        <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar"><IcoRules /></button>
+        <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia"><IcoCodex /></button>
         <SoundControl />
         <button
           className="btn small ghost danger"
@@ -835,7 +840,7 @@ export function GameView() {
           title="Desistir"
           aria-label="Desistir da partida"
         >
-          🏳️
+          <IcoSurrender />
         </button>
       </div>
       <div
@@ -900,7 +905,7 @@ export function GameView() {
               {game.status !== 'active'
                 ? 'Partida encerrada'
                 : myTurn
-                  ? `${timeUrgent ? '⏰ ' : ''}Seu turno · ${secondsLeft}s`
+                  ? <>{timeUrgent && <IcoTimer className="ic" />} Seu turno · {secondsLeft}s</>
                   : `Turno de ${game.seats[game.turnSeat].name} · ${secondsLeft}s`}
             </span>
             {/* aviso único para leitor de tela ao entrar nos últimos 10s (sem repetir a cada segundo) */}
@@ -918,7 +923,7 @@ export function GameView() {
             <span className="pace-turn" title="Turno da partida">Turno {game.turnNumber}</span>
             {me.fatigue === 0 && me.deckCount <= 3 && (
               <span className="pace-fatigue" title="Seu baralho está acabando — em breve cada compra custa vida">
-                ⚠️ Fadiga à vista ({me.deckCount} no deck)
+                <IcoWarning className="ic" /> Fadiga à vista ({me.deckCount} no deck)
               </span>
             )}
           </div>
@@ -935,7 +940,7 @@ export function GameView() {
               <div className="taunt-wheel">
                 {TAUNTS.map((t) => (
                   <button key={t.id} type="button" className="taunt-pick" onClick={() => sendTaunt(t.id)}>
-                    {t.text}
+                    <TauntIcon id={t.icon} className="ic" /> {t.text}
                   </button>
                 ))}
               </div>
@@ -945,8 +950,9 @@ export function GameView() {
               className={`btn small taunt-toggle ${tauntOpen ? 'active' : ''}`}
               onClick={() => setTauntOpen((o) => !o)}
               title="Provocar o oponente"
+              aria-label="Provocar o oponente"
             >
-              😎
+              <IcoTaunt />
             </button>
           </div>
         </div>
@@ -1028,28 +1034,28 @@ export function GameView() {
         <div className="side-top">
           <span>
             <SoundControl />
-            <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar">
-              📖
+            <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar">
+              <IcoRules />
             </button>
-            <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia">
-              📜
+            <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia">
+              <IcoCodex />
             </button>
           </span>
           <button
             className="btn small ghost danger"
             onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
           >
-            🏳️ Desistir
+            <IcoSurrender className="ic" /> Desistir
           </button>
         </div>
         <div className="panel log-panel">
-          <h3>📜 Eventos</h3>
+          <h3><IcoEvents className="ic" /> Eventos</h3>
           <ul className="game-log" role="log" aria-live="polite" aria-label="Eventos da partida">
             {game.log.slice(-14).reverse().map((l, i) => <li key={game.log.length - i}>{l.text}</li>)}
           </ul>
         </div>
         <div className="panel side-chat">
-          <h3>💬 Chat</h3>
+          <h3><IcoChat className="ic" /> Chat</h3>
           <Chat />
         </div>
       </aside>
@@ -1058,7 +1064,7 @@ export function GameView() {
         <div className="target-hint">
           <span className="target-hint-text">
             {selection.kind === 'attacker'
-              ? `⚔️ Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
+              ? `Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
                   mustHitTaunt
                     ? 'Provocar — ataque o Golem antes das outras criaturas'
                     : faceShielded
@@ -1071,7 +1077,7 @@ export function GameView() {
                   ? 'Escolha uma criatura inimiga — elas protegem o comandante'
                   : 'Escolha um alvo inimigo — a prévia de dano aparece em cada um'}
           </span>
-          <button className="btn small cancel-pill" onClick={clearAim}>✕ Cancelar</button>
+          <button className="btn small cancel-pill" onClick={clearAim}><IcoClose className="ic" /> Cancelar</button>
         </div>
       )}
 
@@ -1136,7 +1142,7 @@ export function GameView() {
       {teach && (
         <div className="teach-toast" key={teach.id} role="status" aria-live="polite">
           <span>{teach.text}</span>
-          <button className="btn small ghost" onClick={() => setTeach(null)} aria-label="Fechar dica">✕</button>
+          <button className="btn small ghost" onClick={() => setTeach(null)} aria-label="Fechar dica"><IcoClose /></button>
         </div>
       )}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
@@ -1148,15 +1154,15 @@ export function GameView() {
 }
 
 function FxLayer({ fx }: { fx: FloatFx[] }) {
-  // prefixo de forma (▼/▲/🛡/⬆) além da cor: leitura segura para daltônicos
+  // prefixo de forma (▼/▲ + ícone) além da cor: leitura segura para daltônicos
   return (
     <>
       {fx.map((f) => (
         <span key={f.id} className={`float-fx ${f.kind}`}>
           {f.kind === 'dmg' ? `▼ -${f.value}`
             : f.kind === 'heal' ? `▲ +${f.value}`
-            : f.kind === 'shield' ? `🛡 -${f.value}`
-            : '⬆'}
+            : f.kind === 'shield' ? <><IcoShield className="ic" /> -{f.value}</>
+            : <IcoBuff className="ic" />}
         </span>
       ))}
     </>
@@ -1168,16 +1174,16 @@ function PreviewChip({ p, self, dim }: { p: CombatPreview; self?: boolean; dim?:
     if (p.selfDmg === undefined) return null;
     return (
       <span className={`preview-chip ${p.selfDies ? 'dies' : ''}`}>
-        −{p.selfDmg}{p.selfDies ? ' 💀' : ''}
+        −{p.selfDmg}{p.selfDies && <> <IcoDeath className="ic" /></>}
       </span>
     );
   }
   return (
     <span className={`preview-chip ${dim ? 'static' : ''} ${p.lethal ? 'lethal' : p.targetDies ? 'dies' : ''}`}>
       −{p.targetDmg}
-      {p.targetDies ? ' 💀' : ''}
-      {p.overflow ? ` ↯${p.overflow}` : ''}
-      {p.lethal ? ' ☠ LETAL' : ''}
+      {p.targetDies && <> <IcoDeath className="ic" /></>}
+      {p.overflow ? <> <IcoOverflow className="ic" />{p.overflow}</> : null}
+      {p.lethal && <> <IcoLethal className="ic" /> LETAL</>}
     </span>
   );
 }
@@ -1233,7 +1239,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
           alt={seat.name}
         />
         <span className="hp-orb">{seat.hp}</span>
-        {seat.shield > 0 && <span className="shield-orb"><GiShield />{seat.shield}</span>}
+        {seat.shield > 0 && <span className="shield-orb"><IcoShield />{seat.shield}</span>}
         {preview && <PreviewChip p={preview} dim={previewDim} />}
         <FxLayer fx={fx} />
       </button>
@@ -1255,12 +1261,12 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         </span>
       </div>
       <div className="hero-meta">
-        <span className="meta-chip" title="Cartas no deck">🂠 {seat.deckCount}</span>
-        {isEnemy && <span className="meta-chip" title="Cartas na mão">✋ {seat.handCount}</span>}
+        <span className="meta-chip" title="Cartas no deck"><IcoDeck className="ic" /> {seat.deckCount}</span>
+        {isEnemy && <span className="meta-chip" title="Cartas na mão"><IcoHand className="ic" /> {seat.handCount}</span>}
         {seat.attackBonus > 0 && (
-          <span className="meta-chip buff" title="Estandarte de Guerra">🚩 +{seat.attackBonus}</span>
+          <span className="meta-chip buff" title="Estandarte de Guerra"><IcoBanner className="ic" /> +{seat.attackBonus}</span>
         )}
-        {seat.fatigue > 0 && <span className="meta-chip warn" title="Fadiga">💀 {seat.fatigue}</span>}
+        {seat.fatigue > 0 && <span className="meta-chip warn" title="Fadiga"><IcoDeath className="ic" /> {seat.fatigue}</span>}
       </div>
     </div>
   );
@@ -1329,7 +1335,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >
-      {isTaunt && <span className="taunt-badge" title="Provocar">🛡</span>}
+      {isTaunt && <span className="taunt-badge" title="Provocar"><IcoShield /></span>}
       {posIndex && (
         <span className="pos-badge" title={`Posição ${posIndex} na mesa — cópia idêntica em campo`}>
           {posIndex}
@@ -1355,7 +1361,7 @@ function GhostCreature({ g }: { g: Ghost }) {
     <span className="creature ghost" style={{ order: g.slot * 2 - 1 }}>
       <CardArt defId={g.creature.defId} className="creature-art" />
       <span className="creature-name">{def.name}</span>
-      <span className="ghost-skull">💀</span>
+      <span className="ghost-skull"><IcoDeath /></span>
     </span>
   );
 }
@@ -1400,7 +1406,7 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
           A Moeda do Tempo fica.
         </p>
         <p className="mulligan-tip">
-          💡 Dica: cartas baratas (custo ≤2) dão jogadas cedo; segure as caras para os turnos seguintes.
+          <IcoHint className="ic" /> Dica: cartas baratas (custo ≤2) dão jogadas cedo; segure as caras para os turnos seguintes.
         </p>
         {!confirmed && (
           <div className="mulligan-timer" title="Tempo para confirmar a mão">
@@ -1416,7 +1422,10 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
             const token = !!def.token;
             const picked = swap.has(c.iid);
             // tag de custo: ajuda a decidir o que trocar (sem ser regra)
-            const costTag = token ? null : def.cost <= 2 ? '⚡ barata' : def.cost >= 5 ? '💰 cara' : null;
+            const costTag = token ? null
+              : def.cost <= 2 ? <><IcoEnergy className="ic" /> barata</>
+              : def.cost >= 5 ? <><IcoExpensive className="ic" /> cara</>
+              : null;
             return (
               <div key={c.iid} className={`mulligan-slot ${picked ? 'swapping' : ''} ${token ? 'locked' : ''}`}>
                 {costTag && <span className="mulligan-cost-tag">{costTag}</span>}
@@ -1425,7 +1434,7 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
                   selected={picked}
                   onClick={confirmed || token ? undefined : () => toggle(c.iid, c.defId)}
                 />
-                <span className="mulligan-flag">{token ? '🪙 fixa' : picked ? '↺ trocar' : 'manter'}</span>
+                <span className="mulligan-flag">{token ? <><IcoCoin className="ic" /> fixa</> : picked ? <><IcoSwap className="ic" /> trocar</> : 'manter'}</span>
               </div>
             );
           })}
@@ -1473,7 +1482,7 @@ function GameOverOverlay() {
         </div>
       )}
       <div className={`panel game-over ${won ? 'won' : 'lost'}`} role="alert" aria-live="assertive">
-        <div className="go-emblem">{won ? '🏆' : '💀'}</div>
+        <div className="go-emblem">{won ? <IcoVictory /> : <IcoDeath />}</div>
         <h2>{won ? 'Vitória!' : 'Derrota'}</h2>
         <p>{reasonText[result.reason]}</p>
         <p className="dim">{result.turns} turnos · {Math.max(1, Math.round(result.durationMs / 60000))} min</p>
@@ -1497,7 +1506,7 @@ function GameOverOverlay() {
                 <div className="go-mvp">
                   <CardArt defId={mvp.defId} className="go-mvp-art" />
                   <div className="go-mvp-info">
-                    <span className="go-mvp-name">⭐ {CARDS[mvp.defId].name}</span>
+                    <span className="go-mvp-name"><IcoStar className="ic" /> {CARDS[mvp.defId].name}</span>
                     <span className="go-mvp-line">
                       {mvp.damage} de dano{mvp.kills > 0 ? ` · ${mvp.kills} abate${mvp.kills > 1 ? 's' : ''}` : ''}
                     </span>
@@ -1517,8 +1526,8 @@ function GameOverOverlay() {
           const newly = (myId && result.unlocked?.[myId]) || [];
           return newly.length ? (
             <div className="go-unlocks">
-              <p className="go-unlocks-title">✨ Conquista desbloqueada!</p>
-              {newly.map((a) => <span key={a} className="go-unlock">🏅 {achievementLabel(a)}</span>)}
+              <p className="go-unlocks-title"><IcoSparkle className="ic" /> Conquista desbloqueada!</p>
+              {newly.map((a) => <span key={a} className="go-unlock"><IcoMedal className="ic" /> {achievementLabel(a)}</span>)}
             </div>
           ) : null;
         })()}
@@ -1547,23 +1556,23 @@ function GameOverOverlay() {
                     {' '}{rematch.from?.name} quer revanche!
                   </p>
                   <div className="go-actions">
-                    <button className="btn primary" onClick={() => { sfx.click(); requestRematch(); }}>✅ Aceitar revanche</button>
+                    <button className="btn primary" onClick={() => { sfx.click(); requestRematch(); }}><IcoCheck className="ic" /> Aceitar revanche</button>
                     <button className="btn ghost" onClick={() => declineRematch()}>Recusar</button>
                   </div>
                 </div>
               ) : rematch?.status === 'sent' ? (
-                <p className="go-rematch-sent">🔁 Revanche enviada — aguardando o oponente…</p>
+                <p className="go-rematch-sent"><IcoRematch className="ic" /> Revanche enviada — aguardando o oponente…</p>
               ) : null}
               <div className="go-actions">
                 {opponentId && rematch?.status !== 'incoming' && rematch?.status !== 'sent' && (
-                  <button className="btn" onClick={() => { sfx.click(); requestRematch(); }}>🔁 Revanche</button>
+                  <button className="btn" onClick={() => { sfx.click(); requestRematch(); }}><IcoRematch className="ic" /> Revanche</button>
                 )}
                 {opponentId && !isFriend && (
-                  <button className="btn ghost" onClick={() => addFriend(opponentId)}>➕ Amigo</button>
+                  <button className="btn ghost" onClick={() => addFriend(opponentId)}><IcoAddFriend className="ic" /> Amigo</button>
                 )}
               </div>
               <button className="btn primary big" onClick={() => { sfx.click(); dismissGameOver(); }}>
-                ⚔️ Jogar de novo
+                <IcoAttack className="ic" /> Jogar de novo
               </button>
             </>
           );

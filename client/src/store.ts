@@ -449,8 +449,8 @@ export function dismissGameOver(): void {
   const isPractice = !!over && Object.keys(over.mmr).length === 0; // treino não conta
   const streak = state.profile?.streak ?? 0;
   setState({ game: null, gameOver: null, chat: [], rematch: null });
-  if (won && !isPractice && streak >= 2) showToast(`🏆 Vitória! 🔥 ${streak} dias de sequência.`);
-  else if (won && !isPractice) showToast('🏆 Vitória registrada!');
+  if (won && !isPractice && streak >= 2) showToast(`Vitória! ${streak} dias de sequência.`);
+  else if (won && !isPractice) showToast('Vitória registrada!');
 }
 
 // ─── Continuidade social (revanche, amigos, card de perfil) ─────

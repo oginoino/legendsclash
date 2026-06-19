@@ -3,6 +3,7 @@ import { send, useAppState } from '../store';
 import { InlineAvatar } from '../cosmetics';
 import { Chat } from '../components/Chat';
 import { LeagueBadge } from '../components/LeagueBadge';
+import { IcoCheck, IcoLink, IcoAttack } from '../icons';
 
 export function RoomView() {
   const s = useAppState();
@@ -39,7 +40,7 @@ export function RoomView() {
         <h2>Sala privada</h2>
         <div className="room-code">{room.code}</div>
         <button className="btn" onClick={copyInvite}>
-          {copied ? '✓ Link copiado!' : '🔗 Copiar link de convite'}
+          {copied ? <><IcoCheck className="ic" /> Link copiado!</> : <><IcoLink className="ic" /> Copiar link de convite</>}
         </button>
         <p className="hint invite-link">{inviteLink}</p>
 
@@ -62,7 +63,7 @@ export function RoomView() {
 
         {isHost ? (
           <button className="btn primary big" disabled={!full} onClick={() => send({ t: 'room:start' })}>
-            {full ? '⚔️ Iniciar duelo' : 'Aguardando oponente…'}
+            {full ? <><IcoAttack className="ic" /> Iniciar duelo</> : 'Aguardando oponente…'}
           </button>
         ) : (
           <p className="hint">O anfitrião inicia a partida quando todos chegarem.</p>

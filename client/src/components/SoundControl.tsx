@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVolume, setVolume, type Bus } from '../sounds';
+import { IcoMuted, IcoSound, IcoMusic } from '../icons';
 
 /**
- * Controle de som: um botão 🔊/🔇 que abre um popover com dois sliders
+ * Controle de som: um botão (alto-falante/mudo) que abre um popover com dois sliders
  * (Efeitos e Música), substituindo o antigo liga/desliga único. O ícone
  * reflete o estado de SFX (mudo quando 0). Fecha ao clicar fora ou Esc.
  */
@@ -42,12 +43,12 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
         aria-label="Ajustar som"
         aria-expanded={open}
       >
-        {muted ? '🔇' : '🔊'}
+        {muted ? <IcoMuted /> : <IcoSound />}
       </button>
       {open && (
         <div className="volume-popover" role="group" aria-label="Volume">
           <label className="volume-row">
-            <span>🔊 Efeitos</span>
+            <span><IcoSound className="ic" /> Efeitos</span>
             <input
               type="range" min={0} max={1} step={0.05} value={sfxVol}
               onChange={(e) => change('sfx', Number(e.target.value))}
@@ -55,7 +56,7 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
             />
           </label>
           <label className="volume-row">
-            <span>🎵 Música</span>
+            <span><IcoMusic className="ic" /> Música</span>
             <input
               type="range" min={0} max={1} step={0.05} value={musicVol}
               onChange={(e) => change('music', Number(e.target.value))}

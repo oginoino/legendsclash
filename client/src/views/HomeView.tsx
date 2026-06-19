@@ -1,7 +1,21 @@
 import { useState } from 'react';
 import { CARDS, cardOfDay } from '@legendsclash/shared';
 import { logout, openAccountPrompt, pickFaction, send, useAppState } from '../store';
-import { Avatar, InlineAvatar } from '../cosmetics';
+import { Avatar, InlineAvatar, Sigil } from '../cosmetics';
+import {
+  IcoSparkle,
+  IcoStar,
+  IcoStreak,
+  IcoCheck,
+  IcoUnchecked,
+  IcoAttack,
+  IcoGold,
+  IcoBot,
+  IcoRules,
+  IcoCodex,
+  IcoLock,
+  IcoHourglass,
+} from '../icons';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { CardArt } from '../components/CardArt';
 import { ProfileModal } from '../components/ProfileModal';
@@ -53,7 +67,7 @@ export function HomeView() {
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
             </div>
           </div>
-          <button className="btn ghost" onClick={() => setShowCustomize(true)}>✨ Personalizar</button>
+          <button className="btn ghost" onClick={() => setShowCustomize(true)}><IcoSparkle className="ic" /> Personalizar</button>
           {p.guest && (
             <button className="btn primary" onClick={openAccountPrompt}>Criar conta</button>
           )}
@@ -71,7 +85,7 @@ export function HomeView() {
               <div className="card-of-day" title={def.text}>
                 <CardArt defId={cod} className="cod-art" />
                 <div className="cod-info">
-                  <span className="cod-label">⭐ Carta do dia</span>
+                  <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
                   <span className="cod-name">{def.name}</span>
                 </div>
               </div>
@@ -80,10 +94,10 @@ export function HomeView() {
           {!p.guest && (
             <div className="daily-strip">
               <span className="streak" title="Dias seguidos com partida">
-                🔥 {p.streak} {p.streak === 1 ? 'dia' : 'dias'} de sequência
+                <IcoStreak className="ic" /> {p.streak} {p.streak === 1 ? 'dia' : 'dias'} de sequência
               </span>
               <span className={`daily-mission ${p.playedToday ? 'done' : ''}`}>
-                {p.playedToday ? '✅ Missão de hoje feita' : '⬜ Missão: jogue 1 partida hoje'}
+                {p.playedToday ? <><IcoCheck className="ic" /> Missão de hoje feita</> : <><IcoUnchecked className="ic" /> Missão: jogue 1 partida hoje</>}
               </span>
             </div>
           )}
@@ -123,14 +137,14 @@ export function HomeView() {
                         onClick={() => pickFaction(f.id)}
                         title={f.motto}
                       >
-                        {f.sigil} {f.name}
+                        <Sigil id={f.sigil} className="ic" /> {f.name}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
               <button className="btn primary big" onClick={() => send({ t: 'queue:join' })}>
-                ⚔️ Partida ranqueada
+                <IcoAttack className="ic" /> Partida ranqueada
               </button>
               <p className="hint">Matchmaking por MMR: você enfrenta gente do seu nível.</p>
               {progress && (
@@ -141,17 +155,17 @@ export function HomeView() {
                   <span className="hint">{progress.label}</span>
                 </div>
               )}
-              {!progress && <p className="hint">🥇 Você está na liga máxima — defenda o topo!</p>}
+              {!progress && <p className="hint"><IcoGold className="ic" /> Você está na liga máxima — defenda o topo!</p>}
               <button className="btn practice-btn" onClick={() => send({ t: 'practice:start' })}>
-                🤖 Treino (vs CPU)
+                <IcoBot className="ic" /> Treino (vs CPU)
               </button>
               <p className="hint">Aprenda e teste jogadas contra a IA — não afeta seu MMR.</p>
               <div className="home-secondary">
                 <button className="btn ghost" onClick={() => setShowRules(true)}>
-                  📖 Como jogar
+                  <IcoRules className="ic" /> Como jogar
                 </button>
                 <button className="btn ghost" onClick={() => setShowCodex(true)}>
-                  📜 Arquivo de Aurélia
+                  <IcoCodex className="ic" /> Arquivo de Aurélia
                 </button>
               </div>
               <div className="divider">ou jogue com amigos</div>
@@ -181,7 +195,7 @@ export function HomeView() {
           <h2>Ranking · Ligas</h2>
           {p.guest && (
             <p className="account-cta">
-              🔒 Convidados não pontuam no ranking.{' '}
+              <IcoLock className="ic" /> Convidados não pontuam no ranking.{' '}
               <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
               para disputar as ligas.
             </p>
@@ -197,7 +211,7 @@ export function HomeView() {
                     Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar <InlineAvatar iconId={above.avatar} photo={above.photo} size={18} /> {above.name}.
                   </p>
                 ) : (
-                  <p className="hint">🥇 Você lidera o ranking — defenda o topo!</p>
+                  <p className="hint"><IcoGold className="ic" /> Você lidera o ranking — defenda o topo!</p>
                 )}
               </div>
             );
@@ -225,7 +239,7 @@ export function HomeView() {
           <h2>Histórico de partidas</h2>
           {p.guest && (
             <p className="account-cta">
-              ⏳ Histórico de convidado vale só nesta sessão.{' '}
+              <IcoHourglass className="ic" /> Histórico de convidado vale só nesta sessão.{' '}
               <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
               para levar seu progresso com você.
             </p>

@@ -152,19 +152,22 @@ export function accentStyleDef(id: string | undefined): AccentStyleDef {
 
 export interface Taunt {
   id: string;
+  /** Conceito de ícone (resolvido para um Game Icon no cliente). */
+  icon: string;
+  /** Texto enviado ao chat (sem emoji — o ícone fica no botão do picker). */
   text: string;
 }
 
 /** Provocações rápidas disparadas na arena (entram no chat da partida). */
 export const TAUNTS: Taunt[] = [
-  { id: 'gg', text: '🤝 Boa partida!' },
-  { id: 'fire', text: '🔥 Tô pegando fogo!' },
-  { id: 'ouch', text: '😱 Essa doeu!' },
-  { id: 'plan', text: '🎯 Tudo calculado.' },
-  { id: 'thatall', text: '😎 É só isso?' },
-  { id: 'hurry', text: '⏳ Acelera aí!' },
-  { id: 'kneel', text: '👑 Ajoelha.' },
-  { id: 'lol', text: '😂 kkkk' },
+  { id: 'gg', icon: 'handshake', text: 'Boa partida!' },
+  { id: 'fire', icon: 'flame', text: 'Tô pegando fogo!' },
+  { id: 'ouch', icon: 'ouch', text: 'Essa doeu!' },
+  { id: 'plan', icon: 'target', text: 'Tudo calculado.' },
+  { id: 'thatall', icon: 'cool', text: 'É só isso?' },
+  { id: 'hurry', icon: 'hourglass', text: 'Acelera aí!' },
+  { id: 'kneel', icon: 'crown', text: 'Ajoelha.' },
+  { id: 'lol', icon: 'party', text: 'kkkk' },
 ];
 
 // ─── Conquistas e desbloqueio por mérito ────────────────────────
