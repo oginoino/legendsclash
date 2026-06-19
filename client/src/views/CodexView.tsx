@@ -3,6 +3,8 @@ import { CARDS, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CardType } from '@legendsclash/shared';
 import { CardArt } from '../components/CardArt';
 import { CARD_LORE, FACTIONS, WORLD } from '../lore';
+import { IcoClose, IcoAttack, IcoHealth, IcoCost, IcoEvents } from '../icons';
+import { Sigil } from '../cosmetics';
 
 /**
  * O Arquivo de Aurélia — o "local de consulta" das cartas. Reúne todo o
@@ -40,7 +42,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="panel codex" onClick={(e) => e.stopPropagation()}>
-        <button className="btn small ghost codex-close" onClick={onClose}>✕ Fechar</button>
+        <button className="btn small ghost codex-close" onClick={onClose}><IcoClose className="ic" /> Fechar</button>
 
         {selected ? (
           <CardLorePage defId={selected} onBack={() => setSelected(null)} />
@@ -69,7 +71,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
                     onClick={() => setFactionFilter(active ? null : fid)}
                     title={active ? 'Mostrar todas' : `Filtrar por ${f.name}`}
                   >
-                    <span className="codex-faction-sigil">{f.sigil}</span>
+                    <span className="codex-faction-sigil"><Sigil id={f.sigil} className="ic" /></span>
                     <strong>{f.name}</strong>
                     <em className="codex-faction-motto">"{f.motto}"</em>
                     <span className="codex-faction-blurb">{f.blurb}</span>
@@ -93,7 +95,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
                   style={{ '--accent': FACTIONS[fid].color } as React.CSSProperties}
                   onClick={() => setFactionFilter(fid)}
                 >
-                  {FACTIONS[fid].sigil} {FACTIONS[fid].name.replace(/^(A |O |Os )/, '')}
+                  <Sigil id={FACTIONS[fid].sigil} className="ic" /> {FACTIONS[fid].name.replace(/^(A |O |Os )/, '')}
                 </button>
               ))}
             </div>
@@ -105,7 +107,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
               return (
                 <section key={fid} className="codex-group" style={{ '--accent': f.color } as React.CSSProperties}>
                   <h4 className="codex-group-title">
-                    <span className="codex-faction-sigil sm">{f.sigil}</span> {f.name}
+                    <span className="codex-faction-sigil sm"><Sigil id={f.sigil} className="ic" /></span> {f.name}
                   </h4>
                   <div className="codex-gallery">
                     {ids.map((id) => (
@@ -120,7 +122,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
             <div className="codex-notes">
               {WORLD.codexNotes.map((n) => (
                 <div key={n.title} className="codex-note">
-                  <span className="codex-note-icon">{n.icon}</span>
+                  <span className="codex-note-icon"><Sigil id={n.icon} className="ic" /></span>
                   <div>
                     <strong>{n.title}</strong>
                     <p>{n.text}</p>
@@ -148,8 +150,8 @@ function CodexTile({ defId, onClick }: { defId: string; onClick: () => void }) {
       <span className="card-type">{TYPE_LABEL[def.type]}</span>
       {def.type === 'creature' && (
         <span className="codex-tile-stats">
-          <b className="atk">⚔ {def.attack}</b>
-          <b className="hp">❤ {def.health}</b>
+          <b className="atk"><IcoAttack className="ic" /> {def.attack}</b>
+          <b className="hp"><IcoHealth className="ic" /> {def.health}</b>
         </span>
       )}
     </button>
@@ -171,17 +173,17 @@ function CardLorePage({ defId, onBack }: { defId: string; onBack: () => void }) 
         <CardArt defId={defId} className="codex-detail-art" />
         <div className="codex-detail-id">
           {faction && (
-            <span className="codex-faction-chip">{faction.sigil} {faction.name}</span>
+            <span className="codex-faction-chip"><Sigil id={faction.sigil} className="ic" /> {faction.name}</span>
           )}
           <h2>{def.name}</h2>
           {lore && <p className="codex-epithet">"{lore.epithet}"</p>}
           <div className="codex-stat-row">
-            <span className="codex-stat">💎 {def.cost} de energia</span>
+            <span className="codex-stat"><IcoCost className="ic" /> {def.cost} de energia</span>
             <span className="codex-stat">{TYPE_LABEL[def.type]}</span>
             {def.type === 'creature' && (
               <>
-                <span className="codex-stat atk">⚔ {def.attack}</span>
-                <span className="codex-stat hp">❤ {def.health}</span>
+                <span className="codex-stat atk"><IcoAttack className="ic" /> {def.attack}</span>
+                <span className="codex-stat hp"><IcoHealth className="ic" /> {def.health}</span>
               </>
             )}
             {def.keywords?.map((k) => (
@@ -193,13 +195,13 @@ function CardLorePage({ defId, onBack }: { defId: string; onBack: () => void }) 
 
       {lore && (
         <section className="codex-prose">
-          <h4>📜 Crônica</h4>
+          <h4><IcoEvents className="ic" /> Crônica</h4>
           <p>{lore.story}</p>
         </section>
       )}
 
       <section className="codex-prose mechanic">
-        <h4>⚔️ Na mesa</h4>
+        <h4><IcoAttack className="ic" /> Na mesa</h4>
         <p>{def.text}</p>
       </section>
     </div>

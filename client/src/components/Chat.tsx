@@ -1,6 +1,17 @@
+import type { IconType } from 'react-icons';
 import { useEffect, useRef, useState } from 'react';
 import { send, useAppState } from '../store';
 import { InlineAvatar } from '../cosmetics';
+import { IcoCool, IcoHandshake, IcoMuted, IcoSound, IcoStreak, IcoThumbUp, IcoWarning } from '../icons';
+
+/** Atalhos de chat: ícone no botão, texto limpo enviado ao oponente. */
+const EMOTES: { icon: IconType; text: string }[] = [
+  { icon: IcoHandshake, text: 'olá!' },
+  { icon: IcoThumbUp, text: 'boa!' },
+  { icon: IcoCool, text: 'ufa…' },
+  { icon: IcoStreak, text: 'que jogada!' },
+  { icon: IcoHandshake, text: 'gg' },
+];
 
 /**
  * Chat de texto com mute e report (slide "MVP — 90 dias": moderação nasce no
@@ -47,10 +58,10 @@ export function Chat() {
                     })
                   }
                 >
-                  {muted.includes(m.from.id) ? '🔊' : '🔇'}
+                  {muted.includes(m.from.id) ? <IcoSound /> : <IcoMuted />}
                 </button>
-                <button title="Denunciar" onClick={() => setReporting({ id: m.from.id, name: m.from.name })}>
-                  🚩
+                <button title="Denunciar" aria-label="Denunciar" onClick={() => setReporting({ id: m.from.id, name: m.from.name })}>
+                  <IcoWarning />
                 </button>
               </span>
             )}
@@ -86,9 +97,9 @@ export function Chat() {
       )}
 
       <div className="emote-row">
-        {['👋 olá!', '👍 boa!', '😅 ufa…', '🔥 que jogada!', '🤝 gg'].map((e) => (
-          <button key={e} type="button" className="emote" onClick={() => send({ t: 'chat:send', text: e })}>
-            {e}
+        {EMOTES.map(({ icon: Icon, text }) => (
+          <button key={text} type="button" className="emote" onClick={() => send({ t: 'chat:send', text })}>
+            <Icon className="ic" /> {text}
           </button>
         ))}
       </div>

@@ -12,7 +12,7 @@
 export interface Faction {
   id: string;
   name: string;
-  sigil: string; // emoji-brasão
+  sigil: string; // id de ícone do brasão (resolvido via SIGIL_ICONS no cliente)
   color: string; // cor de acento (combina com a paleta da arte)
   /** Lema curto, exibido sob o nome. */
   motto: string;
@@ -40,17 +40,17 @@ export const WORLD = {
   /** Notas que amarram regra ↔ história, mostradas no rodapé do Arquivo. */
   codexNotes: [
     {
-      icon: '🛡️',
+      icon: 'shield',
       title: 'Por que as criaturas protegem o Comandante',
       text: 'Um Cristal aceso é um farol. Enquanto houver uma só lenda em campo, ela se interpõe entre o inimigo e o seu portador — nenhum golpe ou magia alcança o Comandante antes que a última defensora caia. Só então o excedente do golpe atravessa.',
     },
     {
-      icon: '☀️',
+      icon: 'light',
       title: 'A energia que renasce ao amanhecer',
       text: 'O Éter de um Cristal recompõe-se devagar. A cada turno você recebe mais um ponto de energia (até dez) — a paciência de Aurélia recompensa quem planeja, não quem desperdiça.',
     },
     {
-      icon: '💀',
+      icon: 'death',
       title: 'A fadiga dos que lutam demais',
       text: 'Quando o baralho de um Comandante se esgota, não há mais lendas para chamar — e o esforço de forçar o Cristal vazio cobra seu preço em vida, crescente a cada tentativa. Nenhum Embate se arrasta para sempre.',
     },
@@ -61,7 +61,7 @@ export const FACTIONS: Record<string, Faction> = {
   vanguarda: {
     id: 'vanguarda',
     name: 'A Vanguarda da Aurora',
-    sigil: '🌟',
+    sigil: 'light',
     color: '#e3b341',
     motto: 'Primeiro a luz, depois a lâmina.',
     blurb:
@@ -70,7 +70,7 @@ export const FACTIONS: Record<string, Faction> = {
   silvanos: {
     id: 'silvanos',
     name: 'O Pacto Silvano',
-    sigil: '🐺',
+    sigil: 'wolf',
     color: '#3fb950',
     motto: 'A mata vê tudo; a mata espera.',
     blurb:
@@ -79,7 +79,7 @@ export const FACTIONS: Record<string, Faction> = {
   eter: {
     id: 'eter',
     name: 'O Conclave do Éter',
-    sigil: '🔮',
+    sigil: 'arcane',
     color: '#7fb1ff',
     motto: 'Todo Cristal é uma pergunta.',
     blurb:
@@ -88,7 +88,7 @@ export const FACTIONS: Record<string, Faction> = {
   profundezas: {
     id: 'profundezas',
     name: 'Os Antigos das Profundezas',
-    sigil: '🐉',
+    sigil: 'dragon',
     color: '#ff8c6e',
     motto: 'O que dormia, acordou.',
     blurb:
