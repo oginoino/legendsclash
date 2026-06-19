@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CARDS, cardOfDay } from '@legendsclash/shared';
 import { logout, openAccountPrompt, pickFaction, send, useAppState } from '../store';
+import { Avatar, InlineAvatar } from '../cosmetics';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { CardArt } from '../components/CardArt';
 import { ProfileModal } from '../components/ProfileModal';
@@ -36,7 +37,16 @@ export function HomeView() {
           LEGENDS<span>CLASH</span>
         </h1>
         <div className="profile-chip">
-          <span className="avatar-lg">{p.avatar}</span>
+          <Avatar
+            className="avatar-lg"
+            iconId={p.avatar}
+            photo={p.photo}
+            frame={p.frame}
+            accent={p.accent}
+            accentStyle={p.accentStyle}
+            size={52}
+            alt={p.name}
+          />
           <div>
             <strong>{p.name}</strong> {p.guest && <span className="guest-badge">convidado</span>}
             <div className="profile-sub">
@@ -184,7 +194,7 @@ export function HomeView() {
                 <p className="my-rank-pos">Sua posição: <strong>#{s.myRank}</strong> · {p.mmr} MMR</p>
                 {above ? (
                   <p className="hint">
-                    Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar {above.avatar} {above.name}.
+                    Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar <InlineAvatar iconId={above.avatar} photo={above.photo} size={18} /> {above.name}.
                   </p>
                 ) : (
                   <p className="hint">🥇 Você lidera o ranking — defenda o topo!</p>
@@ -200,7 +210,7 @@ export function HomeView() {
                 {s.leaderboard.map((e, i) => (
                   <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
                     <td className="pos">{i + 1}</td>
-                    <td>{e.avatar} {e.name}</td>
+                    <td className="board-player"><InlineAvatar iconId={e.avatar} photo={e.photo} size={20} /> {e.name}</td>
                     <td><LeagueBadge league={e.league} /></td>
                     <td className="num">{e.mmr}</td>
                     <td className="num dim">{e.wins}V {e.losses}D</td>

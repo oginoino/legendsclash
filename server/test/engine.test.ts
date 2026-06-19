@@ -4,7 +4,8 @@ import { CARDS, STARTING_HP, RECONNECT_GRACE_MS, DECK_SIZE, deckComposition } fr
 
 function players(n: number): MatchPlayer[] {
   return Array.from({ length: n }, (_, i) => ({
-    id: `p${i}`, name: `Jogador ${i}`, avatar: '🛡️', commander: '🛡️', accent: '#e3b341', mmr: 1000,
+    id: `p${i}`, name: `Jogador ${i}`, avatar: 'shield', commander: 'shield', accent: '#e3b341',
+    photo: null, frame: 'none', accentStyle: 'solid', mmr: 1000,
   }));
 }
 
@@ -793,6 +794,10 @@ describe('bot de treino (vs CPU)', () => {
     m.seats[1].board.push({ iid: 'b1', defId: 'c_dragao', attack: 7, health: 7, baseHealth: 7, canAttack: true, attacked: false });
     m.seats[0].board.push({ iid: 'lobo', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: false, attacked: false });
     m.seats[0].board.push({ iid: 'golem', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false });
+    // esvazia a mão do bot: este teste verifica só o alvo de ATAQUE (Provocar). Senão
+    // a mão sorteada do deck (embaralhado) pode trazer uma magia que mira o board[0]
+    // do humano (o Lobo, 2 de vida) e o mata — flakiness alheia ao que se testa aqui.
+    m.seats[1].hand = [];
     m.endTurn('p0'); // vez do bot
     m.runBotTurn('p1');
     // o Golem (Provocar) precisa ser atacado primeiro → leva 7 e morre; o Lobo sobrevive

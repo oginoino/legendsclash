@@ -4,6 +4,7 @@ import {
   closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
   registerAccount, useAppState,
 } from '../store';
+import { CosmeticIcon } from '../cosmetics';
 
 /**
  * Porta de entrada: jogar é imediato (convidado escolhe nome e avatar).
@@ -22,7 +23,7 @@ export function LoginView() {
     needsProfile ? 'profile' : s.accountPrompt ? 'signup' : 'welcome',
   );
   const [name, setName] = useState('');
-  const [avatar, setAvatar] = useState<string>(AVATARS[0]);
+  const [avatar, setAvatar] = useState<string>(AVATARS[0].id);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -73,12 +74,15 @@ export function LoginView() {
     <div className="avatar-picker">
       {AVATARS.map((a) => (
         <button
-          key={a}
+          key={a.id}
           type="button"
-          className={a === avatar ? 'avatar selected' : 'avatar'}
-          onClick={() => setAvatar(a)}
+          className={a.id === avatar ? 'avatar selected' : 'avatar'}
+          title={a.label}
+          aria-label={a.label}
+          data-avatar={a.id}
+          onClick={() => setAvatar(a.id)}
         >
-          {a}
+          <CosmeticIcon id={a.id} size={26} />
         </button>
       ))}
     </div>

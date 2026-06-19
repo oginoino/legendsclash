@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { send, useAppState } from '../store';
+import { InlineAvatar } from '../cosmetics';
 
 /**
  * Chat de texto com mute e report (slide "MVP — 90 dias": moderação nasce no
@@ -33,7 +34,7 @@ export function Chat() {
         {s.chat.length === 0 && <p className="hint">Diga olá! O chat é filtrado e moderado.</p>}
         {s.chat.map((m, i) => (
           <div key={i} className={m.from.id === myId ? 'chat-msg mine' : 'chat-msg'}>
-            <span className="chat-author">{m.from.avatar} {m.from.name}</span>
+            <span className="chat-author"><InlineAvatar iconId={m.from.avatar} photo={m.from.photo} size={16} /> {m.from.name}</span>
             <span className="chat-text">{m.text}</span>
             {m.from.id !== myId && (
               <span className="chat-actions">

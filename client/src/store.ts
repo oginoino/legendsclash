@@ -45,6 +45,8 @@ export interface AppState {
   viewedProfile: PublicProfile | null;
   /** Fase 6: o servidor habilitou a escolha de facção (dark launch). */
   factionsEnabled: boolean;
+  /** Personalização v2 ligada no servidor: foto, molduras e estilos de cor. */
+  cosmeticsEnabled: boolean;
   /** Facção escolhida pelo jogador (''=neutro). */
   faction: string;
 }
@@ -71,6 +73,7 @@ let state: AppState = {
   rematch: null,
   viewedProfile: null,
   factionsEnabled: false,
+  cosmeticsEnabled: false,
   faction: localStorage.getItem('lc_faction') ?? '',
 };
 
@@ -186,7 +189,11 @@ export function resumeHere(): void {
 function handleServerMsg(msg: ServerMsg): void {
   switch (msg.t) {
     case 'hello:ok':
-      setState({ connected: true, profile: msg.profile, factionsEnabled: !!msg.content?.factions });
+      setState({
+        connected: true, profile: msg.profile,
+        factionsEnabled: !!msg.content?.factions,
+        cosmeticsEnabled: !!msg.content?.cosmetics,
+      });
       send({ t: 'leaderboard:get' });
       send({ t: 'history:get' });
       // re-anuncia a facção escolhida (o servidor guarda em memória por sessão)
@@ -378,8 +385,41 @@ export function updateProfile(patch: {
   avatar?: string;
   commander?: string;
   accent?: string;
+  frame?: string;
+  accentStyle?: string;
 }): void {
   send({ t: 'profile:update', ...patch });
+}
+
+/**
+ * Sobe a foto de perfil (Personalização v2). O cliente já reduz a imagem para
+ * ~256px (ver `downscaleImage`); o servidor valida formato/tamanho, hospeda e
+ * responde com o perfil atualizado. Lança em falha (a UI exibe a mensagem).
+ */
+export async function uploadAvatarPhoto(dataUrl: string): Promise<void> {
+  const token = state.token;
+  if (!token) throw new Error('Sessão expirada. Entre novamente.');
+  const res = await fetch('/api/avatar/upload', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ data: dataUrl }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error ?? 'Falha ao enviar a foto.');
+  if (body?.profile) setState({ profile: body.profile });
+}
+
+/** Remove a foto de perfil, voltando ao ícone escolhido. */
+export async function removeAvatarPhoto(): Promise<void> {
+  const token = state.token;
+  if (!token) throw new Error('Sessão expirada. Entre novamente.');
+  const res = await fetch('/api/avatar/remove', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error ?? 'Falha ao remover a foto.');
+  if (body?.profile) setState({ profile: body.profile });
 }
 
 export function logout(): void {

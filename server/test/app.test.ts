@@ -270,13 +270,13 @@ describe('app · telemetria (analytics)', () => {
     const store = await Store.create(tmpDbPath());
     const { user } = store.findOrCreatePlayerByAuth('merito@t.test', null);
     const base = user.commander;
-    // '👑' (Monarca) exige winner_10 → sem vitórias é recusado
-    store.updateCosmetics(user.id, { commander: '👑' });
+    // 'crown' (Monarca) exige winner_10 → sem vitórias é recusado
+    store.updateCosmetics(user.id, { commander: 'crown' });
     expect(store.userById(user.id)!.commander).toBe(base);
     // 10 vitórias desbloqueiam
     user.wins = 10;
-    store.updateCosmetics(user.id, { commander: '👑' });
-    expect(store.userById(user.id)!.commander).toBe('👑');
+    store.updateCosmetics(user.id, { commander: 'crown' });
+    expect(store.userById(user.id)!.commander).toBe('crown');
     expect(store.profileOf(store.userById(user.id)!).achievements).toContain('winner_10');
   });
 

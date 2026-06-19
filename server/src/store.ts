@@ -5,8 +5,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import {
-  DEFAULT_ACCENT, DEFAULT_COMMANDER, isValidAccent, isValidAvatar, isValidCommander,
-  achievementsOf, accentUnlocked, commanderUnlocked,
+  DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME,
+  isValidAccent, isValidAccentStyle, isValidAvatar, isValidCommander, isValidFrame,
+  achievementsOf, accentStyleUnlocked, accentUnlocked, commanderUnlocked, frameUnlocked,
+  normalizeIconId,
 } from '@legendsclash/shared';
 import { BASE_MMR, leagueOf } from './elo.js';
 
@@ -54,6 +56,12 @@ export interface UserRecord {
   /** Retrato do comandante na arena e cor de destaque (personalização). */
   commander: string;
   accent: string;
+  /** Foto de perfil (URL no Storage ou data-URL no modo local); null = sem foto. */
+  photo: string | null;
+  /** Moldura decorativa (id em FRAMES). */
+  frame: string;
+  /** Estilo de cor do realce (id em ACCENT_STYLES). */
+  accentStyle: string;
   /** Vínculo com auth.users do Supabase (login por senha). Null em convidados/contas legadas/modo local. */
   authUserId: string | null;
   /**
@@ -117,6 +125,11 @@ interface Persistence {
   saveSession(session: SessionRecord): void;
   deleteSession(tokenHash: string): void;
   saveEvent(event: EventRecord): void;
+  /**
+   * Sobe a foto de perfil e devolve a URL pública. Em prod vai ao Supabase
+   * Storage; no modo local devolve a própria data-URL (sem storage externo).
+   */
+  uploadAvatar(userId: string, bytes: Buffer, contentType: string): Promise<string>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -141,6 +154,12 @@ class JsonPersistence implements Persistence {
       u.authUserId ??= null;
       u.commander ??= u.avatar; // contas anteriores: retrato = avatar do perfil
       u.accent ??= DEFAULT_ACCENT;
+      // emoji legado → id de ícone estável (cosméticos v2)
+      u.avatar = normalizeIconId(u.avatar);
+      u.commander = normalizeIconId(u.commander);
+      u.photo ??= null;
+      u.frame ??= DEFAULT_FRAME;
+      u.accentStyle ??= DEFAULT_ACCENT_STYLE;
       u.guest = false; // só contas persistem; convidados vivem em memória
       u.streak ??= 0;
       u.lastPlayDay ??= 0;
@@ -157,6 +176,11 @@ class JsonPersistence implements Persistence {
   saveSession(): void { this.scheduleSave(); }
   deleteSession(): void { this.scheduleSave(); }
   saveEvent(): void { this.scheduleSave(); }
+
+  /** Sem storage externo no modo local: a própria data-URL vira a "URL". */
+  async uploadAvatar(_userId: string, bytes: Buffer, contentType: string): Promise<string> {
+    return `data:${contentType};base64,${bytes.toString('base64')}`;
+  }
 
   private scheduleSave(): void {
     if (this.saveTimer) return;
@@ -237,9 +261,12 @@ class SupabasePersistence implements Persistence {
       id: p.id,
       email: p.email,
       name: p.name,
-      avatar: p.avatar,
-      commander: p.commander ?? p.avatar,
+      avatar: normalizeIconId(p.avatar),
+      commander: normalizeIconId(p.commander ?? p.avatar),
       accent: p.accent ?? DEFAULT_ACCENT,
+      photo: p.photo ?? null,
+      frame: p.frame ?? DEFAULT_FRAME,
+      accentStyle: p.accent_style ?? DEFAULT_ACCENT_STYLE,
       authUserId: p.auth_user_id ?? null,
       guest: false,
       mmr: p.mmr,
@@ -276,6 +303,9 @@ class SupabasePersistence implements Persistence {
         avatar: user.avatar,
         commander: user.commander,
         accent: user.accent,
+        photo: user.photo,
+        frame: user.frame,
+        accent_style: user.accentStyle,
         auth_user_id: user.authUserId,
         mmr: user.mmr,
         wins: user.wins,
@@ -364,6 +394,22 @@ class SupabasePersistence implements Persistence {
       .then(({ error }) => {
         if (error) console.error('[store] insert event falhou:', error.message);
       });
+  }
+
+  /**
+   * Sobe a foto ao bucket público `avatars` (um objeto por jogador, com upsert
+   * — substitui em vez de acumular) e devolve a URL pública. O `?v=` quebra o
+   * cache de CDN quando o jogador troca a foto.
+   */
+  async uploadAvatar(userId: string, bytes: Buffer, contentType: string): Promise<string> {
+    const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
+    const path = `${userId}.${ext}`;
+    const { error } = await this.client.storage
+      .from('avatars')
+      .upload(path, bytes, { upsert: true, contentType, cacheControl: '3600' });
+    if (error) throw new Error(`upload de avatar falhou: ${error.message}`);
+    const { data } = this.client.storage.from('avatars').getPublicUrl(path);
+    return `${data.publicUrl}?v=${Date.now()}`;
   }
 }
 
@@ -494,9 +540,12 @@ export class Store {
       id: randomBytes(8).toString('hex'),
       email: normEmail,
       name: '',
-      avatar: '🛡️',
+      avatar: DEFAULT_AVATAR,
       commander: DEFAULT_COMMANDER,
       accent: DEFAULT_ACCENT,
+      photo: null,
+      frame: DEFAULT_FRAME,
+      accentStyle: DEFAULT_ACCENT_STYLE,
       authUserId,
       guest: false,
       mmr: BASE_MMR,
@@ -520,13 +569,18 @@ export class Store {
    * então nunca persiste nem aparece no ranking; some com a sessão.
    */
   createGuest(name: string, avatar: string): UserRecord {
+    // o avatar vem do cliente (picker) — aceita id válido (ou legado), senão padrão
+    const id = isValidAvatar(avatar) ? normalizeIconId(avatar) : DEFAULT_AVATAR;
     const user: UserRecord = {
       id: randomBytes(8).toString('hex'),
       email: '',
       name: name.trim().slice(0, 24),
-      avatar: avatar || '🛡️',
-      commander: avatar || DEFAULT_COMMANDER,
+      avatar: id,
+      commander: isValidCommander(id) ? id : DEFAULT_COMMANDER,
       accent: DEFAULT_ACCENT,
+      photo: null,
+      frame: DEFAULT_FRAME,
+      accentStyle: DEFAULT_ACCENT_STYLE,
       authUserId: null,
       guest: true,
       mmr: BASE_MMR,
@@ -547,7 +601,7 @@ export class Store {
     const u = this.byId.get(userId);
     if (!u) return undefined;
     u.name = name.trim().slice(0, 24);
-    if (avatar) u.avatar = avatar;
+    if (avatar && isValidAvatar(avatar)) u.avatar = normalizeIconId(avatar);
     if (!u.guest) this.persistence.saveUser(u);
     return u;
   }
@@ -559,7 +613,7 @@ export class Store {
    */
   updateCosmetics(
     userId: string,
-    patch: { name?: string; avatar?: string; commander?: string; accent?: string },
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string },
   ): UserRecord | undefined {
     const u = this.byId.get(userId);
     if (!u) return undefined;
@@ -567,18 +621,42 @@ export class Store {
       const name = patch.name.trim().slice(0, 24);
       if (name) u.name = name;
     }
-    // cosméticos por mérito: comandante/cor podem exigir uma conquista (anti-abuso:
-    // só aplica se o jogador realmente desbloqueou — derivado de vitórias/partidas).
+    // cosméticos por mérito: comandante/cor/moldura/estilo podem exigir uma conquista
+    // (anti-abuso: só aplica se o jogador realmente desbloqueou — derivado de V/partidas).
     const earned = achievementsOf(u.wins, u.wins + u.losses);
-    if (patch.avatar && isValidAvatar(patch.avatar)) u.avatar = patch.avatar;
-    if (patch.commander && isValidCommander(patch.commander) && commanderUnlocked(patch.commander, earned)) {
-      u.commander = patch.commander;
+    if (patch.avatar && isValidAvatar(patch.avatar)) u.avatar = normalizeIconId(patch.avatar);
+    if (patch.commander && isValidCommander(patch.commander) && commanderUnlocked(normalizeIconId(patch.commander), earned)) {
+      u.commander = normalizeIconId(patch.commander);
     }
     if (patch.accent && isValidAccent(patch.accent) && accentUnlocked(patch.accent, earned)) {
       u.accent = patch.accent;
     }
+    if (patch.frame && isValidFrame(patch.frame) && frameUnlocked(patch.frame, earned)) {
+      u.frame = patch.frame;
+    }
+    if (patch.accentStyle && isValidAccentStyle(patch.accentStyle) && accentStyleUnlocked(patch.accentStyle, earned)) {
+      u.accentStyle = patch.accentStyle;
+    }
     this.persistence.saveUser(u);
     return u;
+  }
+
+  /**
+   * Define (ou remove, com null) a foto de perfil. A foto já vem validada e
+   * hospedada (URL do Storage ou data-URL local) pela rota de upload — aqui só
+   * grava no registro e persiste.
+   */
+  setPhoto(userId: string, photo: string | null): UserRecord | undefined {
+    const u = this.byId.get(userId);
+    if (!u) return undefined;
+    u.photo = photo;
+    if (!u.guest) this.persistence.saveUser(u);
+    return u;
+  }
+
+  /** Sobe a foto ao backend de persistência e devolve a URL pública. */
+  uploadAvatar(userId: string, bytes: Buffer, contentType: string): Promise<string> {
+    return this.persistence.uploadAvatar(userId, bytes, contentType);
   }
 
   /**
@@ -705,6 +783,9 @@ export class Store {
       avatar: u.avatar,
       commander: u.commander,
       accent: u.accent,
+      photo: u.photo,
+      frame: u.frame,
+      accentStyle: u.accentStyle,
       guest: u.guest,
       mmr: u.mmr,
       league: leagueOf(u.mmr) as League,
@@ -726,6 +807,9 @@ export class Store {
       avatar: u.avatar,
       commander: u.commander,
       accent: u.accent,
+      photo: u.photo,
+      frame: u.frame,
+      accentStyle: u.accentStyle,
       league: leagueOf(u.mmr) as League,
       mmr: u.mmr,
       wins: u.wins,

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
+import { GiShield } from 'react-icons/gi';
 import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
+import { Avatar, CosmeticIcon, accentVars } from '../cosmetics';
 import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
@@ -1200,7 +1202,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   const shielded = fx.some((f) => f.kind === 'shield');
   const title = commanderTitle(seat.commander);
   return (
-    <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={{ ['--accent' as string]: seat.accent }}>
+    <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
       {bubble && (
         <div className={`taunt-bubble ${isEnemy ? 'down' : 'up'}`} key={bubble.id}>{bubble.text}</div>
       )}
@@ -1220,9 +1222,18 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         onMouseLeave={onHover ? () => onHover(false) : undefined}
         title={blocked ? 'Protegido por Provocar' : undefined}
       >
-        <span className="portrait-avatar">{seat.commander || seat.avatar}</span>
+        <Avatar
+          className="portrait-avatar"
+          iconId={seat.commander || seat.avatar}
+          photo={seat.photo}
+          frame={seat.frame}
+          accent={seat.accent}
+          accentStyle={seat.accentStyle}
+          fill
+          alt={seat.name}
+        />
         <span className="hp-orb">{seat.hp}</span>
-        {seat.shield > 0 && <span className="shield-orb">🛡️{seat.shield}</span>}
+        {seat.shield > 0 && <span className="shield-orb"><GiShield />{seat.shield}</span>}
         {preview && <PreviewChip p={preview} dim={previewDim} />}
         <FxLayer fx={fx} />
       </button>
@@ -1531,7 +1542,10 @@ function GameOverOverlay() {
               )}
               {rematch?.status === 'incoming' ? (
                 <div className="go-rematch-incoming">
-                  <p>{rematch.from?.avatar} {rematch.from?.name} quer revanche!</p>
+                  <p>
+                    {rematch.from && <CosmeticIcon id={rematch.from.avatar} size={18} className="inline-ico" />}
+                    {' '}{rematch.from?.name} quer revanche!
+                  </p>
                   <div className="go-actions">
                     <button className="btn primary" onClick={() => { sfx.click(); requestRematch(); }}>✅ Aceitar revanche</button>
                     <button className="btn ghost" onClick={() => declineRematch()}>Recusar</button>

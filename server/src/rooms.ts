@@ -11,6 +11,7 @@ export interface RoomPlayer {
   id: string;
   name: string;
   avatar: string;
+  photo?: string | null;
   mmr: number;
 }
 
@@ -91,6 +92,7 @@ export class RoomManager {
         id: m.id,
         name: m.name,
         avatar: m.avatar,
+        photo: m.photo ?? null,
         mmr: m.mmr,
         league: leagueOf(m.mmr),
         isHost: m.id === room.hostId,

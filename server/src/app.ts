@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
 import { TAUNTS, achievementsOf, FACTION_TILTS } from '@legendsclash/shared';
 import { contentFlags } from './content.js';
-import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry, MatchResult } from '@legendsclash/shared';
+import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry, MatchResult, Profile } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
 import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
@@ -155,7 +155,7 @@ export class App {
     this.send(ws, {
       t: 'hello:ok',
       profile: this.store.profileOf(user),
-      content: { factions: contentFlags.factions },
+      content: { factions: contentFlags.factions, cosmetics: contentFlags.cosmeticsV2 },
     });
     this.store.recordEvent('session_start', { userId: user.id, props: { guest: user.guest } });
 
@@ -215,7 +215,7 @@ export class App {
 
   private profileUpdate(
     user: UserRecord,
-    patch: { name?: string; avatar?: string; commander?: string; accent?: string },
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string },
   ): void {
     const updated = this.store.updateCosmetics(user.id, patch);
     if (!updated) throw new KnownError('Perfil não encontrado.');
@@ -226,9 +226,28 @@ export class App {
       match.updateCosmetics(user.id, {
         name: updated.name, avatar: updated.avatar,
         commander: updated.commander, accent: updated.accent,
+        photo: updated.photo, frame: updated.frame, accentStyle: updated.accentStyle,
       });
       this.broadcastMatch(match);
     }
+  }
+
+  /**
+   * Aplica a foto de perfil (vinda da rota HTTP de upload, já validada e
+   * hospedada). Persiste, devolve o perfil ao dono e reflete numa partida em
+   * andamento (a foto é visível ao oponente). `photo: null` remove.
+   */
+  applyPhoto(userId: string, photo: string | null): Profile | undefined {
+    const updated = this.store.setPhoto(userId, photo);
+    if (!updated) return undefined;
+    const profile = this.store.profileOf(updated);
+    this.sendTo(userId, { t: 'profile', profile });
+    const match = this.matches.get(userId);
+    if (match && !match.finished) {
+      match.updateCosmetics(userId, { photo: updated.photo });
+      this.broadcastMatch(match);
+    }
+    return profile;
   }
 
   // ─── Fila / matchmaking ─────────────────────────────────────────
@@ -280,7 +299,7 @@ export class App {
   // ─── Salas (lobby + convite por link) ───────────────────────────
 
   private asRoomPlayer(u: UserRecord): RoomPlayer {
-    return { id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr };
+    return { id: u.id, name: displayName(u), avatar: u.avatar, photo: u.photo, mmr: u.mmr };
   }
 
   private roomCreate(user: UserRecord): void {
@@ -335,7 +354,8 @@ export class App {
   private startMatch(users: UserRecord[]): void {
     const players: MatchPlayer[] = users.map((u) => ({
       id: u.id, name: displayName(u), avatar: u.avatar,
-      commander: u.commander, accent: u.accent, mmr: u.mmr,
+      commander: u.commander, accent: u.accent,
+      photo: u.photo, frame: u.frame, accentStyle: u.accentStyle, mmr: u.mmr,
     }));
     // Sorteia a ordem dos assentos: sem isso, o seat 0 (que joga primeiro) seria
     // sempre o de menor MMR do par, porque o matchmaking ordena a fila por MMR —
@@ -381,12 +401,14 @@ export class App {
     this.queue.leave(user.id);
     this.rooms.leave(user.id);
     const bot: MatchPlayer = {
-      id: 'bot:' + randomInt(1_000_000_000), name: 'Treinador IA', avatar: '🤖',
-      commander: '🤖', accent: '#3fd3c6', mmr: user.mmr,
+      id: 'bot:' + randomInt(1_000_000_000), name: 'Treinador IA', avatar: 'robot',
+      commander: 'robot', accent: '#3fd3c6', photo: null, frame: 'none',
+      accentStyle: 'aurora', mmr: user.mmr,
     };
     const human: MatchPlayer = {
       id: user.id, name: displayName(user), avatar: user.avatar,
-      commander: user.commander, accent: user.accent, mmr: user.mmr,
+      commander: user.commander, accent: user.accent,
+      photo: user.photo, frame: user.frame, accentStyle: user.accentStyle, mmr: user.mmr,
     };
     // humano no assento 0 (age primeiro) — aprendizado mais gentil
     let match: Match;
@@ -578,7 +600,7 @@ export class App {
     if (!recipients.length) throw new KnownError('Você não está em uma sala ou partida.');
 
     const message = {
-      from: { id: user.id, name: displayName(user), avatar: user.avatar },
+      from: { id: user.id, name: displayName(user), avatar: user.avatar, photo: user.photo },
       text,
       at: Date.now(),
     };
@@ -671,7 +693,7 @@ export class App {
     this.sendTo(user.id, { t: 'rematch:state', status: 'sent' });
     this.sendTo(opp.id, {
       t: 'rematch:state', status: 'incoming',
-      from: { id: user.id, name: displayName(user), avatar: user.avatar },
+      from: { id: user.id, name: displayName(user), avatar: user.avatar, photo: user.photo },
     });
   }
 
@@ -731,7 +753,7 @@ export class App {
 
   private sendLeaderboard(user: UserRecord): void {
     const toEntry = (u: UserRecord): LeaderboardEntry => ({
-      id: u.id, name: displayName(u), avatar: u.avatar, mmr: u.mmr,
+      id: u.id, name: displayName(u), avatar: u.avatar, photo: u.photo, mmr: u.mmr,
       league: leagueOf(u.mmr), wins: u.wins, losses: u.losses,
     });
     const entries = this.store.leaderboard().map(toEntry);

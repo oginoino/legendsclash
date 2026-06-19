@@ -230,10 +230,14 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   background: var(--bg-2);
   border: 2px solid var(--line);
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 8px;
   cursor: pointer;
+  display: grid; place-items: center;
+  color: var(--text);
   transition: transform .12s, border-color .12s;
 }
+.avatar svg { width: 26px; height: 26px; }
+.avatar.selected svg { color: var(--gold); }
 @media (hover: hover) and (pointer: fine) {
   .avatar:hover { transform: translateY(-3px); }
 }
@@ -260,7 +264,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
    em telas estreitas em vez de transbordar a viewport */
 .profile-chip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .profile-sub { font-size: 13px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
-.avatar-lg { font-size: 28px; }
+.avatar-lg { flex-shrink: 0; } /* tamanho vem do Avatar/InlineAvatar (inline) */
 
 /* grade intrínseca: 2+ colunas quando cabem (≥340px cada), 1 quando não —
    acaba com a zona apertada de 800–980px e o salto seco em 800px.
@@ -1638,31 +1642,36 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   width: 62px; height: 62px; border-radius: 50%; flex-shrink: 0;
   display: grid; place-items: center; font-size: 32px;
   background: radial-gradient(circle at 35% 30%, #2c3c5e, #16203455);
-  border: 2px solid var(--cz-accent, var(--gold));
-  box-shadow: inset 0 0 14px #0008, 0 0 18px color-mix(in srgb, var(--cz-accent, #e3b341) 60%, transparent);
+  border: 2px solid var(--accent, var(--gold));
+  box-shadow: inset 0 0 14px #0008, 0 0 18px color-mix(in srgb, var(--accent, #e3b341) 60%, transparent);
 }
 .commander-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .commander-id strong { font-size: 18px; }
-.commander-title { color: var(--cz-accent, var(--gold)); font-weight: 700; font-size: 13px; }
+.commander-title { color: var(--accent, var(--gold)); font-weight: 700; font-size: 13px; }
 .cz-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--dim); margin-top: 14px; }
 .cz-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .cz-grid.commanders {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px;
 }
 .cz-chip {
-  font-size: 22px; background: var(--bg-2); border: 2px solid var(--line);
-  border-radius: 10px; padding: 6px 10px; cursor: pointer; min-width: 46px;
-  transition: transform .1s, border-color .1s, background .1s;
+  background: var(--bg-2); border: 2px solid var(--line);
+  border-radius: 10px; padding: 8px; cursor: pointer; min-width: 46px;
+  display: grid; place-items: center; color: var(--text);
+  transition: transform .1s, border-color .1s, background .1s, color .1s;
 }
-.cz-chip.sel { border-color: var(--cz-accent, var(--gold)); background: #ffffff12; }
+.cz-chip svg { width: 24px; height: 24px; }
+.cz-chip.sel { border-color: var(--accent, var(--gold)); background: #ffffff12; color: var(--accent); }
 .cz-cmd {
   display: flex; flex-direction: column; align-items: center; gap: 5px;
   background: var(--bg-2); border: 2px solid var(--line); border-radius: 10px;
   padding: 9px 6px; cursor: pointer; color: var(--text);
   transition: transform .1s, border-color .1s, background .1s;
 }
-.cz-cmd.sel { border-color: var(--cz-accent, var(--gold)); background: #ffffff12; }
-.cz-cmd-portrait { font-size: 27px; line-height: 1; }
+.cz-cmd.sel { border-color: var(--accent, var(--gold)); background: #ffffff12; }
+.cz-cmd-portrait { line-height: 1; display: grid; place-items: center; color: var(--text); }
+.cz-cmd-portrait svg { width: 30px; height: 30px; }
+.cz-cmd.sel .cz-cmd-portrait { color: var(--accent); }
+.cz-cmd.locked .cz-cmd-portrait { color: var(--dim); }
 .cz-cmd-title { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.1; }
 .cz-cmd.sel .cz-cmd-title { color: var(--text); }
 @media (hover: hover) and (pointer: fine) {
@@ -1760,11 +1769,19 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .tutorial-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* ── Cosméticos por mérito: bloqueados + celebração de conquista ── */
-.cz-cmd.locked, .cz-swatch.locked { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5); }
+.cz-cmd.locked, .cz-swatch.locked, .cz-style.locked, .cz-frame.locked {
+  opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5);
+}
 .cz-cmd.locked .cz-cmd-title { font-size: 0.72rem; color: var(--dim); }
 /* Fase 3: barra de progresso + selo de prestígio nos cosméticos */
 .cz-cmd { position: relative; }
-.cz-tier { position: absolute; top: 3px; right: 5px; font-size: 11px; line-height: 1; }
+.cz-tier {
+  position: absolute; top: 3px; right: 5px; line-height: 1; display: grid; place-items: center;
+  z-index: 2;
+}
+.cz-tier svg { width: 13px; height: 13px; }
+.cz-tier--rare { color: #8fb3ff; }
+.cz-tier--legendary { color: var(--gold); filter: drop-shadow(0 0 3px #e3b34188); }
 .cz-progress {
   display: block; width: 82%; height: 4px; margin: 5px auto 0;
   background: var(--line); border-radius: 99px; overflow: hidden;
@@ -1803,11 +1820,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .go-rematch-sent { margin: 6px 0; color: var(--gold); font-size: 13px; }
 .player-profile { max-width: 360px; width: 100%; text-align: center; }
 .pp-head { display: flex; align-items: center; gap: 14px; text-align: left; margin-bottom: 10px; }
-.pp-portrait {
-  font-size: 38px; width: 64px; height: 64px; flex-shrink: 0;
-  display: grid; place-items: center; border-radius: 14px;
-  border: 2px solid var(--accent); background: var(--panel-2);
-}
+.pp-portrait { flex-shrink: 0; } /* visual agora vem do .lc-avatar (Avatar) */
 .pp-id { display: flex; flex-direction: column; min-width: 0; }
 .pp-name { font-size: 20px; }
 .pp-sub { color: var(--dim); font-size: 13px; }
@@ -1927,4 +1940,112 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   /* loops que faltavam: roda de carregar para estática; chuva de vitória some */
   .spinner { animation: none; border-top-color: var(--gold); }
   .confetti { display: none; }
+  .lc-frame--arcane::after { animation: none !important; }
 }
+
+/* ══ Cosméticos v2: medalhão de avatar, molduras e estilos de cor ══ */
+
+/* Medalhão reutilizável (Avatar): foto/ícone + anel em gradiente + brilho.
+   As variáveis --accent / --accent-grad / --accent-glow vêm de accentVars(). */
+.lc-avatar {
+  position: relative; display: inline-grid; place-items: center;
+  border-radius: 50%; flex-shrink: 0; vertical-align: middle;
+  box-shadow: 0 0 16px var(--accent-glow, transparent);
+}
+.lc-avatar-ring {
+  width: 100%; height: 100%; border-radius: 50%; box-sizing: border-box;
+  padding: 2px; background: var(--accent-grad, var(--accent, var(--gold)));
+}
+.lc-avatar-face {
+  width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; color: var(--accent, var(--gold));
+  background: radial-gradient(circle at 35% 28%, #2c3c5e, #141d31);
+  box-shadow: inset 0 0 12px #0009;
+}
+.lc-avatar-face svg { width: 62%; height: 62%; }
+.lc-avatar-photo { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+
+/* Avatar compacto p/ listas/chat/lobby: sem anel nem moldura. */
+.lc-inline {
+  display: inline-grid; place-items: center; border-radius: 50%;
+  overflow: hidden; flex-shrink: 0; vertical-align: middle;
+}
+.lc-inline svg { width: 100%; height: 100%; }
+.lc-inline-photo { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.inline-ico { vertical-align: middle; }
+
+/* Molduras (armações): camada decorativa em volta de qualquer .lc-avatar
+   (medalhão do perfil e retrato da arena). */
+[class*="lc-frame--"]::before, [class*="lc-frame--"]::after { pointer-events: none; }
+.lc-frame--gilded::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 2px solid #e9c879; box-shadow: 0 0 10px #e9c87966, inset 0 0 6px #e9c87944;
+}
+.lc-frame--laurel::before {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 1px solid #bfa75a;
+}
+.lc-frame--laurel::after {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  border: 2px solid #7fc98a; box-shadow: 0 0 8px #7fc98a55;
+}
+.lc-frame--runes::after {
+  content: ''; position: absolute; inset: -5px; border-radius: 50%;
+  border: 2px dashed var(--accent, #b083f0); box-shadow: 0 0 10px var(--accent-glow, #b083f088);
+}
+.lc-frame--arcane::after {
+  content: ''; position: absolute; inset: -5px; border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--accent, #b083f0), #4d8dff, #3fd3c6, var(--accent, #b083f0));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: lc-spin 6s linear infinite;
+}
+.lc-frame--dragon::before {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%;
+  background: conic-gradient(#b5651d, #e3b341, #f85149, #b5651d);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  box-shadow: 0 0 12px #f8514955;
+}
+@keyframes lc-spin { to { transform: rotate(360deg); } }
+
+/* Retrato da arena: o Avatar preenche o botão responsivo (.portrait). */
+.portrait-avatar.lc-avatar { box-shadow: none; } /* o brilho fica no próprio .portrait */
+.shield-orb svg { width: 11px; height: 11px; vertical-align: -1px; }
+
+/* ProfileModal v2: seções de foto, estilo de cor e armação. */
+.cz-photo { display: flex; align-items: center; gap: 14px; margin: 6px 0 2px; }
+.cz-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cz-hint { font-size: 11px; color: var(--dim); flex-basis: 100%; }
+.cz-err { font-size: 12px; color: var(--red); flex-basis: 100%; }
+
+.cz-styles { display: flex; gap: 10px; flex-wrap: wrap; }
+.cz-style {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: var(--bg-2); border: 2px solid var(--line); border-radius: 10px;
+  padding: 8px 6px; min-width: 64px; cursor: pointer; color: var(--dim);
+  transition: transform .1s, border-color .1s, color .1s;
+}
+.cz-style.sel { border-color: var(--accent, var(--gold)); color: var(--text); }
+.cz-style-orb {
+  width: 30px; height: 30px; border-radius: 50%; background: var(--prev);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--prev) 50%, transparent), inset 0 0 6px #0006;
+}
+.cz-style-name { font-size: 11px; line-height: 1; display: grid; place-items: center; }
+.cz-style-name svg { width: 14px; height: 14px; }
+
+.cz-grid.frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 8px; }
+.cz-frame {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 9px;
+  background: var(--bg-2); border: 2px solid var(--line); border-radius: 10px;
+  padding: 13px 6px 8px; cursor: pointer; color: var(--text);
+  transition: transform .1s, border-color .1s, background .1s;
+}
+.cz-frame.sel { border-color: var(--accent, var(--gold)); background: #ffffff10; }
+.cz-frame-name { font-size: 11px; color: var(--dim); }
+.cz-frame.sel .cz-frame-name { color: var(--text); }
+.cz-frame-lock { display: grid; place-items: center; width: 48px; height: 48px; color: var(--dim); }
+.cz-frame-lock svg { width: 22px; height: 22px; }
+@media (hover: hover) and (pointer: fine) {
+  .cz-style:hover, .cz-frame:hover { transform: translateY(-2px); }
+}
+@media (max-width: 480px) { .cz-photo { flex-wrap: wrap; } }
