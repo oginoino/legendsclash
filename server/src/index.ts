@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import { Store } from './store.js';
 import { App } from './app.js';
 import { createAuthService, handleAuthRoute } from './auth.js';
+import { handleAvatarRoute } from './avatar.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -67,6 +68,11 @@ const server = createServer(async (req, res) => {
     // Convidado, e-mail+senha, perfil e logout — rotas em auth.ts.
     if (url.pathname.startsWith('/api/auth/')) {
       if (await handleAuthRoute(auth, req, res, url)) return;
+    }
+
+    // Upload/remoção da foto de perfil (Personalização v2) — rotas em avatar.ts.
+    if (url.pathname.startsWith('/api/avatar/')) {
+      if (await handleAvatarRoute(app, store, req, res, url)) return;
     }
 
     if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'Não encontrado.' });

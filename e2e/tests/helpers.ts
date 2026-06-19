@@ -3,6 +3,18 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContextOptions, Page } from '@playwright/test';
 
+// emoji legado → id de ícone (espelha LEGACY_ICON_MAP do shared). Inline aqui
+// porque o Playwright não transpila o TS do pacote shared dentro de node_modules.
+const AVATAR_IDS: Record<string, string> = {
+  '🛡️': 'shield', '⚔️': 'crossed-swords', '🐺': 'wolf', '🐉': 'dragon',
+  '🏹': 'bow', '🔮': 'orb', '🦅': 'eagle', '🌙': 'moon', '🧙': 'wizard', '🗡️': 'dagger',
+};
+
+/** Seletor do botão de avatar no picker: aceita emoji legado ou id de ícone. */
+export function avatarButton(avatar: string): string {
+  return `.avatar-picker button[data-avatar="${AVATAR_IDS[avatar] ?? avatar}"]`;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const SHOTS_DIR = resolve(__dirname, '..', 'screenshots');
 mkdirSync(SHOTS_DIR, { recursive: true });
@@ -44,7 +56,7 @@ export async function loginAs(
   // passo 2: perfil do primeiro acesso
   await page.waitForSelector('input[name=name]');
   await page.fill('input[name=name]', name);
-  await page.click(`.avatar-picker button:has-text("${avatar}")`);
+  await page.click(avatarButton(avatar));
   await page.click('button:has-text("Começar a jogar")');
 
   await page.waitForSelector('.home-main');
@@ -63,7 +75,7 @@ export async function guestAs(
   page.on('dialog', (d) => d.accept());
   await page.goto('/');
   await page.fill('input[name=name]', name);
-  await page.click(`.avatar-picker button:has-text("${avatar}")`);
+  await page.click(avatarButton(avatar));
   await page.click('button:has-text("Jogar agora")');
   await page.waitForSelector('.home-main');
   return page;

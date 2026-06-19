@@ -24,6 +24,9 @@ export interface MatchPlayer {
   avatar: string;
   commander: string;
   accent: string;
+  photo: string | null;
+  frame: string;
+  accentStyle: string;
   mmr: number;
 }
 
@@ -342,7 +345,7 @@ export class Match {
    */
   updateCosmetics(
     playerId: string,
-    patch: { name?: string; avatar?: string; commander?: string; accent?: string },
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string; photo?: string | null; frame?: string; accentStyle?: string },
   ): boolean {
     const seat = this.seats.find((s) => s.player.id === playerId);
     if (!seat) return false;
@@ -350,6 +353,9 @@ export class Match {
     if (patch.avatar) seat.player.avatar = patch.avatar;
     if (patch.commander) seat.player.commander = patch.commander;
     if (patch.accent) seat.player.accent = patch.accent;
+    if (patch.photo !== undefined) seat.player.photo = patch.photo;
+    if (patch.frame) seat.player.frame = patch.frame;
+    if (patch.accentStyle) seat.player.accentStyle = patch.accentStyle;
     return true;
   }
 
@@ -863,6 +869,9 @@ export class Match {
       avatar: s.player.avatar,
       commander: s.player.commander,
       accent: s.player.accent,
+      photo: s.player.photo,
+      frame: s.player.frame,
+      accentStyle: s.player.accentStyle,
       mmr: s.player.mmr,
       hp: Math.max(0, s.hp),
       shield: s.shield,

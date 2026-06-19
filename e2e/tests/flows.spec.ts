@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { E2E_PASSWORD, guestAs, loginAs, shotPath, uniqueEmail } from './helpers.js';
+import { E2E_PASSWORD, avatarButton, guestAs, loginAs, shotPath, uniqueEmail } from './helpers.js';
 
 test.describe('entrada: convidado e conta', () => {
   test('convidado: nome + avatar → home, com convites para criar conta', async ({ page }) => {
@@ -9,7 +9,7 @@ test.describe('entrada: convidado e conta', () => {
 
     // jogar é imediato: nome, avatar e pronto
     await page.fill('input[name=name]', 'Xavier');
-    await page.click('.avatar-picker button:has-text("🐺")');
+    await page.click(avatarButton('🐺'));
     await page.click('button:has-text("Jogar agora")');
 
     await expect(page.locator('.home-main')).toBeVisible();
@@ -34,7 +34,7 @@ test.describe('entrada: convidado e conta', () => {
     // primeiro acesso pede nome e avatar
     await expect(page.locator('input[name=name]')).toBeVisible();
     await page.fill('input[name=name]', 'Lenda');
-    await page.click('.avatar-picker button:has-text("🦅")');
+    await page.click(avatarButton('🦅'));
     await page.click('button:has-text("Começar a jogar")');
 
     await expect(page.locator('.home-main')).toBeVisible();

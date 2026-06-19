@@ -157,7 +157,9 @@ export class AuthService {
     this.checkLimits(ip);
     const name = String(nameRaw ?? '').trim().slice(0, 24);
     if (!name) throw new AuthError(400, 'Escolha um nome de 1 a 24 caracteres.');
-    const avatar = String(avatarRaw ?? '').trim().slice(0, 8);
+    // o avatar é um id de cosmético (ex.: 'crossed-swords'); o createGuest valida
+    // contra a lista do shared (cap generoso só para limitar o tamanho do input)
+    const avatar = String(avatarRaw ?? '').trim().slice(0, 32);
     const user = this.store.createGuest(name, avatar);
     const token = this.store.createSession(user.id);
     return { token, profile: this.store.profileOf(user), needsProfile: false };

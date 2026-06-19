@@ -8,9 +8,15 @@ export interface Profile {
   id: string;
   name: string;
   email: string; // vazio em convidados
-  avatar: string; // emoji escolhido pelo jogador (perfil/listas/chat)
-  commander: string; // retrato do comandante exibido na arena
-  accent: string; // cor de destaque do comandante (hex)
+  avatar: string; // id do ícone escolhido pelo jogador (perfil/listas/chat)
+  commander: string; // id do retrato do comandante exibido na arena
+  accent: string; // cor-base de destaque do comandante (hex)
+  /** Foto de perfil enviada pelo jogador (URL ou data-URL); null = sem foto. */
+  photo: string | null;
+  /** Moldura decorativa sobre o avatar/retrato (id em FRAMES). */
+  frame: string;
+  /** Estilo de cor do realce (sólido/gradiente/brilho — id em ACCENT_STYLES). */
+  accentStyle: string;
   /** Convidado: joga sem cadastro, mas chat/histórico/ranking pedem conta. */
   guest: boolean;
   mmr: number;
@@ -38,6 +44,9 @@ export interface PublicProfile {
   avatar: string;
   commander: string;
   accent: string;
+  photo: string | null;
+  frame: string;
+  accentStyle: string;
   league: League;
   mmr: number;
   wins: number;
@@ -62,6 +71,8 @@ export interface LeaderboardEntry {
   id: string;
   name: string;
   avatar: string;
+  /** Foto de perfil (opcional) — a lista mostra o ícone quando ausente. */
+  photo?: string | null;
   mmr: number;
   league: League;
   wins: number;
@@ -74,6 +85,7 @@ export interface RoomMember {
   id: string;
   name: string;
   avatar: string;
+  photo?: string | null;
   mmr: number;
   league: League;
   isHost: boolean;
@@ -108,8 +120,11 @@ export interface SeatView {
   playerId: string;
   name: string;
   avatar: string;
-  commander: string; // retrato do comandante na arena
-  accent: string; // cor de destaque do comandante (hex)
+  commander: string; // id do retrato do comandante na arena
+  accent: string; // cor-base de destaque do comandante (hex)
+  photo: string | null; // foto de perfil (visível ao oponente) ou null
+  frame: string; // moldura decorativa (id em FRAMES)
+  accentStyle: string; // estilo de cor do realce (id em ACCENT_STYLES)
   mmr: number;
   hp: number;
   shield: number;
@@ -193,7 +208,7 @@ export interface Target {
 }
 
 export interface ChatMessage {
-  from: { id: string; name: string; avatar: string };
+  from: { id: string; name: string; avatar: string; photo?: string | null };
   text: string; // já passou pelo filtro de palavras do servidor
   at: number;
 }

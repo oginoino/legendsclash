@@ -107,7 +107,7 @@ describe('auth · promoção: convidado vira conta na mesma sessão', () => {
       const store = await Store.create(path);
       const auth = new AuthService(store, new LocalPasswordProvider(), 'off');
 
-      const guest = auth.guest('Promovida', '🔮', '127.0.0.1');
+      const guest = auth.guest('Promovida', 'orb', '127.0.0.1');
       store.recordMatch(guest.profile.id, matchEntry('rival-1'), 1016, true);
       store.recordMatch(guest.profile.id, matchEntry('rival-2'), 1003, false);
 
@@ -115,7 +115,7 @@ describe('auth · promoção: convidado vira conta na mesma sessão', () => {
       expect(acc.needsProfile).toBe(false); // identidade herdada: onboarding dispensado
       expect(acc.profile.guest).toBe(false);
       expect(acc.profile.name).toBe('Promovida');
-      expect(acc.profile.avatar).toBe('🔮');
+      expect(acc.profile.avatar).toBe('orb');
       expect(acc.profile.mmr).toBe(1003);
       expect(acc.profile.wins).toBe(1);
       expect(acc.profile.losses).toBe(1);
@@ -311,6 +311,7 @@ describe('auth · sessões', () => {
     const { user, isNew } = store.findOrCreatePlayerByAuth('legado@exemplo.com', 'uuid-auth-1');
     expect(isNew).toBe(false); // conta preservada pelo e-mail…
     expect(user.id).toBe('abc123');
+    expect(user.avatar).toBe('wolf'); // emoji legado '🐺' normalizado para id de ícone
     expect(user.mmr).toBe(1100);
     expect(user.guest).toBe(false);
     expect(user.authUserId).toBe('uuid-auth-1'); // …e vinculada ao auth.users

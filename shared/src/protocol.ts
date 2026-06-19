@@ -7,7 +7,7 @@ import type {
 
 export type ClientMsg =
   | { t: 'hello'; token: string }
-  | { t: 'profile:update'; name?: string; avatar?: string; commander?: string; accent?: string }
+  | { t: 'profile:update'; name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string }
   // keepalive do cliente: detecta conexão morta e mantém NAT/proxy abertos
   | { t: 'ping' }
   | { t: 'queue:join' }
@@ -43,7 +43,7 @@ export type ClientMsg =
 
 export type ServerMsg =
   // content: capacidades de conteúdo ligadas no servidor (Fase 6, dark launch)
-  | { t: 'hello:ok'; profile: Profile; content?: { factions: boolean } }
+  | { t: 'hello:ok'; profile: Profile; content?: { factions: boolean; cosmetics?: boolean } }
   | { t: 'pong' }
   | { t: 'error'; message: string }
   | { t: 'profile'; profile: Profile }
@@ -61,5 +61,5 @@ export type ServerMsg =
   | { t: 'leaderboard'; entries: LeaderboardEntry[]; myRank?: number; around?: LeaderboardEntry[] }
   | { t: 'history'; entries: MatchHistoryEntry[] }
   // status da revanche: enviada / recebida (com quem) / indisponível / recusada
-  | { t: 'rematch:state'; status: 'sent' | 'incoming' | 'unavailable' | 'declined'; from?: { id: string; name: string; avatar: string } }
+  | { t: 'rematch:state'; status: 'sent' | 'incoming' | 'unavailable' | 'declined'; from?: { id: string; name: string; avatar: string; photo?: string | null } }
   | { t: 'profile:view'; profile: PublicProfile };

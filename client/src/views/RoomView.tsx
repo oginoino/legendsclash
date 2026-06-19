@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { send, useAppState } from '../store';
+import { InlineAvatar } from '../cosmetics';
 import { Chat } from '../components/Chat';
 import { LeagueBadge } from '../components/LeagueBadge';
 
@@ -47,7 +48,7 @@ export function RoomView() {
             const m = room.members[i];
             return m ? (
               <li key={m.id}>
-                <span className="avatar-lg">{m.avatar}</span>
+                <InlineAvatar className="avatar-lg" iconId={m.avatar} photo={m.photo} size={40} />
                 <strong>{m.name}</strong>
                 <LeagueBadge league={m.league} />
                 <span className="dim">{m.mmr} MMR</span>
