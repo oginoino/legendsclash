@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AVATARS } from '@legendsclash/shared';
 import {
-  closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
-  registerAccount, useAppState,
+  clearResetToken, closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
+  registerAccount, requestPasswordReset, resetPassword, useAppState,
 } from '../store';
 import { CosmeticIcon } from '../cosmetics';
 import { IcoPlay } from '../icons';
@@ -13,15 +13,16 @@ import { IcoPlay } from '../icons';
  * ranking. Convidado que cria conta herda a sessão (promoção) e pula o
  * onboarding; `profile` é só para conta criada do zero.
  */
-type Mode = 'welcome' | 'signin' | 'signup' | 'profile';
+type Mode = 'welcome' | 'signin' | 'signup' | 'profile' | 'forgot' | 'reset';
 
 export function LoginView() {
   const s = useAppState();
   const needsProfile = !!(s.token && s.profile && !s.profile.name);
   const fromGuest = !!(s.accountPrompt && s.profile);
+  const resetToken = s.resetToken;
 
   const [mode, setMode] = useState<Mode>(
-    needsProfile ? 'profile' : s.accountPrompt ? 'signup' : 'welcome',
+    resetToken ? 'reset' : needsProfile ? 'profile' : s.accountPrompt ? 'signup' : 'welcome',
   );
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState<string>(AVATARS[0].id);
@@ -29,11 +30,18 @@ export function LoginView() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "esqueci minha senha" enviado: guarda o link de dev (modo local) quando vier
+  const [forgotDone, setForgotDone] = useState<{ devLink?: string } | null>(null);
 
   // sessão restaurada com perfil incompleto: cai direto no passo final
   useEffect(() => {
     if (needsProfile) setMode('profile');
   }, [needsProfile]);
+
+  // chegou pelo link mágico: abre a tela de nova senha
+  useEffect(() => {
+    if (resetToken) setMode('reset');
+  }, [resetToken]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -66,8 +74,26 @@ export function LoginView() {
     run(() => completeProfile(name, avatar));
   }
 
+  function submitForgot(e: React.FormEvent) {
+    e.preventDefault();
+    run(async () => {
+      const res = await requestPasswordReset(email);
+      setForgotDone(res ?? {});
+    });
+  }
+
+  function submitReset(e: React.FormEvent) {
+    e.preventDefault();
+    run(async () => {
+      await resetPassword(resetToken!, password);
+      clearResetToken(); // sai do modo redefinição; adoptSession já levou à sessão nova
+    });
+  }
+
   function switchMode(next: Mode) {
     setError(null);
+    setForgotDone(null);
+    if (next !== 'forgot') setPassword('');
     setMode(next);
   }
 
@@ -186,6 +212,11 @@ export function LoginView() {
                   Criar conta nova
                 </button>
               )}
+              {mode === 'signin' && (
+                <button type="button" className="btn small ghost" onClick={() => switchMode('forgot')}>
+                  Esqueci minha senha
+                </button>
+              )}
               <button
                 type="button"
                 className="btn small ghost"
@@ -218,6 +249,88 @@ export function LoginView() {
             <button className="btn primary" disabled={busy || !name.trim()}>
               {busy ? 'Salvando…' : 'Começar a jogar'}
             </button>
+          </form>
+        )}
+
+        {mode === 'forgot' && (
+          forgotDone ? (
+            <div className="login-step-info">
+              <p>
+                Se houver uma conta com <strong>{email}</strong>, enviamos um link para
+                redefinir a senha. Confira sua caixa de entrada (e o spam).
+              </p>
+              {forgotDone.devLink && (
+                <p className="login-note">
+                  Modo local:{' '}
+                  <a href={forgotDone.devLink}>abrir link de redefinição</a>
+                </p>
+              )}
+              <button type="button" className="btn ghost" onClick={() => switchMode('signin')}>
+                ← Voltar ao login
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={submitForgot}>
+              <p className="login-step-info">
+                Informe o e-mail da sua conta: enviamos um link para você criar uma nova senha.
+              </p>
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="voce@exemplo.com"
+                  autoComplete="email"
+                  autoFocus
+                  required
+                />
+              </label>
+              {error && <p className="form-error">{error}</p>}
+              <button className="btn primary" disabled={busy}>
+                {busy ? 'Enviando…' : 'Enviar link de redefinição'}
+              </button>
+              <div className="login-links">
+                <button type="button" className="btn small ghost" onClick={() => switchMode('signin')}>
+                  ← Voltar ao login
+                </button>
+              </div>
+            </form>
+          )
+        )}
+
+        {mode === 'reset' && (
+          <form onSubmit={submitReset}>
+            <p className="login-step-info">Crie uma nova senha para a sua conta.</p>
+            <label>
+              Nova senha
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo de 8 caracteres"
+                autoComplete="new-password"
+                minLength={8}
+                autoFocus
+                required
+              />
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            <button className="btn primary" disabled={busy || password.length < 8}>
+              {busy ? 'Salvando…' : 'Salvar nova senha'}
+            </button>
+            <div className="login-links">
+              <button
+                type="button"
+                className="btn small ghost"
+                onClick={() => {
+                  clearResetToken();
+                  switchMode('signin');
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
           </form>
         )}
       </div>

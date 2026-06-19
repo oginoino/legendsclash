@@ -39,6 +39,8 @@ export interface AppState {
   accountPrompt: boolean;
   /** Conexão assumida por outra aba/dispositivo — não reconectar sozinho. */
   replaced: boolean;
+  /** Token do link mágico de redefinição (abre a tela de nova senha). */
+  resetToken: string | null;
   /** Estado da revanche pós-partida (oferta enviada/recebida/indisponível). */
   rematch: RematchState | null;
   /** Card de perfil de um oponente aberto (clique no nome). */
@@ -49,6 +51,18 @@ export interface AppState {
   cosmeticsEnabled: boolean;
   /** Facção escolhida pelo jogador (''=neutro). */
   faction: string;
+}
+
+/**
+ * Link mágico de redefinição: lê o access_token do fragment de `/auth/reset` e
+ * limpa a URL na hora (não deixa o token na barra de endereços nem no histórico).
+ */
+function readResetToken(): string | null {
+  if (location.pathname !== '/auth/reset' || !location.hash) return null;
+  const params = new URLSearchParams(location.hash.slice(1));
+  const token = params.get('type') === 'recovery' ? params.get('access_token') : null;
+  if (token) history.replaceState(null, '', '/');
+  return token;
 }
 
 let state: AppState = {
@@ -70,6 +84,7 @@ let state: AppState = {
   reportSent: false,
   accountPrompt: false,
   replaced: false,
+  resetToken: readResetToken(),
   rematch: null,
   viewedProfile: null,
   factionsEnabled: false,
@@ -112,7 +127,9 @@ export function send(msg: ClientMsg): void {
 }
 
 export function connect(): void {
-  if (!state.token || (ws && ws.readyState <= WebSocket.OPEN)) return;
+  // durante a redefinição de senha não reabrimos a sessão antiga: o reset emite
+  // uma sessão nova (adoptSession) e conecta por conta própria.
+  if (!state.token || state.resetToken || (ws && ws.readyState <= WebSocket.OPEN)) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const socket = new WebSocket(`${proto}://${location.host}/ws`);
   ws = socket;
@@ -360,6 +377,24 @@ export async function loginAccount(
   password: string,
 ): Promise<{ needsProfile: boolean }> {
   return adoptSession(await postJson('/api/auth/login', { email, password }));
+}
+
+/** Esqueci minha senha: dispara o link mágico. Resposta sempre genérica; em
+ *  modo local o servidor devolve o link (devLink) para facilitar dev/testes. */
+export async function requestPasswordReset(email: string): Promise<{ devLink?: string }> {
+  return postJson('/api/auth/forgot', { email });
+}
+
+/** Conclui a redefinição com o token do link e já entra com a senha nova. */
+export async function resetPassword(
+  token: string,
+  password: string,
+): Promise<{ needsProfile: boolean }> {
+  return adoptSession(await postJson('/api/auth/reset', { token, password }));
+}
+
+export function clearResetToken(): void {
+  setState({ resetToken: null });
 }
 
 /** Abre/fecha a tela de conta por cima da sessão de convidado. */

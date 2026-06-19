@@ -66,6 +66,53 @@ test.describe('entrada: convidado e conta', () => {
     await expect(page.locator('.profile-chip')).toContainText('Lenda');
   });
 
+  test('recuperar senha: link mágico redefine a senha e entra direto', async ({ page }) => {
+    const email = uniqueEmail('recupera');
+    const NEW_PW = 'senha-nova-98765';
+
+    // cria a conta e completa o perfil
+    await page.goto('/');
+    await page.click('button:has-text("Entrar ou criar conta")');
+    await page.click('button:has-text("Criar conta nova")');
+    await page.fill('input[type=email]', email);
+    await page.fill('input[type=password]', E2E_PASSWORD);
+    await page.click('button:has-text("Criar conta")');
+    await page.fill('input[name=name]', 'Esquecida');
+    await page.click(avatarButton('🐺'));
+    await page.click('button:has-text("Começar a jogar")');
+    await expect(page.locator('.home-main')).toBeVisible();
+
+    // sai e pede a redefinição
+    await page.click('button:has-text("Sair")');
+    await page.click('button:has-text("Entrar ou criar conta")');
+    await page.click('button:has-text("Esqueci minha senha")');
+    await page.fill('input[type=email]', email);
+    await page.click('button:has-text("Enviar link de redefinição")');
+
+    // modo local: o servidor expõe o link de dev; segue-o para a tela de nova senha
+    const devLink = page.locator('a:has-text("abrir link de redefinição")');
+    await expect(devLink).toBeVisible();
+    const href = await devLink.getAttribute('href');
+    expect(href).toContain('/auth/reset#access_token=');
+    await page.goto(href!);
+
+    await page.fill('input[type=password]', NEW_PW);
+    await page.click('button:has-text("Salvar nova senha")');
+    await expect(page.locator('.home-main')).toBeVisible(); // logou com a senha nova
+    await expect(page.locator('.profile-chip')).toContainText('Esquecida');
+
+    // a senha antiga não vale mais; a nova entra
+    await page.click('button:has-text("Sair")');
+    await page.click('button:has-text("Entrar ou criar conta")');
+    await page.fill('input[type=email]', email);
+    await page.fill('input[type=password]', E2E_PASSWORD);
+    await page.click('form button:has-text("Entrar")');
+    await expect(page.locator('.form-error')).toContainText('E-mail ou senha incorretos');
+    await page.fill('input[type=password]', NEW_PW);
+    await page.click('form button:has-text("Entrar")');
+    await expect(page.locator('.home-main')).toBeVisible();
+  });
+
   test('sessão persiste ao recarregar e relogin não repete o onboarding', async ({ browser }) => {
     const home = await loginAs(browser, 'Tenaz', '🦅');
     await home.reload();

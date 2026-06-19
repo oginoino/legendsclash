@@ -219,6 +219,92 @@ describe('auth · conta por e-mail e senha', () => {
   });
 });
 
+describe('auth · recuperação de senha (link mágico)', () => {
+  /** Extrai o token do devLink "/auth/reset#access_token=...&type=recovery". */
+  function tokenFromLink(link: string): string {
+    const params = new URLSearchParams(link.slice(link.indexOf('#') + 1));
+    return params.get('access_token') ?? '';
+  }
+
+  it('envia o link, redefine a senha e já loga; a senha nova passa e a antiga falha', async () => {
+    const { auth } = await makeAuth();
+    await auth.register('lia@exemplo.com', 'senha-antiga-1', '127.0.0.1');
+    auth.completeProfile((await auth.login('lia@exemplo.com', 'senha-antiga-1', '127.0.0.1')).token, 'Lia', 'crossed-swords');
+
+    const { devLink } = await auth.requestPasswordReset('Lia@Exemplo.com', '127.0.0.1');
+    expect(devLink).toBeTruthy(); // modo local devolve o link para dev/testes
+
+    const session = await auth.resetPassword(tokenFromLink(devLink!), 'senha-nova-2', '127.0.0.1');
+    expect(session.needsProfile).toBe(false); // conta com nome: cai direto na home
+    expect(session.profile.name).toBe('Lia');
+
+    await expect(auth.login('lia@exemplo.com', 'senha-nova-2', '127.0.0.1')).resolves.toBeDefined();
+    await expect(auth.login('lia@exemplo.com', 'senha-antiga-1', '127.0.0.1')).rejects.toThrow(
+      'E-mail ou senha incorretos.',
+    );
+  });
+
+  it('não revela se o e-mail existe: sem conta, sem link, sem erro', async () => {
+    const { auth } = await makeAuth();
+    const res = await auth.requestPasswordReset('ninguem@exemplo.com', '127.0.0.1');
+    expect(res.devLink).toBeUndefined();
+  });
+
+  it('token inválido ou reusado é recusado', async () => {
+    const { auth } = await makeAuth();
+    await auth.register('rui@exemplo.com', 'senha-antiga-1', '127.0.0.1');
+    const { devLink } = await auth.requestPasswordReset('rui@exemplo.com', '127.0.0.1');
+    const token = tokenFromLink(devLink!);
+
+    await expect(auth.resetPassword('token-falso', 'senha-nova-2', '127.0.0.1')).rejects.toThrow(
+      'Link de redefinição inválido ou expirado. Peça um novo.',
+    );
+    await auth.resetPassword(token, 'senha-nova-2', '127.0.0.1');
+    // uso único: o mesmo token não vale de novo
+    await expect(auth.resetPassword(token, 'outra-nova-3', '127.0.0.1')).rejects.toThrow(
+      'Link de redefinição inválido ou expirado. Peça um novo.',
+    );
+  });
+
+  it('exige e-mail válido e senha forte', async () => {
+    const { auth } = await makeAuth();
+    await auth.register('val@exemplo.com', 'senha-antiga-1', '127.0.0.1');
+    await expect(auth.requestPasswordReset('sem-arroba', '127.0.0.1')).rejects.toThrow(
+      'Informe um e-mail válido.',
+    );
+    const { devLink } = await auth.requestPasswordReset('val@exemplo.com', '127.0.0.1');
+    const params = new URLSearchParams(devLink!.slice(devLink!.indexOf('#') + 1));
+    await expect(
+      auth.resetPassword(params.get('access_token')!, 'curta', '127.0.0.1'),
+    ).rejects.toThrow('A senha precisa de pelo menos 8 caracteres.');
+  });
+
+  it('limita pedidos por e-mail (anti-bombing), sem revelar o estouro', async () => {
+    const { auth } = await makeAuth();
+    await auth.register('alvo@exemplo.com', 'senha-antiga-1', '127.0.0.1');
+    for (let i = 0; i < 3; i++) {
+      expect((await auth.requestPasswordReset('alvo@exemplo.com', '127.0.0.1')).devLink).toBeTruthy();
+    }
+    expect((await auth.requestPasswordReset('alvo@exemplo.com', '127.0.0.1')).devLink).toBeUndefined();
+  });
+
+  it('o link de redefinição expira', async () => {
+    vi.useFakeTimers();
+    try {
+      const { auth } = await makeAuth();
+      await auth.register('exp@exemplo.com', 'senha-antiga-1', '127.0.0.1');
+      const { devLink } = await auth.requestPasswordReset('exp@exemplo.com', '127.0.0.1');
+      const params = new URLSearchParams(devLink!.slice(devLink!.indexOf('#') + 1));
+      vi.advanceTimersByTime(31 * 60_000); // > 30 min de validade
+      await expect(
+        auth.resetPassword(params.get('access_token')!, 'senha-nova-2', '127.0.0.1'),
+      ).rejects.toThrow('Link de redefinição inválido ou expirado. Peça um novo.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('auth · rate limit por IP', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

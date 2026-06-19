@@ -9,8 +9,10 @@ export function App() {
   const s = useAppState();
 
   let view;
+  // link mágico de redefinição tem precedência (mesmo logado, troca a senha)
+  if (s.resetToken) view = <LoginView />;
   // sem sessão, onboarding pendente (nome vazio) ou convidado criando conta
-  if (!s.token || s.accountPrompt || (s.profile && !s.profile.name)) view = <LoginView />;
+  else if (!s.token || s.accountPrompt || (s.profile && !s.profile.name)) view = <LoginView />;
   else if (s.game) view = <GameView />;
   else if (s.room) view = <RoomView />;
   else view = <HomeView />;
