@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Match, type EngineResult, type MatchPlayer } from '../src/game/engine.js';
-import { CARDS, STARTING_HP, RECONNECT_GRACE_MS, DECK_SIZE, deckComposition } from '@legendsclash/shared';
+import {
+  CARDS, STARTING_HP, RECONNECT_GRACE_MS, DECK_SIZE, deckComposition,
+  CARD_OF_DAY_POOL, FACTION_TILTS, KEYWORD_GLOSSARY,
+} from '@legendsclash/shared';
 
 function players(n: number): MatchPlayer[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -839,5 +842,524 @@ describe('Fase 6: variedade de conteúdo (deck, facção, Resistência)', () => 
     m.seats[0].hp = 20; // cura acima de 10 → perde o bônus (sem acumular)
     m.endTurn('p1');
     expect(m.viewFor('p0').seats[0].board.find((c) => c.defId === 'c_renegado')!.attack).toBe(2);
+  });
+});
+
+// ─── Expansão "Maré Sem Rei" ──────────────────────────────────────
+
+describe('Drenar (lifesteal)', () => {
+  it('ataque no comandante cura o dono pelo dano causado (cap 30)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hp = 20;
+    m.seats[0].board = [{ iid: 'e1', defId: 'c_espectro', attack: 3, health: 3, baseHealth: 3, canAttack: true, attacked: false }];
+    m.attack('p0', 'e1', { seat: 1 });
+    expect(m.seats[1].hp).toBe(STARTING_HP - 3);
+    expect(m.seats[0].hp).toBe(23);
+  });
+
+  it('trade em criatura cura pelo dano efetivo e respeita o teto de 30', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hp = 29; // só há espaço para +1
+    m.seats[0].board = [{ iid: 'e1', defId: 'c_espectro', attack: 3, health: 3, baseHealth: 3, canAttack: true, attacked: false }];
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: true, attacked: false }];
+    m.attack('p0', 'e1', { seat: 1, iid: 'b1' });
+    expect(m.seats[0].hp).toBe(STARTING_HP); // curou só 1 (cap), não 3
+    expect(m.seats[0].board).toHaveLength(0); // o espectro morreu na retaliação
+  });
+
+  it('a retaliação de uma defensora com Drenar também cura o dono dela', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].hp = 20;
+    m.seats[0].board = [{ iid: 'a1', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: true, attacked: false }];
+    m.seats[1].board = [{ iid: 'h1', defId: 'c_horror', attack: 6, health: 6, baseHealth: 6, canAttack: true, attacked: false }];
+    m.attack('p0', 'a1', { seat: 1, iid: 'h1' });
+    expect(m.seats[1].hp).toBe(26); // o Horror revidou 6 e drenou 6
+  });
+
+  it('golpe com dano excedente cura só pelo poder do ataque (sem contar em dobro)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hp = 10;
+    m.seats[0].board = [{ iid: 'e1', defId: 'c_espectro', attack: 3, health: 3, baseHealth: 3, canAttack: true, attacked: false }];
+    // última criatura inimiga com 1 de vida: 1 no corpo + 2 de excedente no comandante
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_recruta', attack: 1, health: 1, baseHealth: 2, canAttack: false, attacked: false }];
+    m.attack('p0', 'e1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].hp).toBe(STARTING_HP - 2); // excedente aplicado
+    expect(m.seats[0].hp).toBe(13); // cura 3 (poder do golpe), NÃO 3 + 2 do excedente
+  });
+
+  it('golpe anulado pelo Escudo Arcano não cura (dano efetivo 0)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hp = 20;
+    m.seats[0].board = [{ iid: 'e1', defId: 'c_espectro', attack: 3, health: 3, baseHealth: 3, canAttack: true, attacked: false }];
+    m.seats[1].board = [{ iid: 's1', defId: 'c_serpente', attack: 5, health: 4, baseHealth: 4, canAttack: true, attacked: false, ward: true }];
+    m.attack('p0', 'e1', { seat: 1, iid: 's1' });
+    expect(m.seats[0].hp).toBe(20); // nada drenado
+    expect(m.seats[1].board.find((c) => c.iid === 's1')!.health).toBe(4); // serpente intacta
+    expect(m.seats[0].board).toHaveLength(0); // a retaliação de 5 matou o espectro
+  });
+});
+
+describe('Escudo Arcano (ward)', () => {
+  it('absorve o primeiro dano de combate e quebra; o segundo fere normal', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [
+      { iid: 'a1', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: true, attacked: false },
+      { iid: 'a2', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: true, attacked: false },
+    ];
+    m.seats[1].board = [{ iid: 'w1', defId: 'c_elemental', attack: 2, health: 4, baseHealth: 4, canAttack: true, attacked: false, ward: true }];
+    m.attack('p0', 'a1', { seat: 1, iid: 'w1' });
+    expect(m.seats[1].board[0].health).toBe(4); // absorvido
+    expect(m.seats[1].board[0].ward).toBe(false); // escudo quebrou
+    m.attack('p0', 'a2', { seat: 1, iid: 'w1' });
+    expect(m.seats[1].board[0].health).toBe(1); // 4 - 3
+  });
+
+  it('absorve magia direcionada (Faísca) e AoE (Tempestade)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [
+      { iid: 'w1', defId: 'c_elemental', attack: 2, health: 4, baseHealth: 4, canAttack: false, attacked: false, ward: true },
+      { iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false },
+    ];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_faisca' }, { iid: 'x2', defId: 's_tempestade' }];
+    m.seats[0].energy = 5;
+    m.playCard('p0', 'x1', { seat: 1, iid: 'w1' });
+    expect(m.seats[1].board.find((c) => c.iid === 'w1')!.health).toBe(4); // faísca absorvida
+    m.playCard('p0', 'x2');
+    expect(m.seats[1].board.find((c) => c.iid === 'w1')!.health).toBe(2); // já sem escudo: -2
+    expect(m.seats[1].board.find((c) => c.iid === 'b1')!.health).toBe(4); // golem sofreu normal
+  });
+
+  it('ward na última criatura: sem morte, sem dano excedente no comandante', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [{ iid: 'd1', defId: 'c_dragao', attack: 7, health: 7, baseHealth: 7, canAttack: true, attacked: false }];
+    m.seats[1].board = [{ iid: 'w1', defId: 'c_serpente', attack: 5, health: 4, baseHealth: 4, canAttack: false, attacked: false, ward: true }];
+    m.attack('p0', 'd1', { seat: 1, iid: 'w1' });
+    expect(m.seats[1].board).toHaveLength(1); // serpente sobreviveu
+    expect(m.seats[1].hp).toBe(STARTING_HP); // nenhum excedente atravessou
+  });
+
+  it('criatura jogada com ward nasce protegida e a view expõe o estado', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 'c_elemental' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1');
+    expect(m.viewFor('p1').seats[0].board[0].ward).toBe(true);
+  });
+});
+
+describe('gritos de batalha da expansão', () => {
+  function handPlay(m: Match, defId: string, energy = 10) {
+    m.seats[0].hand = [{ iid: 'x1', defId }];
+    m.seats[0].energy = energy;
+    m.playCard('p0', 'x1');
+  }
+
+  it('Clériga restaura 3 de vida (máx. 30)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hp = 28;
+    handPlay(m, 'c_cleriga');
+    expect(m.seats[0].hp).toBe(STARTING_HP); // 28 + 3 → cap 30
+  });
+
+  it('Sentinela compra 1 carta; com deck vazio, sofre fadiga', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    const handBefore = m.seats[0].hand.length;
+    m.seats[0].hand = [...m.seats[0].hand.slice(0, handBefore - 1), { iid: 'x1', defId: 'c_sentinela' }];
+    m.seats[0].energy = 2;
+    m.playCard('p0', 'x1');
+    expect(m.seats[0].hand.length).toBe(handBefore); // jogou 1, comprou 1
+    // deck vazio → fadiga
+    const { m: m2 } = makeMatch();
+    track(m2).start();
+    m2.seats[0].deck = [];
+    handPlay(m2, 'c_sentinela');
+    expect(m2.seats[0].fatigue).toBe(1);
+    expect(m2.seats[0].hp).toBe(STARTING_HP - 1);
+  });
+
+  it('Bardo dá +1/+1 às outras criaturas, mas não a si mesmo', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [{ iid: 'r1', defId: 'c_recruta', attack: 1, health: 2, baseHealth: 2, canAttack: false, attacked: false }];
+    handPlay(m, 'c_bardo');
+    const recruta = m.seats[0].board.find((c) => c.iid === 'r1')!;
+    const bardo = m.seats[0].board.find((c) => c.defId === 'c_bardo')!;
+    expect([recruta.attack, recruta.health, recruta.baseHealth]).toEqual([2, 3, 3]);
+    expect([bardo.attack, bardo.health]).toEqual([2, 3]); // stats de catálogo, sem buff
+  });
+
+  it('Maga causa 2 numa criatura inimiga e fizzla sem alvos', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false }];
+    handPlay(m, 'c_maga');
+    expect(m.seats[1].board[0].health).toBe(4);
+    // sem alvos: não explode
+    const { m: m2 } = makeMatch();
+    track(m2).start();
+    expect(() => {
+      m2.seats[0].hand = [{ iid: 'x1', defId: 'c_maga' }];
+      m2.seats[0].energy = 4;
+      m2.playCard('p0', 'x1');
+    }).not.toThrow();
+  });
+
+  it('Corsária dá +1 de energia dentro do turno', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 'c_corsaria' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1');
+    expect(m.seats[0].energy).toBe(2); // 3 + 1 (grito) - 2 (custo)
+  });
+
+  it('Sereia devolve criatura inimiga à mão; com a mão cheia, destrói', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false }];
+    const handBefore = m.seats[1].hand.length;
+    handPlay(m, 'c_sereia');
+    expect(m.seats[1].board).toHaveLength(0);
+    expect(m.seats[1].hand.length).toBe(handBefore + 1);
+    expect(m.seats[1].hand.some((c) => c.iid === 'b1')).toBe(true);
+    // mão cheia → destruída
+    const { m: m2 } = makeMatch();
+    track(m2).start();
+    m2.seats[1].board = [{ iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false }];
+    m2.seats[1].hand = Array.from({ length: 10 }, (_, i) => ({ iid: `h${i}`, defId: 'c_recruta' }));
+    m2.seats[0].hand = [{ iid: 'x1', defId: 'c_sereia' }];
+    m2.seats[0].energy = 4;
+    m2.playCard('p0', 'x1');
+    expect(m2.seats[1].board).toHaveLength(0);
+    expect(m2.seats[1].hand).toHaveLength(10); // não coube: destruída
+  });
+
+  it('Arquimago causa 2 a todas as criaturas inimigas e poupa as aliadas', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [{ iid: 'a1', defId: 'c_recruta', attack: 1, health: 2, baseHealth: 2, canAttack: false, attacked: false }];
+    m.seats[1].board = [
+      { iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false },
+      { iid: 'b2', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: false, attacked: false },
+    ];
+    handPlay(m, 'c_arquimago');
+    expect(m.seats[1].board.find((c) => c.iid === 'b1')!.health).toBe(4);
+    expect(m.seats[1].board.some((c) => c.iid === 'b2')).toBe(false); // o lobo (2 de vida) morreu
+    expect(m.seats[0].board.find((c) => c.iid === 'a1')!.health).toBe(2); // aliada intacta
+  });
+});
+
+describe('estertores da expansão', () => {
+  it('Fada compra 1 carta ao morrer', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [{ iid: 'f1', defId: 'c_fada', attack: 2, health: 2, baseHealth: 2, canAttack: false, attacked: false }];
+    const handBefore = m.seats[1].hand.length;
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_faisca' }];
+    m.seats[0].energy = 1;
+    m.playCard('p0', 'x1', { seat: 1, iid: 'f1' });
+    expect(m.seats[1].board).toHaveLength(0);
+    expect(m.seats[1].hand.length).toBe(handBefore + 1);
+  });
+
+  it('Cultista causa 2 no comandante inimigo ao morrer — e pode encerrar a partida', () => {
+    const { m, result } = makeMatch();
+    track(m).start();
+    m.seats[1].hp = 2;
+    m.seats[0].board = [{ iid: 'c1', defId: 'c_cultista', attack: 2, health: 2, baseHealth: 2, canAttack: true, attacked: false }];
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_campea', attack: 5, health: 5, baseHealth: 5, canAttack: false, attacked: false }];
+    // o cultista ataca a campeã e morre na retaliação → estertor acerta o comandante
+    m.attack('p0', 'c1', { seat: 1, iid: 'b1' });
+    expect(m.finished).toBe(true);
+    expect(result()!.winnerSeat).toBe(0);
+  });
+
+  it('Água-Viva: estertor em cadeia (AoE 1 pode detonar outros estertores)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [
+      { iid: 'j1', defId: 'c_aguaviva', attack: 1, health: 1, baseHealth: 3, canAttack: false, attacked: false },
+      { iid: 'b1', defId: 'c_lobo', attack: 3, health: 1, baseHealth: 2, canAttack: false, attacked: false },
+    ];
+    m.seats[0].board = [{ iid: 'j2', defId: 'c_aguaviva', attack: 1, health: 1, baseHealth: 3, canAttack: false, attacked: false }];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_faisca' }];
+    m.seats[0].energy = 1;
+    // faísca mata a água-viva inimiga → AoE 1 mata a minha → AoE 1 dela mata o lobo (1 de vida)
+    m.playCard('p0', 'x1', { seat: 1, iid: 'j1' });
+    expect(m.seats[1].board).toHaveLength(0);
+    expect(m.seats[0].board).toHaveLength(0);
+  });
+
+  it('Kraken invoca Tentáculos com Provocar, respeitando o limite da mesa', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [{ iid: 'k1', defId: 'c_kraken', attack: 6, health: 1, baseHealth: 8, canAttack: false, attacked: false }];
+    m.seats[0].board = [{ iid: 'a1', defId: 'c_dragao', attack: 7, health: 7, baseHealth: 7, canAttack: true, attacked: false }];
+    m.attack('p0', 'a1', { seat: 1, iid: 'k1' });
+    const tentacles = m.seats[1].board.filter((c) => c.defId === 'c_tentaculo');
+    expect(tentacles).toHaveLength(2);
+    expect(CARDS['c_tentaculo'].keywords).toContain('taunt');
+    // mesa quase cheia: só cabe 1 tentáculo
+    const { m: m2 } = makeMatch();
+    track(m2).start();
+    const filler = (i: number) => ({ iid: `f${i}`, defId: 'c_recruta', attack: 1, health: 2, baseHealth: 2, canAttack: false, attacked: false });
+    m2.seats[1].board = [
+      { iid: 'k1', defId: 'c_kraken', attack: 6, health: 1, baseHealth: 8, canAttack: false, attacked: false },
+      filler(1), filler(2), filler(3), filler(4), filler(5),
+    ];
+    m2.seats[0].board = [{ iid: 'a1', defId: 'c_dragao', attack: 7, health: 7, baseHealth: 7, canAttack: true, attacked: false }];
+    m2.attack('p0', 'a1', { seat: 1, iid: 'k1' });
+    expect(m2.seats[1].board).toHaveLength(6); // 5 recrutas + 1 tentáculo (o 2º não coube)
+    expect(m2.seats[1].board.filter((c) => c.defId === 'c_tentaculo')).toHaveLength(1);
+  });
+});
+
+describe('magias e táticas da expansão', () => {
+  it('Lança de Gelo causa 3 numa criatura e exige alvo inimigo', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false }];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_lanca_gelo' }];
+    m.seats[0].energy = 2;
+    expect(() => m.playCard('p0', 'x1')).toThrow('Escolha uma criatura inimiga.');
+    m.playCard('p0', 'x1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].board[0].health).toBe(3);
+  });
+
+  it('Luz de Julgamento fere a criatura e cura o comandante na mesma resolução', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hp = 20;
+    m.seats[1].board = [{ iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false }];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_julgamento' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1', { seat: 1, iid: 'b1' });
+    expect(m.seats[1].board[0].health).toBe(3);
+    expect(m.seats[0].hp).toBe(22);
+  });
+
+  it('Canto Revigorante dá +1/+1 a todas as aliadas (inclui a vida-base)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [
+      { iid: 'a1', defId: 'c_recruta', attack: 1, health: 2, baseHealth: 2, canAttack: false, attacked: false },
+      { iid: 'a2', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: false, attacked: false },
+    ];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_canto' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1');
+    for (const c of m.seats[0].board) {
+      expect(c.health).toBe(3);
+      expect(c.baseHealth).toBe(3);
+    }
+  });
+
+  it('Pacto Sombrio compra 3 e cobra 3 de vida — pode custar a partida', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    const handBefore = m.seats[0].hand.length;
+    m.seats[0].hand = [...m.seats[0].hand, { iid: 'x1', defId: 's_pacto' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1');
+    expect(m.seats[0].hand.length).toBe(handBefore + 3);
+    expect(m.seats[0].hp).toBe(STARTING_HP - 3);
+    // suicídio: vence o oponente
+    const { m: m2, result } = makeMatch();
+    track(m2).start();
+    m2.seats[0].hp = 3;
+    m2.seats[0].hand = [{ iid: 'x1', defId: 's_pacto' }];
+    m2.seats[0].energy = 3;
+    m2.playCard('p0', 'x1');
+    expect(m2.finished).toBe(true);
+    expect(result()!.winnerSeat).toBe(1);
+  });
+
+  it('Maremoto causa 3 a todas as criaturas inimigas', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[1].board = [
+      { iid: 'b1', defId: 'c_golem', attack: 3, health: 6, baseHealth: 6, canAttack: false, attacked: false },
+      { iid: 'b2', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: false, attacked: false },
+    ];
+    m.seats[0].hand = [{ iid: 'x1', defId: 's_maremoto' }];
+    m.seats[0].energy = 6;
+    m.playCard('p0', 'x1');
+    expect(m.seats[1].board.find((c) => c.iid === 'b1')!.health).toBe(3);
+    expect(m.seats[1].board.some((c) => c.iid === 'b2')).toBe(false);
+  });
+
+  it('Chamado da Matilha invoca 2 Filhotes; com a mesa quase cheia, invoca parcial', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'x1', defId: 't_matilha' }];
+    m.seats[0].energy = 2;
+    m.playCard('p0', 'x1');
+    expect(m.seats[0].board.filter((c) => c.defId === 'c_filhote')).toHaveLength(2);
+    expect(m.seats[0].board.every((c) => !c.canAttack)).toBe(true); // enjoo de invocação
+    // 5 na mesa → só cabe 1
+    const { m: m2 } = makeMatch();
+    track(m2).start();
+    m2.seats[0].board = Array.from({ length: 5 }, (_, i) => ({
+      iid: `f${i}`, defId: 'c_recruta', attack: 1, health: 2, baseHealth: 2, canAttack: false, attacked: false,
+    }));
+    m2.seats[0].hand = [{ iid: 'x1', defId: 't_matilha' }];
+    m2.seats[0].energy = 2;
+    m2.playCard('p0', 'x1');
+    expect(m2.seats[0].board).toHaveLength(6);
+    expect(m2.seats[0].board.filter((c) => c.defId === 'c_filhote')).toHaveLength(1);
+  });
+
+  it('Abordagem! dá +1 de ataque e acorda a criatura, mas não devolve ataque já gasto', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].board = [{ iid: 'a1', defId: 'c_recruta', attack: 1, health: 2, baseHealth: 2, canAttack: false, attacked: false }];
+    m.seats[0].hand = [{ iid: 'x1', defId: 't_abordagem' }];
+    m.seats[0].energy = 2;
+    m.playCard('p0', 'x1', { seat: 0, iid: 'a1' });
+    const c = m.seats[0].board[0];
+    expect(c.attack).toBe(2);
+    expect(c.canAttack).toBe(true); // pronta para atacar já
+    // quem já atacou não ganha segundo ataque
+    const { m: m2 } = makeMatch();
+    track(m2).start();
+    m2.seats[0].board = [{ iid: 'a1', defId: 'c_lobo', attack: 3, health: 2, baseHealth: 2, canAttack: true, attacked: true }];
+    m2.seats[0].hand = [{ iid: 'x1', defId: 't_abordagem' }];
+    m2.seats[0].energy = 2;
+    m2.playCard('p0', 'x1', { seat: 0, iid: 'a1' });
+    expect(() => m2.attack('p0', 'a1', { seat: 1 })).toThrow('já atacou');
+  });
+
+  it('Mapa do Saque compra 1 carta e devolve a energia gasta', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    const handBefore = m.seats[0].hand.length;
+    m.seats[0].hand = [...m.seats[0].hand, { iid: 'x1', defId: 't_saque' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'x1');
+    expect(m.seats[0].hand.length).toBe(handBefore + 1); // jogou 1, comprou 1... e ganhou 1 no saldo
+    expect(m.seats[0].energy).toBe(3); // 3 + 1 (efeito) - 1 (custo)
+  });
+});
+
+describe('artefatos permanentes da expansão', () => {
+  it('Orbe de Éter amplifica magias de dano e empilha', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [
+      { iid: 'o1', defId: 'a_orbe' }, { iid: 'o2', defId: 'a_orbe' }, { iid: 'x1', defId: 's_faisca' },
+    ];
+    m.seats[0].energy = 10;
+    m.playCard('p0', 'o1');
+    m.playCard('p0', 'o2');
+    expect(m.seats[0].artifacts.filter((a) => a === 'a_orbe')).toHaveLength(2);
+    m.playCard('p0', 'x1', { seat: 1 }); // mesa inimiga vazia → comandante
+    expect(m.seats[1].hp).toBe(STARTING_HP - 4); // 2 base + 1 por orbe
+  });
+
+  it('Relicário da Aurora restaura 1 de vida no início do turno (cap 30)', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'r1', defId: 'a_relicario' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'r1');
+    expect(m.seats[0].artifacts).toContain('a_relicario');
+    m.seats[0].hp = 25;
+    m.endTurn('p0');
+    m.endTurn('p1'); // volta para o p0 → regen no beginTurn
+    expect(m.seats[0].hp).toBe(26);
+    m.seats[0].hp = STARTING_HP;
+    m.endTurn('p0');
+    m.endTurn('p1');
+    expect(m.seats[0].hp).toBe(STARTING_HP); // não passa do teto
+  });
+
+  it('Figura de Proa concede 1 de escudo por turno até o teto de 10', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    m.seats[0].hand = [{ iid: 'f1', defId: 'a_figura' }];
+    m.seats[0].energy = 3;
+    m.playCard('p0', 'f1');
+    m.endTurn('p0');
+    m.endTurn('p1');
+    expect(m.seats[0].shield).toBe(1);
+    m.seats[0].shield = 10;
+    m.endTurn('p0');
+    m.endTurn('p1');
+    expect(m.seats[0].shield).toBe(10); // teto: não acumula além de 10
+  });
+});
+
+describe('invariantes do catálogo e da composição (expansão)', () => {
+  const count = (d: Array<[string, number]>) => d.reduce((s, [, n]) => s + n, 0);
+
+  it('deckComposition soma 30 para as 5 facções, com e sem Resistência', () => {
+    const factions = [undefined, ...Object.keys(FACTION_TILTS)];
+    for (const f of factions) {
+      expect(count(deckComposition(f))).toBe(DECK_SIZE);
+      expect(count(deckComposition(f, true))).toBe(DECK_SIZE);
+    }
+  });
+
+  it('a Maré Sem Rei tem tilt próprio e muda a composição', () => {
+    expect(FACTION_TILTS.mares).toBeDefined();
+    const mares = deckComposition('mares');
+    expect(JSON.stringify(mares)).not.toBe(JSON.stringify(deckComposition()));
+    expect(mares.some(([id]) => id === 'c_kraken')).toBe(true);
+  });
+
+  it('toda keyword usada no catálogo tem entrada no glossário', () => {
+    for (const def of Object.values(CARDS)) {
+      for (const k of def.keywords ?? []) {
+        expect(KEYWORD_GLOSSARY[k], `keyword "${k}" de ${def.id} sem glossário`).toBeDefined();
+      }
+    }
+  });
+
+  it('toda carta citada nos tilts existe no catálogo (remove e add)', () => {
+    for (const [faction, swaps] of Object.entries(FACTION_TILTS)) {
+      for (const { remove, add } of swaps) {
+        expect(CARDS[remove], `${faction}: remove ${remove} inexistente`).toBeDefined();
+        expect(CARDS[add], `${faction}: add ${add} inexistente`).toBeDefined();
+        expect(CARDS[add].token, `${faction}: add ${add} é token`).not.toBe(true);
+      }
+    }
+  });
+
+  it('toda criatura tem ataque e vida definidos; efeitos citados resolvem', () => {
+    for (const def of Object.values(CARDS)) {
+      if (def.type === 'creature') {
+        expect(def.attack, `${def.id} sem attack`).toBeTypeOf('number');
+        expect(def.health, `${def.id} sem health`).toBeTypeOf('number');
+      }
+    }
+  });
+
+  it('a carta do dia só sorteia cartas existentes e não-token', () => {
+    for (const id of CARD_OF_DAY_POOL) {
+      expect(CARDS[id], `carta do dia inexistente: ${id}`).toBeDefined();
+      expect(CARDS[id].token, `carta do dia é token: ${id}`).not.toBe(true);
+    }
+  });
+
+  it('cartas novas de magia/tática resolvem sem "Efeito desconhecido"', () => {
+    // smoke test: joga cada magia/tática targetless nova num tabuleiro vazio
+    for (const defId of ['s_canto', 's_pacto', 's_maremoto', 't_matilha', 't_saque']) {
+      const { m } = makeMatch();
+      track(m).start();
+      m.seats[0].hand = [{ iid: 'x1', defId }];
+      m.seats[0].energy = 10;
+      expect(() => m.playCard('p0', 'x1'), defId).not.toThrow();
+    }
   });
 });
