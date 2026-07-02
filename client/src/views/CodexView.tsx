@@ -20,7 +20,7 @@ const TYPE_LABEL: Record<CardType, string> = {
   tactic: 'Tática',
 };
 
-const FACTION_ORDER = ['vanguarda', 'silvanos', 'eter', 'profundezas'];
+const FACTION_ORDER = ['vanguarda', 'silvanos', 'eter', 'profundezas', 'mares'];
 
 export function CodexView({ onClose }: { onClose: () => void }) {
   const [factionFilter, setFactionFilter] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
               {WORLD.intro.map((p, i) => <p key={i}>{p}</p>)}
             </div>
 
-            <h3 className="codex-section-title">As Quatro Tradições</h3>
+            <h3 className="codex-section-title">As Cinco Tradições</h3>
             <div className="codex-factions">
               {FACTION_ORDER.map((fid) => {
                 const f = FACTIONS[fid];

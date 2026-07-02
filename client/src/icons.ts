@@ -15,7 +15,8 @@ import {
   GiMoneyStack, GiTwoCoins, GiFlagObjective, GiCardPickup, GiPokerHand, GiCardRandom, GiStarMedal,
   GiTrophy, GiRibbonMedal, GiTargetArrows, GiPodiumWinner, GiPodiumSecond, GiPodiumThird, GiFlame,
   GiPadlock, GiRoundStar, GiSunbeams, GiStarSwirl, GiWolfHead, GiCrystalBall, GiDragonHead,
-  GiShakingHands, GiBrokenHeart, GiSunglasses, GiCrenelCrown, GiThumbUp,
+  GiShakingHands, GiBrokenHeart, GiSunglasses, GiCrenelCrown, GiThumbUp, GiWaveCrest,
+  GiMagicShield,
 } from 'react-icons/gi';
 
 export {
@@ -49,6 +50,7 @@ export {
   GiCrossedSwords as IcoAttack,
   GiSwordWound as IcoOverflow, // dano excedente
   GiShield as IcoShield, // escudo / Provocar / defesa
+  GiMagicShield as IcoWard, // Escudo Arcano (ward) ativo na criatura
   GiDeathSkull as IcoDeath, // morte / fadiga
   GiSkullCrossedBones as IcoLethal,
   GiUpgrade as IcoBuff,
@@ -107,6 +109,7 @@ export const SIGIL_ICONS: Record<string, IconType> = {
   wolf: GiWolfHead,
   arcane: GiCrystalBall,
   dragon: GiDragonHead,
+  tide: GiWaveCrest,
   shield: GiShield,
   death: GiDeathSkull,
 };

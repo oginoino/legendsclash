@@ -43,6 +43,8 @@ interface Creature extends CardInstance {
   attacked: boolean;
   /** Resistência (comeback): bônus de ataque ativo enquanto o dono está em ≤10 de vida. */
   comebackOn?: boolean;
+  /** Escudo Arcano (ward): anula o próximo dano que a criatura sofreria; quebra ao usar. */
+  ward?: boolean;
 }
 
 interface Seat {
@@ -56,6 +58,12 @@ interface Seat {
   board: Creature[];
   artifacts: string[];
   attackBonus: number;
+  /** Orbe de Éter: bônus de dano das magias do assento. */
+  spellBonus: number;
+  /** Relicário da Aurora: vida restaurada no início de cada turno do assento. */
+  regen: number;
+  /** Figura de Proa: escudo concedido no início de cada turno (teto MAX_ARTIFACT_SHIELD). */
+  shieldRegen: number;
   fatigue: number;
   connected: boolean;
   out: boolean;
@@ -90,6 +98,8 @@ const MULLIGAN_SECONDS = 30;
 const MAX_TURNS = 40;
 /** Pausa antes do bot de treino agir, para a jogada dele ser legível. */
 const BOT_TURN_DELAY_MS = 750;
+/** Teto do escudo acumulável por artefato (Figura de Proa) — evita tartaruga infinita. */
+const MAX_ARTIFACT_SHIELD = 10;
 
 let nextIid = 1;
 function newIid(): string {
@@ -159,6 +169,9 @@ export class Match {
       board: [],
       artifacts: [],
       attackBonus: 0,
+      spellBonus: 0,
+      regen: 0,
+      shieldRegen: 0,
       fatigue: 0,
       connected: true,
       out: false,
@@ -263,6 +276,18 @@ export class Match {
     // Fase de Energia: +1 ponto, máx. 10 (energia incremental por design)
     seat.maxEnergy = Math.min(MAX_ENERGY, seat.maxEnergy + 1);
     seat.energy = seat.maxEnergy;
+
+    // Artefatos com efeito por turno (expansão Maré Sem Rei)
+    if (seat.regen > 0 && seat.hp > 0 && seat.hp < STARTING_HP) {
+      const healed = Math.min(STARTING_HP - seat.hp, seat.regen);
+      seat.hp += healed;
+      this.addLog(`${CARDS['a_relicario'].name} restaurou ${healed} de vida a ${seat.player.name}`);
+    }
+    if (seat.shieldRegen > 0 && seat.shield < MAX_ARTIFACT_SHIELD) {
+      const gained = Math.min(MAX_ARTIFACT_SHIELD - seat.shield, seat.shieldRegen);
+      seat.shield += gained;
+      this.addLog(`${CARDS['a_figura'].name} concedeu ${gained} de escudo a ${seat.player.name}`);
+    }
 
     // Fase de Compra
     this.draw(seat);
@@ -394,9 +419,10 @@ export class Match {
           // Investida (charge) ataca já; senão, enjoo de invocação até o próximo turno.
           canAttack: keywords.includes('charge'),
           attacked: false,
+          ward: keywords.includes('ward') || undefined,
         });
         this.addLog(`${seat.player.name} invocou ${def.name}`);
-        if (keywords.includes('battlecry')) this.triggerBattlecry(idx, def.id);
+        if (keywords.includes('battlecry')) this.triggerBattlecry(idx, def.id, card.iid);
         break;
       }
       case 'spell':
@@ -408,6 +434,15 @@ export class Match {
           seat.shield += 4;
         } else if (def.id === 'a_estandarte') {
           seat.attackBonus += 1;
+          seat.artifacts.push(def.id);
+        } else if (def.id === 'a_relicario') {
+          seat.regen += 1;
+          seat.artifacts.push(def.id);
+        } else if (def.id === 'a_orbe') {
+          seat.spellBonus += 1;
+          seat.artifacts.push(def.id);
+        } else if (def.id === 'a_figura') {
+          seat.shieldRegen += 1;
           seat.artifacts.push(def.id);
         }
         this.addLog(`${seat.player.name} equipou ${def.name}`);
@@ -442,7 +477,8 @@ export class Match {
     switch (defId) {
       case 's_faisca':
       case 's_bola_de_fogo': {
-        const dmg = defId === 's_faisca' ? 2 : 5;
+        // Orbe de Éter: magias de dano do assento causam +1 por orbe equipado.
+        const dmg = (defId === 's_faisca' ? 2 : 5) + caster.spellBonus;
         if (!target || target.seat === casterIdx) throw new GameError('Escolha um alvo inimigo.');
         const enemy = this.seats[target.seat];
         if (!enemy || enemy.out) throw new GameError('Alvo inválido.');
@@ -454,8 +490,10 @@ export class Match {
         if (target.iid) {
           const creature = enemy.board.find((c) => c.iid === target.iid);
           if (!creature) throw new GameError('Alvo inválido.');
-          creature.health -= dmg;
-          this.addLog(`${def.name} causou ${dmg} de dano em ${this.creatureLabel(enemy, creature)}`);
+          const dealt = this.hurtCreature(enemy, creature, dmg);
+          if (dealt > 0) {
+            this.addLog(`${def.name} causou ${dealt} de dano em ${this.creatureLabel(enemy, creature)}`);
+          }
           this.cleanupBoard(enemy);
         } else {
           this.damagePlayer(enemy, dmg);
@@ -471,18 +509,53 @@ export class Match {
       case 's_tempestade': {
         // AoE: 2 de dano a TODAS as criaturas inimigas (pune go-wide; ferramenta
         // de virada). Sem alvo — atinge todos os assentos inimigos.
-        let hit = 0;
-        this.seats.forEach((s, i) => {
-          if (i === casterIdx || s.out) return;
-          for (const c of s.board) {
-            c.health -= 2;
-            hit++;
-          }
-          this.cleanupBoard(s);
-        });
+        const hit = this.damageAllEnemyCreatures(casterIdx, 2 + caster.spellBonus);
         this.addLog(`${def.name} atingiu ${hit} criatura(s) inimiga(s)`);
         break;
       }
+      case 's_maremoto': {
+        // Versão pesada da Tempestade (Maré Sem Rei): 3 de dano em todas.
+        const hit = this.damageAllEnemyCreatures(casterIdx, 3 + caster.spellBonus);
+        this.addLog(`${def.name} atingiu ${hit} criatura(s) inimiga(s)`);
+        break;
+      }
+      case 's_lanca_gelo': {
+        const { seat, creature } = enemyCreature();
+        const dealt = this.hurtCreature(seat, creature, 3 + caster.spellBonus);
+        if (dealt > 0) {
+          this.addLog(`${def.name} causou ${dealt} de dano em ${this.creatureLabel(seat, creature)}`);
+        }
+        this.cleanupBoard(seat);
+        break;
+      }
+      case 's_julgamento': {
+        const { seat, creature } = enemyCreature();
+        const dealt = this.hurtCreature(seat, creature, 3 + caster.spellBonus);
+        if (dealt > 0) {
+          this.addLog(`${def.name} causou ${dealt} de dano em ${this.creatureLabel(seat, creature)}`);
+        }
+        this.cleanupBoard(seat);
+        caster.hp = Math.min(STARTING_HP, caster.hp + 2);
+        this.addLog(`${caster.player.name} restaurou 2 de vida`);
+        break;
+      }
+      case 's_canto': {
+        for (const c of caster.board) {
+          c.attack += 1;
+          c.health += 1;
+          c.baseHealth += 1;
+        }
+        this.addLog(`${def.name}: as criaturas de ${caster.player.name} ganharam +1/+1`);
+        break;
+      }
+      case 's_pacto':
+        // Custo em vida (como a fadiga): não passa pelo escudo — é o preço do pacto.
+        this.draw(caster);
+        this.draw(caster);
+        this.draw(caster);
+        caster.hp -= 3;
+        this.addLog(`${caster.player.name} comprou 3 cartas e pagou 3 de vida ao Vazio`);
+        break;
       case 's_fortalecer': {
         if (!target || target.seat !== casterIdx || !target.iid) {
           throw new GameError('Escolha uma criatura aliada.');
@@ -515,19 +588,31 @@ export class Match {
         break;
       case 't_recuo': {
         const { seat, creature } = enemyCreature();
-        // rótulo calculado antes de remover: ainda inclui as cópias idênticas
-        const label = this.creatureLabel(seat, creature);
-        seat.board = seat.board.filter((c) => c.iid !== creature.iid);
-        if (seat.hand.length < MAX_HAND) {
-          seat.hand.push({ iid: creature.iid, defId: creature.defId });
-          this.addLog(`${label} foi devolvida à mão de ${seat.player.name}`);
-        } else {
-          // Mão cheia: a criatura não cabe e é destruída (mesma convenção honesta
-          // da queima por compra em draw()). O log antes mentia "devolvida à mão".
-          this.addLog(`${label} não coube na mão cheia de ${seat.player.name} e foi destruída`);
-        }
+        this.bounceToHand(seat, creature);
         break;
       }
+      case 't_matilha':
+        this.summonToken(caster, 'c_filhote');
+        this.summonToken(caster, 'c_filhote');
+        this.addLog(`${caster.player.name} chamou a matilha`);
+        break;
+      case 't_abordagem': {
+        if (!target || target.seat !== casterIdx || !target.iid) {
+          throw new GameError('Escolha uma criatura aliada.');
+        }
+        const creature = caster.board.find((c) => c.iid === target.iid);
+        if (!creature) throw new GameError('Alvo inválido.');
+        creature.attack += 1;
+        // acorda a criatura (enjoo de invocação), mas não devolve ataque já gasto
+        if (!creature.attacked) creature.canAttack = true;
+        this.addLog(`${this.creatureLabel(caster, creature)} ganhou +1 de ataque e está pronta para a abordagem`);
+        break;
+      }
+      case 't_saque':
+        this.draw(caster);
+        caster.energy = Math.min(MAX_ENERGY, caster.energy + 1);
+        this.addLog(`${caster.player.name} seguiu o mapa: +1 carta e +1 de energia`);
+        break;
       default:
         throw new GameError('Efeito desconhecido.');
     }
@@ -567,19 +652,26 @@ export class Match {
       const wasLast = enemy.board.length === 1;
       const excess = power - defender.health;
       // Combate simultâneo: cada criatura causa seu ataque na outra.
+      // O Escudo Arcano (ward) pode anular qualquer um dos dois lados.
       const retaliation = defender.attack + enemy.attackBonus;
-      defender.health -= power;
-      attacker.health -= retaliation;
-      const defenderDied = defender.health <= 0;
-      this.bumpCreature(seat, attacker, power, defenderDied ? 1 : 0);
       this.addLog(`${attackerName} atacou ${defenderName}`);
-      if (retaliation > 0) {
-        this.addLog(`${defenderName} revidou: ${attackerName} sofreu ${retaliation} de dano`);
+      const dealtToDefender = this.hurtCreature(enemy, defender, power);
+      const dealtToAttacker = this.hurtCreature(seat, attacker, retaliation);
+      const defenderDied = defender.health <= 0;
+      this.bumpCreature(seat, attacker, dealtToDefender, defenderDied ? 1 : 0);
+      if (dealtToAttacker > 0) {
+        this.addLog(`${defenderName} revidou: ${attackerName} sofreu ${dealtToAttacker} de dano`);
       }
+      // Drenar (lifesteal): cada lado cura o próprio dono pelo dano que causou.
+      this.lifestealHeal(seat, attacker, dealtToDefender);
+      this.lifestealHeal(enemy, defender, dealtToAttacker);
       this.cleanupBoard(seat);
       this.cleanupBoard(enemy);
       // Dano excedente: ao destruir a última criatura em campo, o saldo do
       // golpe (não a retaliação) desconta dos pontos de vida do comandante.
+      // (Ward anulou o golpe ⇒ defenderDied é falso ⇒ sem excedente.)
+      // (O Drenar não cura de novo aqui: a cura pelo poder cheio do golpe já
+      // inclui a parcela que excedeu — somar o excedente contaria em dobro.)
       if (wasLast && defenderDied && excess > 0) {
         this.damagePlayer(enemy, excess);
         seat.stats.damageDealt += excess;
@@ -590,6 +682,7 @@ export class Match {
       seat.stats.damageDealt += power;
       this.bumpCreature(seat, attacker, power, 0);
       this.addLog(`${attackerName} causou ${power} de dano em ${enemy.player.name}`);
+      this.lifestealHeal(seat, attacker, power);
     }
 
     attacker.attacked = true;
@@ -667,40 +760,195 @@ export class Match {
     }
   }
 
+  // ─── Helpers de efeito (expansão Maré Sem Rei) ──────────────────
+
+  /**
+   * Dano a uma criatura, ciente do Escudo Arcano (ward): o primeiro dano é
+   * anulado e quebra o escudo. Retorna o dano efetivo. NÃO limpa a mesa —
+   * quem chama decide quando rodar cleanupBoard (permite AoE em lote).
+   */
+  private hurtCreature(owner: Seat, creature: Creature, amount: number): number {
+    if (amount <= 0) return 0;
+    if (creature.ward) {
+      creature.ward = false;
+      this.addLog(`O Escudo Arcano de ${this.creatureLabel(owner, creature)} absorveu o golpe`);
+      return 0;
+    }
+    creature.health -= amount;
+    return amount;
+  }
+
+  /** Drenar (lifesteal): a criatura cura o dono pelo dano que causou (máx. 30). */
+  private lifestealHeal(owner: Seat, creature: Creature, dealt: number): void {
+    if (dealt <= 0 || !CARDS[creature.defId].keywords?.includes('lifesteal')) return;
+    if (owner.out || owner.hp <= 0) return; // não ressuscita quem já caiu
+    const healed = Math.min(STARTING_HP - owner.hp, dealt);
+    if (healed <= 0) return;
+    owner.hp += healed;
+    this.addLog(`Drenar: ${CARDS[creature.defId].name} restaurou ${healed} de vida a ${owner.player.name}`);
+  }
+
+  /** Invoca um token/substituto respeitando o limite da mesa. */
+  private summonToken(seat: Seat, defId: string): boolean {
+    if (seat.board.length >= MAX_BOARD) return false;
+    const def = CARDS[defId];
+    const keywords = def.keywords ?? [];
+    seat.board.push({
+      iid: newIid(),
+      defId,
+      attack: def.attack!,
+      health: def.health!,
+      baseHealth: def.health!,
+      canAttack: false,
+      attacked: false,
+      ward: keywords.includes('ward') || undefined,
+    });
+    return true;
+  }
+
+  /** AoE nas criaturas de todos os assentos inimigos. Retorna quantas foram atingidas. */
+  private damageAllEnemyCreatures(casterIdx: number, dmg: number): number {
+    let hit = 0;
+    this.seats.forEach((s, i) => {
+      if (i === casterIdx || s.out) return;
+      for (const c of [...s.board]) {
+        this.hurtCreature(s, c, dmg);
+        hit++;
+      }
+      this.cleanupBoard(s);
+    });
+    return hit;
+  }
+
+  /** Sorteia uma criatura inimiga (arqueira/maga/sereia). Null se a mesa está vazia. */
+  private randomEnemyCreature(casterIdx: number): { seat: Seat; creature: Creature } | null {
+    const targets: Array<{ seat: Seat; creature: Creature }> = [];
+    this.seats.forEach((s, i) => {
+      if (i === casterIdx || s.out) return;
+      for (const c of s.board) targets.push({ seat: s, creature: c });
+    });
+    if (!targets.length) return null;
+    return targets[randomInt(targets.length)];
+  }
+
+  /** Devolve uma criatura à mão do dono; mão cheia destrói (convenção do Recuo). */
+  private bounceToHand(seat: Seat, creature: Creature): void {
+    // rótulo calculado antes de remover: ainda inclui as cópias idênticas
+    const label = this.creatureLabel(seat, creature);
+    seat.board = seat.board.filter((c) => c.iid !== creature.iid);
+    if (seat.hand.length < MAX_HAND) {
+      seat.hand.push({ iid: creature.iid, defId: creature.defId });
+      this.addLog(`${label} foi devolvida à mão de ${seat.player.name}`);
+    } else {
+      // Mão cheia: a criatura não cabe e é destruída (mesma convenção honesta
+      // da queima por compra em draw()).
+      this.addLog(`${label} não coube na mão cheia de ${seat.player.name} e foi destruída`);
+    }
+  }
+
   // ─── Gatilhos de palavras-chave (battlecry / deathrattle) ───────
 
   /** Grito de Batalha: efeito ao invocar (targetless, sem mudar a UI de alvo). */
-  private triggerBattlecry(casterIdx: number, defId: string): void {
-    if (defId === 'c_arqueira') {
-      // dispara 1 de dano numa criatura inimiga aleatória (fizzla sem alvos)
-      const targets: Array<{ seat: Seat; creature: Creature }> = [];
-      this.seats.forEach((s, i) => {
-        if (i === casterIdx || s.out) return;
-        for (const c of s.board) targets.push({ seat: s, creature: c });
-      });
-      if (!targets.length) return;
-      const pick = targets[randomInt(targets.length)];
-      pick.creature.health -= 1;
-      this.addLog(`Grito de Batalha: a flecha causou 1 de dano em ${this.creatureLabel(pick.seat, pick.creature)}`);
-      this.cleanupBoard(pick.seat);
+  private triggerBattlecry(casterIdx: number, defId: string, selfIid: string): void {
+    const caster = this.seats[casterIdx];
+    switch (defId) {
+      case 'c_arqueira': {
+        // dispara 1 de dano numa criatura inimiga aleatória (fizzla sem alvos)
+        const pick = this.randomEnemyCreature(casterIdx);
+        if (!pick) return;
+        const dealt = this.hurtCreature(pick.seat, pick.creature, 1);
+        if (dealt > 0) {
+          this.addLog(`Grito de Batalha: a flecha causou 1 de dano em ${this.creatureLabel(pick.seat, pick.creature)}`);
+        }
+        this.cleanupBoard(pick.seat);
+        break;
+      }
+      case 'c_maga': {
+        const pick = this.randomEnemyCreature(casterIdx);
+        if (!pick) return;
+        const dealt = this.hurtCreature(pick.seat, pick.creature, 2);
+        if (dealt > 0) {
+          this.addLog(`Grito de Batalha: a maga causou 2 de dano em ${this.creatureLabel(pick.seat, pick.creature)}`);
+        }
+        this.cleanupBoard(pick.seat);
+        break;
+      }
+      case 'c_arquimago': {
+        const hit = this.damageAllEnemyCreatures(casterIdx, 2);
+        this.addLog(`Grito de Batalha: a Fratura sangrou sobre ${hit} criatura(s) inimiga(s)`);
+        break;
+      }
+      case 'c_cleriga':
+        caster.hp = Math.min(STARTING_HP, caster.hp + 3);
+        this.addLog(`Grito de Batalha: ${caster.player.name} restaurou 3 de vida`);
+        break;
+      case 'c_sentinela':
+        this.draw(caster);
+        this.addLog(`Grito de Batalha: ${caster.player.name} comprou 1 carta`);
+        break;
+      case 'c_bardo': {
+        let buffed = 0;
+        for (const c of caster.board) {
+          if (c.iid === selfIid) continue; // a canção não afina o próprio bardo
+          c.attack += 1;
+          c.health += 1;
+          c.baseHealth += 1;
+          buffed++;
+        }
+        if (buffed > 0) this.addLog(`Grito de Batalha: a canção deu +1/+1 a ${buffed} criatura(s)`);
+        break;
+      }
+      case 'c_corsaria':
+        caster.energy = Math.min(MAX_ENERGY, caster.energy + 1);
+        this.addLog(`Grito de Batalha: ${caster.player.name} ganhou 1 de energia`);
+        break;
+      case 'c_sereia': {
+        const pick = this.randomEnemyCreature(casterIdx);
+        if (!pick) return;
+        this.addLog('Grito de Batalha: o canto da sereia ecoou');
+        this.bounceToHand(pick.seat, pick.creature);
+        break;
+      }
     }
   }
 
   /** Estertor: efeito ao morrer (targetless). */
   private triggerDeathrattle(seat: Seat, creature: Creature): void {
-    if (creature.defId === 'c_cavaleiro') {
-      if (seat.board.length >= MAX_BOARD) return;
-      const def = CARDS['c_recruta'];
-      seat.board.push({
-        iid: newIid(),
-        defId: 'c_recruta',
-        attack: def.attack!,
-        health: def.health!,
-        baseHealth: def.health!,
-        canAttack: false,
-        attacked: false,
-      });
-      this.addLog(`Estertor: um ${def.name} toma o lugar de ${CARDS['c_cavaleiro'].name}`);
+    switch (creature.defId) {
+      case 'c_cavaleiro':
+        if (this.summonToken(seat, 'c_recruta')) {
+          this.addLog(`Estertor: um ${CARDS['c_recruta'].name} toma o lugar de ${CARDS['c_cavaleiro'].name}`);
+        }
+        break;
+      case 'c_fada':
+        this.draw(seat);
+        this.addLog(`Estertor: ${seat.player.name} comprou 1 carta`);
+        break;
+      case 'c_cultista': {
+        const ownerIdx = this.seats.indexOf(seat);
+        this.seats.forEach((s, i) => {
+          if (i === ownerIdx || s.out) return;
+          this.damagePlayer(s, 2);
+          seat.stats.damageDealt += 2;
+          this.addLog(`Estertor: ${CARDS['c_cultista'].name} causou 2 de dano em ${s.player.name}`);
+        });
+        break;
+      }
+      case 'c_aguaviva': {
+        const ownerIdx = this.seats.indexOf(seat);
+        const hit = this.damageAllEnemyCreatures(ownerIdx, 1);
+        if (hit > 0) this.addLog(`Estertor: o clarão da água-viva atingiu ${hit} criatura(s)`);
+        break;
+      }
+      case 'c_kraken': {
+        let summoned = 0;
+        if (this.summonToken(seat, 'c_tentaculo')) summoned++;
+        if (this.summonToken(seat, 'c_tentaculo')) summoned++;
+        if (summoned > 0) {
+          this.addLog(`Estertor: ${summoned} Tentáculo(s) do Kraken emergem em seu lugar`);
+        }
+        break;
+      }
     }
   }
 
@@ -886,6 +1134,7 @@ export class Match {
         health: c.health,
         baseHealth: c.baseHealth,
         canAttack: c.canAttack && !c.attacked,
+        ward: c.ward || undefined,
       })),
       artifacts: s.artifacts,
       attackBonus: s.attackBonus,

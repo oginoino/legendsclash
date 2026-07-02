@@ -6,7 +6,7 @@ import { Avatar, CosmeticIcon, TauntIcon, accentVars } from '../cosmetics';
 import {
   IcoAddFriend, IcoAttack, IcoBanner, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
   IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHint, IcoLethal, IcoMedal,
-  IcoOverflow, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap,
+  IcoOverflow, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap, IcoWard,
   IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
 } from '../icons';
 import { CardArt } from '../components/CardArt';
@@ -102,7 +102,9 @@ interface Bubble {
   text: string;
   at: number;
 }
-const SPELL_DMG: Record<string, number> = { s_faisca: 2, s_bola_de_fogo: 5 };
+const SPELL_DMG: Record<string, number> = {
+  s_faisca: 2, s_bola_de_fogo: 5, s_lanca_gelo: 3, s_julgamento: 3,
+};
 
 /** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
@@ -473,29 +475,34 @@ export function GameView() {
       const defender = enemy.board.find((c) => c.iid === target.iid);
       if (!defender) return null;
       if (mustHitTaunt && !CARDS[defender.defId].keywords?.includes('taunt')) return null;
-      const retaliation = defender.attack + enemy.attackBonus;
-      const dies = defender.health <= power;
+      // Escudo Arcano (ward): o primeiro dano de qualquer lado é anulado —
+      // a prévia espelha o hurtCreature do servidor para não prometer morte.
+      const dealt = defender.ward ? 0 : power;
+      const retaliation = selectedAttacker.ward ? 0 : defender.attack + enemy.attackBonus;
+      const dies = dealt > 0 && defender.health <= dealt;
       // dano excedente: só quando a defensora morta era a última criatura
       const overflow = dies && enemy.board.length === 1 ? Math.max(0, power - defender.health) : 0;
       return {
-        targetDmg: power,
+        targetDmg: dealt,
         targetDies: dies,
         overflow: overflow > 0 ? overflow : undefined,
         lethal: overflow > 0 && overflow >= enemy.hp + enemy.shield,
         selfDmg: retaliation,
-        selfDies: selectedAttacker.health <= retaliation,
+        selfDies: retaliation > 0 && selectedAttacker.health <= retaliation,
         attackerIid: selectedAttacker.iid,
       };
     }
     if (selectedHandDef && SPELL_DMG[selectedHandDef.id] !== undefined) {
-      const dmg = SPELL_DMG[selectedHandDef.id];
+      // Orbe de Éter: magias de dano do assento ganham +1 por orbe equipado
+      const dmg = SPELL_DMG[selectedHandDef.id] + me!.artifacts.filter((a) => a === 'a_orbe').length;
       if (target.kind === 'face') {
         if (faceShielded && !selectedHandDef.pierce) return null;
         return { targetDmg: dmg, lethal: dmg >= enemy.hp + enemy.shield };
       }
       const victim = enemy.board.find((c) => c.iid === target.iid);
       if (!victim) return null;
-      return { targetDmg: dmg, targetDies: victim.health <= dmg };
+      const dealt = victim.ward ? 0 : dmg;
+      return { targetDmg: dealt, targetDies: dealt > 0 && victim.health <= dealt };
     }
     return null;
   }
@@ -1336,6 +1343,9 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >
       {isTaunt && <span className="taunt-badge" title="Provocar"><IcoShield /></span>}
+      {c.ward && (
+        <span className="ward-badge" title="Escudo Arcano: o próximo dano será anulado"><IcoWard /></span>
+      )}
       {posIndex && (
         <span className="pos-badge" title={`Posição ${posIndex} na mesa — cópia idêntica em campo`}>
           {posIndex}

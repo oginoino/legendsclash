@@ -114,6 +114,8 @@ export interface CreatureOnBoard {
   health: number;
   baseHealth: number;
   canAttack: boolean;
+  /** Escudo Arcano (ward) ainda ativo — o cliente sinaliza que o próximo dano será anulado. */
+  ward?: boolean;
 }
 
 export interface SeatView {
