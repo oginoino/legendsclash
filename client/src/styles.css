@@ -2220,11 +2220,45 @@ input:focus {
   inset: 0;
   pointer-events: none;
   z-index: 40;
+  --aim: var(--gold);
+  --aim-2: var(--accent);
+}
+
+.aim-trail,
+.aim-rail {
+  transition: stroke-opacity .15s, stroke-width .15s;
+}
+
+.aim-arrow.locked .aim-trail {
+  stroke-opacity: .28;
+}
+
+.aim-arrow.locked .aim-rail {
+  stroke-width: 8;
+}
+
+.aim-origin {
+  animation: aim-origin-pulse 1.2s ease-in-out infinite;
+}
+
+.aim-origin circle {
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 /* linha viva com tracejado correndo rumo ao alvo (Hearthstone/Clash Royale) */
 .aim-flow {
   animation: aim-dash .5s linear infinite;
+}
+
+.aim-rune {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aim-rune-pulse 1.05s ease-in-out infinite;
+}
+
+.aim-rune.delay {
+  animation-delay: .18s;
 }
 
 @keyframes aim-dash {
@@ -2233,9 +2267,24 @@ input:focus {
   }
 }
 
+@keyframes aim-origin-pulse {
+  50% {
+    opacity: .7;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes aim-rune-pulse {
+  50% {
+    opacity: .62;
+    transform: scale(1.28) rotate(45deg);
+  }
+}
+
 /* retícula de "travado no alvo": anel que respira + ping que expande */
 .aim-reticle .reticle-ring,
-.aim-reticle .reticle-ping {
+.aim-reticle .reticle-ping,
+.aim-reticle .reticle-gem {
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -2248,7 +2297,15 @@ input:focus {
   animation: reticle-ping 1.1s ease-out infinite;
 }
 
+.aim-reticle .reticle-gem {
+  animation: reticle-gem 1.1s ease-in-out infinite;
+}
+
 .aim-reticle.lethal .reticle-ping {
+  animation-duration: .62s;
+}
+
+.aim-reticle.lethal .reticle-gem {
   animation-duration: .62s;
 }
 
@@ -2273,6 +2330,52 @@ input:focus {
   100% {
     transform: scale(1.5);
     opacity: 0;
+  }
+}
+
+@keyframes reticle-gem {
+  50% {
+    opacity: .92;
+    transform: scale(1.18) rotate(45deg);
+  }
+}
+
+.aim-callout {
+  position: fixed;
+  z-index: 45;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  min-width: 58px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--aim) 76%, transparent);
+  border-radius: 99px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--aim-2) 20%, transparent), transparent),
+    #070b12d9;
+  color: color-mix(in srgb, var(--aim) 88%, white);
+  font-size: 10px;
+  font-weight: 900;
+  text-shadow: 0 1px 3px #000;
+  box-shadow: 0 6px 18px #000b, 0 0 18px color-mix(in srgb, var(--aim) 36%, transparent);
+  animation: aim-callout-in .14s ease;
+}
+
+.aim-callout.locked {
+  border-color: color-mix(in srgb, var(--aim) 92%, white);
+  box-shadow: 0 8px 24px #000c, 0 0 28px color-mix(in srgb, var(--aim) 55%, transparent);
+}
+
+.aim-callout.aim-lethal {
+  color: #ffddd9;
+}
+
+@keyframes aim-callout-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(.86);
   }
 }
 
@@ -4450,8 +4553,12 @@ input:focus {
   .portrait.targetable::after,
   .portrait.lethal::after,
   .aim-flow,
+  .aim-origin,
+  .aim-rune,
+  .aim-callout,
   .aim-reticle .reticle-ring,
-  .aim-reticle .reticle-ping {
+  .aim-reticle .reticle-ping,
+  .aim-reticle .reticle-gem {
     animation: none !important;
   }
 }
@@ -5108,6 +5215,9 @@ input:focus {
 
   .card.playable .card-shine::after,
   .aim-arrow path,
+  .aim-origin,
+  .aim-rune,
+  .aim-callout,
   .btn.end-turn.pulse,
   .ready-dot,
   .portrait.targetable,

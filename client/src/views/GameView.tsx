@@ -130,6 +130,16 @@ function arrowPath(a: { x1: number; y1: number; x2: number; y2: number }): strin
   return `M ${a.x1} ${a.y1} Q ${cx} ${cy} ${a.x2} ${a.y2}`;
 }
 
+function arrowPoint(a: { x1: number; y1: number; x2: number; y2: number }, t: number): { x: number; y: number } {
+  const cx = (a.x1 + a.x2) / 2;
+  const cy = Math.min(a.y1, a.y2) - 60;
+  const mt = 1 - t;
+  return {
+    x: mt * mt * a.x1 + 2 * mt * t * cx + t * t * a.x2,
+    y: mt * mt * a.y1 + 2 * mt * t * cy + t * t * a.y2,
+  };
+}
+
 /**
  * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
  * `pending` ainda pode virar clique; `target` mira com a seta; `lift` levanta
@@ -902,8 +912,33 @@ export function GameView() {
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
   const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
-  // cor da mira: letal = vermelho · ataque = ouro · magia = roxo
-  const aimColor = lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0';
+  const aimMode = lethalAim
+    ? 'lethal'
+    : selection?.kind === 'attacker'
+      ? 'attack'
+      : targetingFriendly
+        ? 'support'
+        : 'spell';
+  const aimColor = aimMode === 'lethal'
+    ? '#f85149'
+    : aimMode === 'attack'
+      ? '#e3b341'
+      : aimMode === 'support'
+        ? '#3fb950'
+        : '#b083f0';
+  const aimAccent = aimMode === 'attack' ? me.accent : aimMode === 'lethal' ? '#ffd970' : aimMode === 'support' ? '#8ef0a0' : '#7fb1ff';
+  const aimLabel = aimMode === 'lethal'
+    ? 'LETAL'
+    : aimMode === 'attack'
+      ? 'ATAQUE'
+      : aimMode === 'support'
+        ? 'ALIADO'
+        : selectedHandDef?.type === 'tactic'
+          ? 'TÁTICA'
+          : 'MAGIA';
+  const aimMid = arrow ? arrowPoint(arrow, 0.52) : null;
+  const aimRuneA = arrow ? arrowPoint(arrow, 0.32) : null;
+  const aimRuneB = arrow ? arrowPoint(arrow, 0.72) : null;
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
   const enemyFatiguePressure = enemy.fatigue > 0 || (enemy.deckCount <= 3 && enemy.deckCount >= 0);
 
@@ -1243,30 +1278,59 @@ export function GameView() {
       )}
 
       {arrow && (
-        <svg className="aim-arrow" width="100%" height="100%" style={{ filter: `drop-shadow(0 0 7px ${aimColor}aa)` }}>
+        <svg
+          className={`aim-arrow aim-${aimMode} ${lockOn ? 'locked' : ''}`}
+          width="100%"
+          height="100%"
+          style={{
+            ['--aim' as string]: aimColor,
+            ['--aim-2' as string]: aimAccent,
+            filter: `drop-shadow(0 0 7px ${aimColor}aa)`,
+          } as React.CSSProperties}
+        >
           <defs>
+            <linearGradient id="aim-gradient" gradientUnits="userSpaceOnUse" x1={arrow.x1} y1={arrow.y1} x2={arrow.x2} y2={arrow.y2}>
+              <stop offset="0%" stopColor={aimAccent} />
+              <stop offset="58%" stopColor={aimColor} />
+              <stop offset="100%" stopColor={lethalAim ? '#ff9d96' : aimAccent} />
+            </linearGradient>
             <marker id="arrowhead" markerWidth="9" markerHeight="9" refX="5" refY="4.5" orient="auto">
               <path d="M0,0 L9,4.5 L0,9 L2.6,4.5 Z" fill={aimColor} />
             </marker>
           </defs>
-          {/* trilho translúcido: o "corpo" luminoso da seta */}
-          <path d={arrowPath(arrow)} stroke={aimColor} strokeOpacity="0.22" strokeWidth="12" strokeLinecap="round" fill="none" />
-          {/* linha viva com tracejado correndo rumo ao alvo */}
+          <g className="aim-origin">
+            <circle cx={arrow.x1} cy={arrow.y1} r="18" fill="none" stroke={aimAccent} strokeOpacity="0.32" strokeWidth="8" />
+            <circle cx={arrow.x1} cy={arrow.y1} r="12" fill="none" stroke={aimColor} strokeWidth="2" />
+          </g>
+          <path className="aim-trail" d={arrowPath(arrow)} stroke="url(#aim-gradient)" strokeOpacity="0.2" strokeWidth="16" strokeLinecap="round" fill="none" />
+          <path className="aim-rail" d={arrowPath(arrow)} stroke="url(#aim-gradient)" strokeOpacity="0.55" strokeWidth="7" strokeLinecap="round" fill="none" />
           <path
             className="aim-flow"
             d={arrowPath(arrow)}
-            stroke={aimColor}
-            strokeWidth="4"
+            stroke="url(#aim-gradient)"
+            strokeWidth="4.5"
             strokeDasharray="11 9"
             strokeLinecap="round"
             fill="none"
             markerEnd={lockOn ? undefined : 'url(#arrowhead)'}
           />
+          {aimRuneA && (
+            <g className="aim-rune" transform={`translate(${aimRuneA.x} ${aimRuneA.y}) rotate(45)`}>
+              <rect x="-5" y="-5" width="10" height="10" rx="1.5" fill={aimColor} fillOpacity="0.18" stroke={aimAccent} strokeWidth="1.5" />
+            </g>
+          )}
+          {aimRuneB && (
+            <g className="aim-rune delay" transform={`translate(${aimRuneB.x} ${aimRuneB.y}) rotate(45)`}>
+              <rect x="-4" y="-4" width="8" height="8" rx="1.5" fill={aimAccent} fillOpacity="0.18" stroke={aimColor} strokeWidth="1.4" />
+            </g>
+          )}
           {/* retícula de "travado no alvo" */}
           {lockOn && (
             <g className={`aim-reticle ${lethalAim ? 'lethal' : ''}`}>
-              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
+              <circle className="reticle-aura" cx={arrow.x2} cy={arrow.y2} r="34" fill={aimColor} fillOpacity="0.09" />
+              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke="url(#aim-gradient)" strokeWidth="2.5" />
               <circle className="reticle-ping" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
+              <rect className="reticle-gem" x={arrow.x2 - 5} y={arrow.y2 - 5} width="10" height="10" rx="1.5" fill={aimAccent} fillOpacity="0.24" stroke={aimColor} strokeWidth="1.5" transform={`rotate(45 ${arrow.x2} ${arrow.y2})`} />
               <g stroke={aimColor} strokeWidth="2.5" strokeLinecap="round">
                 <line x1={arrow.x2 - 34} y1={arrow.y2} x2={arrow.x2 - 21} y2={arrow.y2} />
                 <line x1={arrow.x2 + 21} y1={arrow.y2} x2={arrow.x2 + 34} y2={arrow.y2} />
@@ -1276,6 +1340,19 @@ export function GameView() {
             </g>
           )}
         </svg>
+      )}
+      {arrow && aimMid && (
+        <div
+          className={`aim-callout aim-${aimMode} ${lockOn ? 'locked' : ''}`}
+          style={{
+            left: aimMid.x,
+            top: aimMid.y,
+            ['--aim' as string]: aimColor,
+            ['--aim-2' as string]: aimAccent,
+          } as React.CSSProperties}
+        >
+          {aimLabel}
+        </div>
       )}
 
       <div className="reveal-stack">
