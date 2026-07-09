@@ -96,7 +96,88 @@ const ART: Record<string, Art> = {
   t_moeda: { Icon: GiCoinflip, fg: '#ffdf8f', bg: 'linear-gradient(160deg, #7a5e1e, #30240c)' },
 };
 
+const IMAGE_MAP: Record<string, string> = {
+  // Criaturas
+  c_recruta: '/assets/cards/Recruta da Vanguarda.png',
+  c_lobo: '/assets/cards/Lobo das Sombras.png',
+  c_arqueira: '/assets/cards/Aqueira eifica.png',
+  c_cavaleiro: '/assets/cards/Cavaleiro de Ferro.png',
+  c_golem: '/assets/cards/Golem de Pedra.png',
+  c_campea: '/assets/cards/Campea Aurora.png',
+  c_dragao: '/assets/cards/Dragao Cinzento.png',
+  c_renegado: '/assets/cards/Renegado Ferido.png',
+  // Criaturas — expansão "Maré Sem Rei" (Vanguarda)
+  c_escudeira: '/assets/cards/Escudeira de Ferro.png',
+  c_cleriga: '/assets/cards/Clériga da Aurora.png',
+  c_templario: '/assets/cards/Templario do Amanhecer.png',
+  // Criaturas — expansão "Maré Sem Rei" (Silvanos)
+  c_sentinela: '/assets/cards/Sentinela das Copas.png',
+  c_duelista: '/assets/cards/Duelista Elfica.png',
+  c_bardo: '/assets/cards/Bardo da Clareira.png',
+  c_cervo: '/assets/cards/Cervo Rei da Clareira.png',
+  // Criaturas — expansão "Maré Sem Rei" (Éter)
+  c_fada: '/assets/cards/Fada Cintilante.png',
+  c_elemental: '/assets/cards/Elemental de Eter.png',
+  c_maga: '/assets/cards/Maga do Conclave.png',
+  c_arquimago: '/assets/cards/Arquimago da Fenda.png',
+  // Criaturas — expansão "Maré Sem Rei" (Profundezas)
+  c_morcego: '/assets/cards/Morcego Abissal.png',
+  c_cultista: '/assets/cards/Cultista do Vazio.png',
+  c_espectro: '/assets/cards/Espector da Fenda.png',
+  c_horror: '/assets/cards/Horror Rastejante.png',
+  // Criaturas — expansão "Maré Sem Rei" (Maré)
+  c_grumete: '/assets/cards/Grumete Intrepido.png',
+  c_corsaria: '/assets/cards/Corsaria de Salobra.png',
+  c_aguaviva: '/assets/cards/Agua Viva Espectral.png',
+  c_sereia: '/assets/cards/Sereia do Recife.png',
+  c_tubarao: '/assets/cards/Terror de Casco.png',
+  c_serpente: '/assets/cards/Serpente do Abismo.png',
+  c_kraken: '/assets/cards/O Kraken de Salmarra.png',
+  // Magias
+  s_faisca: '/assets/cards/Faisca.png',
+  s_bola_de_fogo: '/assets/cards/Bola de Fogo.png',
+  s_bencao: '/assets/cards/Bencao Vital.png',
+  s_fortalecer: '/assets/cards/Fortalecer.png',
+  s_tempestade: '/assets/cards/Tempestade.png',
+  // Magias — expansão "Maré Sem Rei"
+  s_julgamento: '/assets/cards/Luz de Julgamento.png',
+  s_canto: '/assets/cards/Canto Revigorante.png',
+  s_lanca_gelo: '/assets/cards/Lanca de Gelo.png',
+  s_pacto: '/assets/cards/Pacto Sombrio.png',
+  s_maremoto: '/assets/cards/Marremoto.png',
+  // Artefatos
+  a_escudo: '/assets/cards/Escudo de Aco.png',
+  a_estandarte: '/assets/cards/Estandarte de Guerra.png',
+  // Artefatos — expansão "Maré Sem Rei"
+  a_relicario: '/assets/cards/Relicario da Aurora.png',
+  a_orbe: '/assets/cards/Orbe de Eter.png',
+  a_figura: '/assets/cards/Figura de Proa Sereia.png',
+  // Táticas
+  t_reforcos: '/assets/cards/Reforcos.png',
+  t_surto: '/assets/cards/Surto de Energia.png',
+  t_recuo: '/assets/cards/Recuo Tatico.png',
+  // Táticas — expansão "Maré Sem Rei"
+  t_matilha: '/assets/cards/Chamado da Matilha.png',
+  t_abordagem: '/assets/cards/Abordagem.png',
+  t_saque: '/assets/cards/Mapa do Saque.png',
+};
+
 export function CardArt({ defId, className }: { defId: string; className?: string }) {
+  const imageUrl = IMAGE_MAP[defId];
+
+  if (imageUrl) {
+    return (
+      <span className={`card-art-frame image-art ${className ?? ''}`}>
+        <img
+          src={imageUrl}
+          alt={CARDS[defId]?.name}
+          loading="lazy"
+          className="card-art-img"
+        />
+      </span>
+    );
+  }
+
   const art = ART[defId];
   if (!art) {
     return <span className={`card-art-frame ${className ?? ''}`}>{CARDS[defId]?.art}</span>;
