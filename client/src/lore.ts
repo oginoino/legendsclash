@@ -31,29 +31,29 @@ export interface CardLore {
 /** O mundo e a moldura que liga todas as cartas. */
 export const WORLD = {
   realm: 'Aurélia',
-  tagline: 'O reino partido onde as lendas atendem ao chamado dos Cristais.',
+  tagline: 'O reino partido onde toda lenda responde ao brilho de um Cristal.',
   intro: [
-    'Houve um tempo em que Aurélia era uma só terra, banhada pela luz constante da Aurora. Então veio a Fratura: o céu se partiu como vidro e despencou sobre o mundo em milhares de estilhaços luminosos — os Cristais de Éter. Onde caíram, ergueram-se reinos; onde escassearam, restou o silêncio.',
-    'Quem aprende a ouvir um Cristal torna-se um Comandante. Não luta com as próprias mãos: convoca lendas adormecidas, conjura magias e ergue artefatos, tudo alimentado pela centelha do Éter. A cada amanhecer o Cristal renova um pouco da sua força — por isso nenhum Comandante gasta de uma vez o que não pode repor.',
-    'O que você joga não é uma partida: é um Embate. Dois Cristais se reconhecem à distância e se chamam, e seus portadores conduzem seus exércitos até que só reste uma luz acesa. As cartas deste Arquivo são as lendas que respondem a esse chamado — cada uma com seu nome, sua casa e sua história.',
-    'Nem todos os estilhaços caíram em terra. Milhares afundaram no oceano e lá seguem acesos — os Cristais Afogados. As marés que passam por eles voltam carregadas de Éter, e ao redor dessas rotas floresceu uma gente que não jura bandeira: corsários, sereias e coisas mais antigas que qualquer porto. Em Aurélia se diz que a Vanguarda guarda a terra — mas ninguém guarda o mar.',
+    'Antes da Fratura, Aurélia era uma terra inteira, mantida sob a luz mansa da Aurora. Então o céu se abriu como vidro ferido e caiu em milhares de estilhaços vivos: os Cristais de Éter. Onde tocaram o chão, nasceram fortalezas, bosques encantados, torres de estudo e abismos inquietos. Onde não tocaram nada, o mundo simplesmente escureceu.',
+    'Um Comandante é alguém que aprendeu a escutar um Cristal sem enlouquecer. Não vence pela força do braço, mas pelo chamado: desperta lendas antigas, molda magias, ergue artefatos e sustenta tudo com a centelha de Éter que o Cristal devolve a cada amanhecer. Em Aurélia, poder sem ritmo vira ruína; por isso até os mais ousados aprendem a gastar hoje sem matar o amanhã.',
+    'Cada partida é um Embate: dois Cristais se reconhecem à distância e puxam seus portadores para o conflito. As criaturas não são peças sem passado; são juramentos, pactos, monstros, canções e dívidas que atravessam o mundo para atender a um chamado. Quando a última luz de um Comandante se apaga, o Embate termina — e a lenda volta ao Arquivo, esperando outra mão, outra mesa, outro destino.',
+    'Nem todo estilhaço caiu em terra firme. Muitos afundaram no oceano e continuaram acesos sob a água, criando rotas de maré carregadas de Éter. Foi ali que nasceu a Maré Sem Rei: corsários, sereias, feras de casco e coisas tão antigas que nenhum mapa ousa desenhar. A Vanguarda diz que guarda Aurélia. O Pacto diz que a mata lembra. O Conclave diz que todo Cristal pode ser decifrado. Os Antigos dizem pouco. Mas o mar, quando responde, responde alto.',
   ],
   /** Notas que amarram regra ↔ história, mostradas no rodapé do Arquivo. */
   codexNotes: [
     {
       icon: 'shield',
       title: 'Por que as criaturas protegem o Comandante',
-      text: 'Um Cristal aceso é um farol. Enquanto houver uma só lenda em campo, ela se interpõe entre o inimigo e o seu portador — nenhum golpe ou magia alcança o Comandante antes que a última defensora caia. Só então o excedente do golpe atravessa.',
+      text: 'Um Cristal aceso denuncia seu portador como um farol no escuro. Toda lenda chamada ao campo sente esse brilho e se coloca entre ele e o inimigo. Golpes e magias só alcançam o Comandante depois que a última defensora cai; até lá, o exército é a muralha viva do Cristal.',
     },
     {
       icon: 'light',
       title: 'A energia que renasce ao amanhecer',
-      text: 'O Éter de um Cristal recompõe-se devagar. A cada turno você recebe mais um ponto de energia (até dez) — a paciência de Aurélia recompensa quem planeja, não quem desperdiça.',
+      text: 'O Éter não obedece à pressa. A cada turno, o Cristal recompõe parte da própria luz e oferece mais um ponto de energia, até o limite de dez. Quem entende esse ciclo transforma paciência em vantagem; quem força demais o brilho descobre que até a luz pode quebrar.',
     },
     {
       icon: 'death',
       title: 'A fadiga dos que lutam demais',
-      text: 'Quando o baralho de um Comandante se esgota, não há mais lendas para chamar — e o esforço de forçar o Cristal vazio cobra seu preço em vida, crescente a cada tentativa. Nenhum Embate se arrasta para sempre.',
+      text: 'Quando o baralho se esgota, o Comandante já chamou tudo o que podia. Insistir num Cristal vazio é arrancar lenda de onde só resta silêncio, e o custo vem direto na vida, cada vez mais alto. Nenhum Embate foi feito para durar para sempre.',
     },
   ],
 } as const;
@@ -66,7 +66,7 @@ export const FACTIONS: Record<string, Faction> = {
     color: '#e3b341',
     motto: 'Primeiro a luz, depois a lâmina.',
     blurb:
-      'A ordem jurada que guarda o que restou da Aurora. Disciplina, escudos e estandartes: vencem pela linha que não recua e pelo socorro que chega na hora certa.',
+      'A ordem que ainda acredita que Aurélia pode ser reunida sob uma mesma luz. Marcham em linhas firmes, protegem seus Comandantes como relicários vivos e vencem quando a disciplina resiste mais que o medo.',
   },
   silvanos: {
     id: 'silvanos',
@@ -75,7 +75,7 @@ export const FACTIONS: Record<string, Faction> = {
     color: '#3fb950',
     motto: 'A mata vê tudo; a mata espera.',
     blurb:
-      'Elfos e feras das florestas que medraram nas bordas da Fratura. Caçam no crepúsculo, golpeiam onde dói e somem na folhagem antes do troco.',
+      'Elfos, feras e espíritos das florestas que cresceram nas bordas da Fratura. Não defendem tronos, defendem equilíbrio: observam primeiro, cercam em silêncio e atacam quando o inimigo já entrou fundo demais.',
   },
   eter: {
     id: 'eter',
@@ -84,7 +84,7 @@ export const FACTIONS: Record<string, Faction> = {
     color: '#7fb1ff',
     motto: 'Todo Cristal é uma pergunta.',
     blurb:
-      'Estudiosos que decifram os estilhaços do céu. Não erguem muralhas — dobram o próprio Éter em faíscas, chamas e runas que mudam o ritmo do Embate.',
+      'Eruditos, aprendizes e arcanistas que tratam os estilhaços do céu como linguagem. Onde outros veem milagre ou maldição, o Conclave vê padrão — e transforma esse padrão em faísca, runa, tempestade e risco calculado.',
   },
   profundezas: {
     id: 'profundezas',
@@ -93,7 +93,7 @@ export const FACTIONS: Record<string, Faction> = {
     color: '#ff8c6e',
     motto: 'O que dormia, acordou.',
     blurb:
-      'Aquilo que a Fratura desenterrou: golems de pedra viva e dragões mais velhos que os reinos. Lentos para chamar, terríveis para enfrentar.',
+      'Tudo que a Fratura despertou sob pedra, cinza e esquecimento. Golems, dragões, cultistas e horrores sem nome avançam devagar, como se tivessem todo o tempo do mundo — talvez porque tenham mesmo.',
   },
   mares: {
     id: 'mares',
@@ -102,7 +102,7 @@ export const FACTIONS: Record<string, Faction> = {
     color: '#38d1c2',
     motto: 'O mar não jura lealdade.',
     blurb:
-      'Corsários, sereias e o que nada abaixo deles. Quando a Fratura caiu no oceano, os Cristais afogados criaram marés de Éter — e quem vive delas não serve a reino algum. Rápidos no saque, traiçoeiros na espera, terríveis quando a maré sobe.',
+      'Corsários, sereias, feras abissais e ladrões de vento que vivem das rotas criadas pelos Cristais Afogados. Não seguem coroa, não respeitam fronteira e não esperam permissão: chegam rápido, levam o que querem e somem antes que a costa entenda a perda.',
   },
 };
 
@@ -112,73 +112,73 @@ export const CARD_LORE: Record<string, CardLore> = {
     epithet: 'O Primeiro na Linha',
     factionId: 'vanguarda',
     story:
-      'Mal aprendeu a segurar a lança e já fez o Juramento da Aurora, diante do muro de luz onde gerações antes dele juraram o mesmo. Custa pouco para ser chamado e tomba cedo nas grandes batalhas — mas é sempre o primeiro a se erguer quando o clarim soa de novo.',
+      'Ele ainda errava o peso da lança quando fez o Juramento da Aurora diante do muro de luz. Por isso é chamado cedo e cai cedo: a Vanguarda sempre começa por quem aceita ficar na frente. Quando o clarim soa outra vez, é quase sempre um recruta que responde primeiro.',
   },
   c_cavaleiro: {
     epithet: 'Veterano de Três Guerras',
     factionId: 'vanguarda',
     story:
-      'A armadura tem mais remendos que brasão, e cada um conta uma guerra que ele sobreviveu. Não é o mais rápido nem o mais brilhante; é o que ainda está de pé quando a poeira assenta. Os recrutas aprendem a lutar imitando o jeito como ele planta os pés.',
+      'A armadura tem mais remendos que brasão, e cada remendo segura uma história que ele não conta inteira. Não é o mais veloz, nem o mais nobre, nem o mais bonito em campo. É pior: é o que continua de pé. Os recrutas aprendem a coragem copiando o modo como ele finca os pés antes do impacto.',
   },
   c_campea: {
     epithet: 'Estandarte Vivo da Aurora',
     factionId: 'vanguarda',
     story:
-      'Dizem que quando ela ergue a espada, a própria Aurora se inclina para olhar. Onde avança, a linha inimiga recua sem que ninguém dê a ordem — porque enfrentá-la é encarar tudo o que a Vanguarda promete proteger.',
+      'A Campeã não carrega o estandarte; ela é o estandarte quando a linha começa a tremer. Dizem que a Aurora se curva para vê-la erguer a espada, e que até inimigos baixam a voz quando ela avança. Enfrentá-la é enfrentar a promessa mais antiga da Vanguarda: enquanto houver luz, alguém ficará de pé por você.',
   },
   s_bencao: {
     epithet: 'A Luz que Restaura',
     factionId: 'vanguarda',
     story:
-      'Não é magia de batalha, e sim a prece que as curandeiras da Aurora sussurram sobre os feridos. Um fio da luz original costura de volta o que o aço abriu — devolvendo ao Comandante o fôlego para mais um amanhecer.',
+      'A Bênção não fecha feridas com espetáculo. Ela chega como uma prece baixa, dita por mãos firmes no meio da poeira, e costura de volta o que aço, dente ou fogo tentaram levar. O Comandante respira mais uma vez porque a Aurora, teimosa como sempre, ainda não autorizou o fim.',
   },
   a_escudo: {
     epithet: 'A Muralha Pessoal',
     factionId: 'vanguarda',
     story:
-      'Forjado com o aço temperado nas forjas sob o muro auroral, absorve o primeiro castigo para que a vida não pague por ele. Um Comandante prudente nunca entra num Embate sem sentir seu peso no braço.',
+      'Forjado no calor das muralhas aurorais, o escudo não promete vitória; promete tempo. Ele recebe o primeiro castigo no lugar da carne, compra um turno, uma decisão, uma chance de virar o Embate. Um Comandante prudente nunca despreza nada que saiba dizer não ao golpe.',
   },
   a_estandarte: {
     epithet: 'O Brado que Inspira',
     factionId: 'vanguarda',
     story:
-      'O pano é simples; o que ele carrega não é. Hasteado em campo, cada lenda da Vanguarda golpeia com a força de quem sabe que não luta sozinha. Enquanto tremular, o exército inteiro bate mais forte.',
+      'O tecido já foi rasgado, queimado e lavado em chuva de cinzas, mas nunca caiu sem alguém se ajoelhar para erguê-lo de novo. Quando tremula no campo, cada aliada da Vanguarda lembra que sua lâmina faz parte de uma linha maior. É só pano, claro. Pano com memória costuma bater mais forte.',
   },
   t_reforcos: {
     epithet: 'O Clarim Distante',
     factionId: 'vanguarda',
     story:
-      'Três notas longas, e das retaguardas da Aurora partem os que estavam de prontidão. Reforços nunca chegam cedo demais nem em pequena conta: quando o clarim soa, vêm dois de uma vez.',
+      'Três notas longas atravessam o campo e chegam às tendas que ainda não queimaram. Então dois soldados correm, não porque a ordem é bonita, mas porque alguém na frente segurou a porta tempo suficiente. Reforços da Aurora raramente chegam cedo. Chegam juntos.',
   },
   c_escudeira: {
     epithet: 'A Que Segura a Porta',
     factionId: 'vanguarda',
     story:
-      'Serviu de escudeira ao Cavaleiro de Ferro e aprendeu dele a lição que nenhum manual ensina: plantar os pés e não sair do lugar. O escudo que carrega é maior que ela — e é exatamente essa a ideia. Enquanto estiver de pé, Provoca: quem quiser passar terá de derrubá-la primeiro, e derrubar quem segura a porta nunca é tão rápido quanto parece.',
+      'Ela serviu ao Cavaleiro de Ferro e aprendeu a lição que nenhum manual ensina: às vezes vencer é simplesmente não sair do lugar. O escudo é grande demais para seu corpo, e esse é exatamente o ponto. Enquanto ela respira, Provoca; quem quiser passar precisa derrubá-la primeiro, e portas teimosas costumam humilhar monstros apressados.',
   },
   c_cleriga: {
     epithet: 'Voz do Amanhecer',
     factionId: 'vanguarda',
     story:
-      'Curandeira de campo da Aurora, reza costurando ferida — dizem os soldados que ela é a prece da Bênção Vital em pessoa. Chega onde o clarim a chama e, no instante em que pisa o campo, o Comandante sente o fôlego voltar: três medidas de vida, devolvidas antes mesmo de a poeira assentar.',
+      'A Clériga chega depois do choque, quando o chão já escolheu seus mortos e os vivos começam a duvidar. Ela canta baixo, toca o Cristal do Comandante e devolve três medidas de vida antes que o medo vire rendição. Para muitos soldados, ela não conjura a Bênção: ela é a Bênção usando botas de campo.',
   },
   c_templario: {
     epithet: 'O Muro que Marcha',
     factionId: 'vanguarda',
     story:
-      'Elite jurada da Aurora, treinado a vida inteira para uma única coisa: ser o lugar onde a batalha para. Custa caro chamá-lo — mas onde ele planta os pés, a linha inteira para junto. Provoca por ofício: nenhum inimigo alcança o que ele decidiu proteger sem antes atravessá-lo, e poucos atravessam.',
+      'Um Templário da Aurora é treinado para ser o lugar onde a batalha perde velocidade. Chamá-lo custa caro porque toda muralha verdadeira custa tempo, voto e cicatriz. Quando planta os pés, Provoca por dever: nenhum inimigo toca o que ele protege sem antes descobrir quanto pesa uma fé armada.',
   },
   s_julgamento: {
     epithet: 'A Sentença Luminosa',
     factionId: 'vanguarda',
     story:
-      'Os juízes da Aurora ensinam que a luz não escolhe lado: a mesma chama que pune o invasor fecha a ferida do justo. Conjurada sobre uma lenda inimiga, castiga com três medidas de dano — e o clarão que sobra volta ao Comandante como duas de vida. Punição e socorro, num só verbo.',
+      'Os juízes da Aurora dizem que a luz não bajula ninguém: ela revela, pune e cura na mesma chama. O Julgamento atinge uma lenda inimiga com três medidas de dano, e o clarão que sobra retorna ao Comandante como duas de vida. Punição e socorro, costurados no mesmo veredito.',
   },
   a_relicario: {
     epithet: 'A Chama que Não Apaga',
     factionId: 'vanguarda',
     story:
-      'Dentro do relicário arde um fragmento da primeira Aurora, salvo da Fratura por mãos que ninguém soube nomear. Não faz nada de espetacular — apenas goteja luz sobre o portador a cada amanhecer, um ponto de vida por turno, sem falhar nunca. Nas guerras longas, é a diferença entre resistir e apagar.',
+      'Dentro do relicário arde um fragmento salvo da primeira Aurora, pequeno demais para iluminar uma cidade e insistente demais para morrer. A cada amanhecer, ele pinga uma gota de vida sobre o portador, sem alarde, sem falha. Nas guerras longas, o milagre raramente é grandioso; às vezes é só continuar aceso.',
   },
 
   // ─── Pacto Silvano ────────────────────────────────────────────
@@ -186,55 +186,55 @@ export const CARD_LORE: Record<string, CardLore> = {
     epithet: 'Caçador do Crepúsculo',
     factionId: 'silvanos',
     story:
-      'Caça na hora azul, entre o último raio e a primeira estrela, quando os olhos dos homens ainda se ajustam e os dele já enxergam tudo. Rápido e letal — mas a luz direta o cega e o expõe, e a fragilidade é o preço da velocidade.',
+      'O lobo caça na hora azul, quando os olhos humanos ainda pedem luz e a mata já enxerga por eles. Chega rápido, fere fundo e não foi feito para aguentar cerco. Sua fragilidade é o preço do bote perfeito; no Pacto, velocidade nunca vem sem dívida.',
   },
   c_arqueira: {
     epithet: 'A Que Nunca Erra Duas Vezes',
     factionId: 'silvanos',
     story:
-      'Sentinela das copas, parte do Pacto antes mesmo de saber andar. Diz o ditado silvano que ela nunca erra o mesmo alvo duas vezes — porque, depois do primeiro disparo, raramente sobra um segundo alvo para errar.',
+      'Ela cresceu nas copas antes de crescer no chão, ouvindo o vento ensinar distância. Dizem que nunca erra o mesmo alvo duas vezes, não por vaidade, mas por economia: depois do primeiro disparo, raramente existe um segundo erro para corrigir. A floresta não desperdiça flechas.',
   },
   t_recuo: {
     epithet: 'Some na Mata',
     factionId: 'silvanos',
     story:
-      'A arte silvana mais temida não é um golpe: é o desaparecimento. Uma criatura inimiga é arrancada do campo e devolvida à mão de quem a chamou, como se a floresta a tivesse engolido e cuspido lá atrás. Recuar, para o Pacto, é só outra forma de atacar.',
+      'A tática mais temida do Pacto não deixa sangue, deixa ausência. Uma criatura inimiga é arrancada do campo e devolvida à mão de quem a chamou, como se a própria mata tivesse engolido o invasor e cuspido de volta na fronteira. Para os silvanos, recuar alguém é só atacar a certeza dele.',
   },
   c_sentinela: {
     epithet: 'Olhos da Copa',
     factionId: 'silvanos',
     story:
-      'Batedora élfica que vive no alto das copas, onde a mata inteira vira mapa. Vê o inimigo um dia antes de ele chegar — é por isso que o Pacto nunca é surpreendido. Quando enfim desce ao campo, traz o que viu: uma carta a mais na mão do Comandante, o aviso transformado em vantagem.',
+      'Do alto das árvores, a Sentinela vê trilhas, mentiras e exércitos antes que eles tenham coragem de se chamar invasão. Quando desce ao campo, traz uma carta a mais para o Comandante: não é sorte, é aviso. O Pacto vence muitos Embates antes que o primeiro golpe seja dado.',
   },
   c_duelista: {
     epithet: 'Lâmina do Crepúsculo',
     factionId: 'silvanos',
     story:
-      'Esgrimista élfica que trata cada duelo como dança — e faz questão de marcar o primeiro compasso. Investida: ataca no turno em que entra, antes que o inimigo entenda que a música começou. Quando entende, o duelo já acabou.',
+      'A Duelista trata combate como dança e faz questão de escolher o primeiro passo. Investida: entra e ataca no mesmo fôlego, antes que o inimigo descubra o ritmo. Quando ele entende que começou um duelo, a lâmina dela já escreveu o final.',
   },
   c_bardo: {
     epithet: 'O Que Afina Exércitos',
     factionId: 'silvanos',
     story:
-      'O Pacto não marcha ao som de tambores: marcha ao som dele. Diz que exército é instrumento — desafinado, quebra; afinado, canta. Quando chega ao campo, cada aliada que já lutava ganha um palmo a mais de altura e de coragem, +1/+1 na medida exata da canção certa.',
+      'O Pacto não marcha ao som de tambores; marcha quando o Bardo encontra a nota certa. Para ele, cada aliada é uma corda: frouxa, arrebenta; afinada, canta. Ao chegar, transforma presença em coragem e dá +1/+1 às criaturas que já lutavam, como se a floresta inteira respirasse junto.',
   },
   c_cervo: {
     epithet: 'O Rei Sem Coroa',
     factionId: 'silvanos',
     story:
-      'Criatura mágica mais antiga que os próprios elfos, o cervo que nunca precisou de coroa para reinar sobre a clareira. Provoca: quem ameaça a mata enfrenta primeiro a mata inteira — e a mata inteira se interpõe com ele. Nenhum silvano dá ordem ao Cervo-Rei; apenas agradece quando ele aparece.',
+      'O Cervo-Rei é mais antigo que os juramentos élficos e nunca precisou de coroa para ser obedecido. Quando pisa na clareira, a mata inteira parece dar um passo à frente. Provoca porque não defende apenas o Comandante; defende a ordem silenciosa das coisas que existiam antes dos reinos.',
   },
   s_canto: {
     epithet: 'O Refrão do Pacto',
     factionId: 'silvanos',
     story:
-      'Todo silvano conhece o estribilho, aprendido antes de qualquer arma. Cantado sozinho, é saudade de casa; cantado em coro sobre o campo, vira armadura — cada criatura aliada cresce +1/+1 no compasso. É por isso que o Pacto canta antes de lutar. E, às vezes, durante.',
+      'Todo silvano aprende esse canto antes de aprender o nome da própria arma. Cantado sozinho, ele lembra casa; cantado em campo, vira pele mais dura, mão mais firme e coração menos solitário. Cada criatura aliada cresce +1/+1 no compasso, porque o Pacto nunca luta como indivíduos quando pode lutar como floresta.',
   },
   t_matilha: {
     epithet: 'Uivos na Névoa',
     factionId: 'silvanos',
     story:
-      'O caçador ouve um uivo e se prepara para um lobo — é o primeiro erro, e costuma ser o último. Na mata do Pacto, um uivo sempre responde ao outro: quando o chamado sobe, dois filhotes atravessam a névoa de uma vez. Nunca vem um lobo só.',
+      'O invasor escuta um uivo e imagina um lobo. Esse é o primeiro erro. Na névoa do Pacto, um chamado sempre encontra resposta, e dois filhotes atravessam a mata antes que a coragem do inimigo termine de se explicar. Nunca vem um lobo só; vem uma notícia ruim com dentes.',
   },
 
   // ─── Conclave do Éter ─────────────────────────────────────────
@@ -242,67 +242,67 @@ export const CARD_LORE: Record<string, CardLore> = {
     epithet: 'O Primeiro Truque',
     factionId: 'eter',
     story:
-      'A primeira coisa que todo aprendiz do Conclave aprende: pinçar um fio de Éter e soltá-lo num estalo. Pequena, barata, quase um gesto de criança — mas já decidiu mais Embates do que qualquer conjurador admite.',
+      'A primeira lição do Conclave é pinçar um fio de Éter e soltá-lo no ponto certo. Parece pequeno, quase infantil, até decidir um Embate por um único sopro de dano. Todo arquimago começou com uma Faísca; os mais honestos ainda a respeitam.',
   },
   s_bola_de_fogo: {
     epithet: 'Fúria Concentrada',
     factionId: 'eter',
     story:
-      'O que a Faísca é ao aprendiz, esta é ao mestre. Horas de estudo comprimidas numa esfera que parte o ar e estoura no alvo. Cara de conjurar e impossível de ignorar: poucas lendas resistem a vê-la chegar.',
+      'Onde a Faísca estala, a Bola de Fogo declara. Horas de cálculo, respiração e arrogância são comprimidas numa esfera que parte o ar e explode no alvo. É cara de conjurar, difícil de esconder e impossível de ignorar — exatamente como o Conclave gosta quando quer ser levado a sério.',
   },
   s_fortalecer: {
     epithet: 'Runa de Vigor',
     factionId: 'eter',
     story:
-      'Gravada no ar com um traço de Éter e fixada sobre uma aliada, a runa engrossa músculo e couraça em segundos. O Conclave não tem exércitos próprios — então aprendeu a tornar os exércitos alheios maiores do que nasceram.',
+      'O Conclave raramente tem exércitos próprios, então aprendeu a melhorar os dos outros. A Runa de Vigor é gravada no ar e fechada sobre uma aliada, engrossando músculo, couraça e vontade em poucos segundos. Para um arcanista, reforçar alguém é uma forma elegante de vencer sem sujar a manga.',
   },
   s_tempestade: {
     epithet: 'A Ira do Céu Partido',
     factionId: 'eter',
     story:
-      'Há quem decifre os Cristais para acender uma faísca; e há quem os force a sangrar. Quando um mestre do Conclave reabre de vez a ferida que a Fratura deixou no céu, o Éter desaba em raios sobre todo o campo inimigo de uma só vez. Onde havia uma horda, fica só fumaça — e o silêncio depois do trovão.',
+      'Alguns estudam os Cristais para entender a Fratura; outros, menos sensatos e mais brilhantes, aprendem a imitá-la. A Tempestade reabre por um instante a cicatriz do céu e despeja raios sobre todo o campo inimigo. Onde havia horda, sobra fumaça. Onde havia confiança, sobra respeito.',
   },
   t_surto: {
     epithet: 'Veia de Éter',
     factionId: 'eter',
     story:
-      'Um conjurador hábil às vezes encontra uma veia mais rica no Cristal e a abre de vez, num jorro de energia para este instante. É um truque arriscado — gastar o amanhã pela vantagem de agora — e exatamente por isso tão silvanamente do Conclave.',
+      'Às vezes, um conjurador encontra no Cristal uma veia mais viva e a rasga sem pedir licença ao amanhã. O Surto entrega energia extra para este turno, puro agora, pura pressa. É uma ideia perigosa, brilhante e tipicamente do Conclave: gastar futuro para comprar precisão no presente.',
   },
   c_fada: {
     epithet: 'Centelha Travessa',
     factionId: 'eter',
     story:
-      'Criatura mágica nascida do próprio Éter, brilha, provoca e dança fora do alcance — até que algo enfim a alcança. Ao apagar, sopra um último segredo ao ouvido do conjurador: uma carta comprada no Estertor. No Conclave se diz que nem a morte de uma fada é desperdício.',
+      'A Fada nasceu de um vazamento de Éter e nunca entendeu muito bem o conceito de consequência. Brilha, ri, distrai e dança fora do alcance até que o campo finalmente a alcança. Ao morrer, ainda sopra um segredo ao Comandante e compra uma carta no Estertor; no Conclave, até acidente aprende a ser recurso.',
   },
   c_elemental: {
     epithet: 'Éter que Anda',
     factionId: 'eter',
     story:
-      'O Conclave aprendeu a condensar Éter até ele criar casca — uma criatura de vidro vivo que anda, luta e reflete. Escudo Arcano: o primeiro golpe que recebe quebra só o reflexo, não a criatura. O segundo é que encontra o que há por baixo.',
+      'O Elemental é Éter condensado até criar vontade, casca e mau humor. Seu corpo parece vidro vivo, mas o primeiro golpe encontra apenas o reflexo: Escudo Arcano. O encanto quebra, a criatura permanece, e o inimigo precisa explicar ao próprio braço por que aquilo ainda está andando.',
   },
   c_maga: {
     epithet: 'Aprendiz de Tempestades',
     factionId: 'eter',
     story:
-      'Entre a Faísca do aprendiz e a Bola de Fogo do mestre há ela: já perigosa, ainda imprecisa. Ao pisar o campo, solta a pólvora arcana que vem ensaiando — dois de dano numa criatura inimiga qualquer, porque a mira ainda é do Éter, não dela. O Conclave garante que um dia ela escolherá o alvo.',
+      'Entre a Faísca obediente e a Bola de Fogo respeitável existe a Maga: talentosa, perigosa e ainda discutindo com a mira. Quando entra em campo, solta a carga que vinha ensaiando e causa dois de dano a uma criatura inimiga aleatória. O Conclave chama isso de fase de aprendizado. Os alvos chamam de problema.',
   },
   c_arquimago: {
     epithet: 'O Que Reabriu o Céu',
     factionId: 'eter',
     story:
-      'Lenda viva do Conclave — o único que estudou a Fratura de perto o bastante para reproduzi-la. Quando chega ao campo, faz o céu sangrar em miniatura: dois de dano sobre todas as criaturas inimigas, um eco pequeno da catástrofe que partiu Aurélia. Chamá-lo custa caro; reabrir a ferida do céu nunca foi barato.',
+      'O Arquimago estudou a Fratura de perto o bastante para reproduzir uma versão menor dela — o que diz muito sobre seu gênio e muito pouco sobre seu juízo. Quando pisa no campo, o céu sangra em miniatura e causa dois de dano a todas as criaturas inimigas. Chamá-lo custa caro, porque ninguém reabre uma ferida cósmica pagando pouco.',
   },
   s_lanca_gelo: {
     epithet: 'Inverno Pontiagudo',
     factionId: 'eter',
     story:
-      'Éter resfriado até virar ponta, arremessado antes que derreta. Foi feita para caçar lendas, não comandantes: a lança busca o coração de uma criatura inimiga e ali entrega três medidas de inverno. Contra um Cristal ela simplesmente se desfaz — e o Conclave nunca se deu ao trabalho de corrigir isso.',
+      'A Lança de Gelo é Éter resfriado até virar intenção. Foi desenhada para caçar criaturas, não para ferir Cristais: atravessa couraça, escama e carne com três medidas de inverno, mas se desfaz diante de um Comandante. O Conclave anotou a limitação, debateu por três anos e decidiu que estava ótima assim.',
   },
   a_orbe: {
     epithet: 'O Amplificador',
     factionId: 'eter',
     story:
-      'Um Cristal de Éter lapidado por uma geração inteira até virar esfera perfeita, sem aresta que disperse. Toda magia que passa por ele sai maior do que entrou: +1 de dano, sempre, sem cerimônia. O Conclave o considera menos um artefato e mais uma tese provada.',
+      'O Orbe é um Cristal lapidado por uma geração inteira até não restar aresta que disperse energia. Toda magia que passa por ele sai maior do que entrou, com +1 de dano e zero modéstia. Para o Conclave, não é um artefato; é uma tese redonda demais para ser refutada.',
   },
 
   // ─── Antigos das Profundezas ──────────────────────────────────
@@ -310,49 +310,49 @@ export const CARD_LORE: Record<string, CardLore> = {
     epithet: 'O Muro que Respira',
     factionId: 'profundezas',
     story:
-      'Quando a Fratura rachou o solo, algo na pedra acordou e se pôs de pé. Não persegue, não recua: planta-se onde está e Provoca — o inimigo precisa derrubá-lo antes de mirar qualquer outra coisa. Muitos exércitos quebraram-se contra esse muro vivo.',
+      'Quando a Fratura rachou o solo, uma parte da montanha decidiu levantar. O Golem não corre, não persegue e não negocia: apenas se planta no caminho e Provoca. Muitos exércitos descobriram tarde demais que derrubar uma parede viva exige mais do que coragem decorativa.',
   },
   c_dragao: {
     epithet: 'A Última Coisa que Viram',
     factionId: 'profundezas',
     story:
-      'Mais velho que os reinos, dormia no fundo do mundo até a Fratura abrir-lhe a caverna. Custa caro chamá-lo e demora a vir — mas, quando enfim desdobra as asas cinzentas sobre o campo, costuma ser a última carta que o Comandante adversário chega a ver.',
+      'O Dragão dormia abaixo dos reinos quando os reinos ainda eram ideias mal desenhadas. A Fratura abriu sua caverna, e desde então todo Comandante sabe que chamá-lo é caro, lento e absolutamente indecente para quem está do outro lado. Quando suas asas cinzentas cobrem o campo, muitas estratégias se tornam autobiografias curtas.',
   },
   c_morcego: {
     epithet: 'Asa do Abismo',
     factionId: 'profundezas',
     story:
-      'Foi a primeira coisa que a Fratura soltou das profundezas: pequeno, faminto e — descobriu-se tarde demais — incontável. Custa quase nada chamá-lo, e morde muito mais do que o tamanho sugere. Onde aparece um, o abismo ainda guarda milhares.',
+      'O Morcego foi uma das primeiras coisas a escapar pelas rachaduras: pequeno, faminto e multiplicado demais para conforto geral. Custa quase nada chamá-lo, morde mais do que seu tamanho promete e sempre sugere que há outros vindo atrás. O abismo não manda aviso; manda amostra grátis.',
   },
   c_cultista: {
     epithet: 'O Devoto do Nada',
     factionId: 'profundezas',
     story:
-      'Entregou o nome, o rosto e o medo ao Vazio, e recebeu em troca uma única certeza: a de que a própria morte teria serventia. Quando cai, morre sorrindo — e o Estertor cobra duas medidas de dano direto do comandante inimigo. A morte dele é o recado; o remetente ainda vem.',
+      'Ele entregou nome, rosto e medo ao Vazio, e recebeu uma certeza em troca: até sua morte teria serventia. Quando cai, sorri como quem acaba de concluir um contrato. No Estertor, duas medidas de dano alcançam o Comandante inimigo; o corpo era só a carta de apresentação.',
   },
   c_espectro: {
     epithet: 'Fome Antiga',
     factionId: 'profundezas',
     story:
-      'Sombra que a Fratura arrancou de um lugar sem nome, faminta desde antes de existirem reinos. Drenar: o que ela fere, ela bebe — e o que bebe, entrega em vida ao portador. Lutar contra o Espectro é alimentá-lo; ignorá-lo é pior.',
+      'O Espectro veio de um lugar que a Fratura não deveria ter aberto. Ele não fere para matar, fere para beber: Drenar transforma cada dano causado em vida devolvida ao Comandante que o chamou. Lutar contra ele é alimentá-lo. Ignorá-lo é deixar a mesa posta.',
   },
   c_horror: {
     epithet: 'O Que Rasteja por Baixo',
     factionId: 'profundezas',
     story:
-      'Grande demais para caber num nome, velho demais para lembrar o próprio começo. Rasteja por baixo do campo e por baixo da razão, e cada bocado que arranca do inimigo alimenta o mestre que o chamou — Drenar, em escala de monstro. Os Antigos não o adestram: apenas apontam a direção.',
+      'Grande demais para caber num nome e antigo demais para se importar com nomes, o Horror rasteja por baixo do campo e da razão. Cada bocado que arranca do inimigo volta como vida para seu Comandante, Drenar em escala de pesadelo. Os Antigos não o comandam de verdade; apontam uma direção e torcem para ele aceitar.',
   },
   s_pacto: {
     epithet: 'Três Segredos por Três Gotas',
     factionId: 'profundezas',
     story:
-      'O Vazio é o único credor de Aurélia que nunca recusa um empréstimo — e o único que cobra no ato. Três cartas surgem na mão do Comandante; três medidas de vida deixam seu corpo, na mesma respiração. Todo conjurador jura que fará o pacto uma única vez. Nenhum cumpriu.',
+      'O Vazio é o único credor de Aurélia que nunca nega empréstimo e nunca parcela cobrança. Três cartas surgem na mão do Comandante; três medidas de vida deixam seu corpo na mesma respiração. Todo conjurador jura que fará o pacto uma única vez. A estatística, fofíssima, discorda.',
   },
   c_renegado: {
     epithet: 'O Que a Dor Aguça',
     factionId: 'profundezas',
     story:
-      'Já lutou sob três bandeiras e enterrou as três; hoje só luta pela própria pele — e pela do Comandante que o paga. Resistência: quando o Cristal do portador fraqueja, ele lembra por que sobreviveu a tudo, e a lembrança o aguça — +2 de ataque e Investida enquanto durar o perigo. O desespero dos outros é o elemento dele.',
+      'O Renegado já lutou por três bandeiras e enterrou as três com a mesma pá. Hoje luta pela própria pele e pela do Comandante que ainda pode pagar. Quando o Cristal do portador fraqueja, sua Resistência desperta: ganha +2 de ataque e Investida, porque o perigo transforma sobrevivente em lâmina.',
   },
 
   // ─── A Maré Sem Rei ───────────────────────────────────────────
@@ -360,67 +360,67 @@ export const CARD_LORE: Record<string, CardLore> = {
     epithet: 'Primeiro no Convés',
     factionId: 'mares',
     story:
-      'O menor contrato da Maré: um garoto, uma faca e nenhuma paciência. Investida: pula no abalroamento antes de a prancha encostar, porque quem espera a prancha chega em segundo. Metade não volta; a metade que volta vira corsária.',
+      'O Grumete é o menor contrato da Maré: uma faca, um sorriso torto e uma pressa criminosa de virar história. Investida: pula no abalroamento antes de a prancha encostar, porque quem espera permissão chega tarde no saque. Metade não volta. A metade que volta aprende a dar ordens.',
   },
   c_corsaria: {
     epithet: 'Mão Leve de Salobra',
     factionId: 'mares',
     story:
-      'No porto franco de Salobra ela é lenda de taverna: a pirata que rouba tempo, não só carga. Chega ao campo já com um estilhaço de Éter afanado no bolso — um ponto de energia a mais neste turno, subtraído sabe-se lá de quem. Ninguém nunca viu a mão dela se mover.',
+      'No porto franco de Salobra, ela é lenda de taverna e pesadelo de capitão. A Corsária não rouba só carga; rouba oportunidade. Quando entra em campo, traz um estilhaço de Éter que ninguém viu sair de lugar nenhum e concede um ponto de energia neste turno. A mão dela nunca se move. O bolso dos outros, sim.',
   },
   c_aguaviva: {
     epithet: 'Lanterna Afogada',
     factionId: 'mares',
     story:
-      'Água-viva que medrou colada a um Cristal Afogado até virar lanterna viva de Éter. Em vida, apenas flutua e brilha; na morte, estoura num clarão que queima tudo por perto — um de dano em cada criatura inimiga, no Estertor. Os corsários as recolhem com redes de vidro. Com muito, muito cuidado.',
+      'A Água-viva cresceu presa a um Cristal Afogado até seu corpo virar lâmpada viva de Éter. Flutua bonita demais para ser confiável, o que no mar costuma ser uma tese sólida. No Estertor, explode em clarão e causa um de dano a cada criatura inimiga. Corsários a recolhem com redes de vidro e uma humildade raríssima.',
   },
   c_sereia: {
     epithet: 'A Voz que Desfaz Juras',
     factionId: 'mares',
     story:
-      'Os marinheiros tapam os ouvidos com cera — não por medo de morrer, mas de obedecer. O canto dela desfaz juramentos: convence uma lenda inimiga, escolhida pela maré, a largar o campo e voltar para casa, direto à mão de quem a chamou. Nenhuma corrente segura quem foi convencido a partir.',
+      'Marinheiros tapam os ouvidos com cera não porque temem morrer, mas porque temem concordar. A Sereia canta e desfaz juramentos, puxando uma criatura inimiga de volta à mão de quem a chamou, como se a própria vontade tivesse mudado de maré. Nenhuma corrente segura quem decide partir sorrindo.',
   },
   c_tubarao: {
     epithet: 'Casco Vermelho',
     factionId: 'mares',
     story:
-      'Criado sob os cascos dos galeões da Maré, alimentado com o que as batalhas jogam ao mar. Investida: ataca no turno em que chega, porque ataca no cheiro — e sente sangue a um oceano de distância. Os corsários o chamam de Casco Vermelho. Ninguém pergunta o porquê duas vezes.',
+      'Criado sob os galeões da Maré, o Tubarão aprendeu a seguir batalha pelo gosto de ferro na água. Investida: ataca no turno em que chega, porque não precisa ver o inimigo para saber que ele sangra. Chamam-no de Casco Vermelho. Quem pergunta o motivo geralmente vira resposta.',
   },
   c_serpente: {
     epithet: 'A Primeira Dobra do Mar',
     factionId: 'mares',
     story:
-      'Dizem os velhos de Salobra que, quando o mar se dobrou pela primeira vez, ela já estava por baixo. As escamas, banhadas há eras no Éter de um Cristal Afogado, desviam o primeiro arpão — Escudo Arcano: o primeiro dano se anula e quebra só o encanto. O segundo arpão precisa ser atirado por alguém que ainda esteja no barco.',
+      'Antes dos mapas, antes dos portos e talvez antes da coragem, a Serpente já dobrava o mar por baixo. Suas escamas, banhadas por eras no Éter de um Cristal Afogado, anulam o primeiro dano com Escudo Arcano. O segundo golpe precisa vir de alguém que ainda esteja no barco, e isso reduz bastante a fila.',
   },
   c_kraken: {
     epithet: 'O Porto Que Afunda Portos',
     factionId: 'mares',
     story:
-      'É o monstro que dá nome ao medo dos marinheiros — e Salmarra, o porto que afundou, é só a mais famosa das cidades de que ele se lembrou de ter raiva. Provoca: nada passa por ele, porque não existe por onde. E nem morto termina: no Estertor, dois braços continuam lutando onde o corpo caiu. Do Kraken se mata o meio; as pontas ficam.',
+      'O Kraken não é apenas um monstro; é uma lembrança ruim que o oceano se recusa a esquecer. Salmarra, o porto afundado, foi só a cidade mais famosa a descobrir isso. Provoca porque nada passa por ele: não há rota, praia ou coragem suficiente. E, no Estertor, dois tentáculos continuam lutando onde o corpo caiu. Do Kraken se mata o meio; as pontas ficam ofendidas.',
   },
   s_maremoto: {
     epithet: 'A Conta da Maré',
     factionId: 'mares',
     story:
-      'A Maré não perdoa dívidas: apenas espera a lua certa. Quando a conta vence, o mar cobra de uma vez o que a costa devia há anos — três medidas de dano sobre todas as criaturas inimigas, numa única onda que não pergunta nomes. Depois recua, manso, como quem já recebeu.',
+      'A Maré Sem Rei não perdoa dívida; ela apenas espera a lua certa para cobrar com juros. O Maremoto sobe sem perguntar nome e causa três medidas de dano a todas as criaturas inimigas, lavando o campo como quem limpa convés depois de motim. Depois recua manso, porque crueldade com elegância ainda é crueldade.',
   },
   t_abordagem: {
     epithet: 'Prancha ao Mar!',
     factionId: 'mares',
     story:
-      'Duas palavras, e a tripulação vira arma. Uma criatura aliada ganha +1 de ataque e ataca já, neste turno — porque abordagem que espera não é abordagem, é visita. Na Maré, o grito vale mais que qualquer ordem escrita: quando soa, ninguém pergunta para onde.',
+      'Duas palavras bastam para transformar tripulação em lâmina. Uma criatura aliada ganha +1 de ataque e ataca imediatamente neste turno, porque abordagem que espera deixa de ser ameaça e vira visita. Na Maré, ordem escrita vale pouco; o grito certo, no segundo certo, vale um navio inteiro.',
   },
   t_saque: {
     epithet: 'X Marca o Lugar',
     factionId: 'mares',
     story:
-      'Mapa roubado do camarote de um capitão que não precisa mais dele. O X marca o lugar: uma carta a mais na mão e um sopro de energia com o vento a favor. Na Maré, todo tesouro pertence a quem chega primeiro — e o mapa existe para garantir que seja você.',
+      'O mapa foi roubado do camarote de um capitão que não precisava mais dele, principalmente por estar morto. O X marca o lugar, compra uma carta e traz um sopro de energia para este turno, como vento favorável entrando na vela. Na Maré, tesouro pertence a quem chega primeiro — e moral costuma chegar nadando atrás.',
   },
   a_figura: {
     epithet: 'A Guardiã do Casco',
     factionId: 'mares',
     story:
-      'Entalhada à imagem de uma sereia de verdade — dizem que com a permissão dela, o que já seria milagre. Presa à proa, desvia um golpe do casco a cada maré: um ponto de escudo no início de cada turno, até o limite do que a madeira aguenta. Nenhum navio da Maré zarpa sem a sua. Os que zarparam não voltaram para contar.',
+      'Entalhada à imagem de uma sereia real, talvez com permissão, talvez com uma aposta muito mal explicada, a Figura de Proa protege o navio como se ainda cantasse. A cada turno, concede um ponto de escudo, aparando o primeiro castigo antes que a madeira reclame. Nenhum capitão da Maré zarpa sem uma. Os que tentaram viraram boato náutico.',
   },
 };
 
