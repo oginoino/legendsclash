@@ -4,7 +4,7 @@ import {
   clearResetToken, closeAccountPrompt, completeProfile, loginAccount, loginAsGuest,
   registerAccount, requestPasswordReset, resetPassword, useAppState,
 } from '../store';
-import { CosmeticIcon } from '../cosmetics';
+import { CosmeticPortrait } from '../cosmetics';
 import { IcoPlay } from '../icons';
 
 /**
@@ -109,7 +109,7 @@ export function LoginView() {
           data-avatar={a.id}
           onClick={() => setAvatar(a.id)}
         >
-          <CosmeticIcon id={a.id} size={26} />
+          <CosmeticPortrait id={a.id} />
         </button>
       ))}
     </div>

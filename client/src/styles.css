@@ -446,25 +446,29 @@ input:focus {
 }
 
 .avatar {
-  font-size: 22px;
+  width: 48px;
+  height: 48px;
   background: var(--bg-2);
   border: 2px solid var(--line);
   border-radius: 10px;
-  padding: 8px;
+  padding: 5px;
   cursor: pointer;
   display: grid;
   place-items: center;
   color: var(--text);
+  overflow: hidden;
   transition: transform .12s, border-color .12s;
 }
 
-.avatar svg {
-  width: 26px;
-  height: 26px;
+.avatar svg,
+.avatar .lc-cosmetic-img {
+  width: 100%;
+  height: 100%;
 }
 
-.avatar.selected svg {
-  color: var(--gold);
+.avatar .lc-cosmetic-img {
+  border-radius: 7px;
+  object-fit: cover;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -650,8 +654,13 @@ input:focus {
 
 .join-form input {
   flex: 1;
+  min-width: 0;
   text-transform: uppercase;
   letter-spacing: 3px;
+}
+
+.join-form .btn {
+  flex: 0 0 auto;
 }
 
 .queue-status {
@@ -1130,9 +1139,11 @@ input:focus {
 }
 
 .portrait {
+  appearance: none;
   position: relative;
   width: var(--portrait);
   height: var(--portrait);
+  padding: 0;
   background: radial-gradient(circle at 35% 30%, #32466e, #121b2f);
   border: 2px solid #41547e;
   border-radius: 50%;
@@ -3963,18 +3974,25 @@ input:focus {
   background: var(--bg-2);
   border: 2px solid var(--line);
   border-radius: 10px;
-  padding: 8px;
+  padding: 5px;
   cursor: pointer;
-  min-width: 46px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
   color: var(--text);
+  overflow: hidden;
   transition: transform .1s, border-color .1s, background .1s, color .1s;
 }
 
-.cz-chip svg {
-  width: 24px;
-  height: 24px;
+.cz-avatar-portrait {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0f1727;
 }
 
 .cz-chip.sel {
@@ -3992,8 +4010,10 @@ input:focus {
   border: 2px solid var(--line);
   border-radius: 10px;
   padding: 9px 6px;
+  min-height: 94px;
   cursor: pointer;
   color: var(--text);
+  overflow: hidden;
   transition: transform .1s, border-color .1s, background .1s;
 }
 
@@ -4006,12 +4026,25 @@ input:focus {
   line-height: 1;
   display: grid;
   place-items: center;
+  width: 100%;
+  max-width: 66px;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
   color: var(--text);
+  background: #0f1727;
+  border: 1px solid #ffffff14;
+}
+
+.cz-cmd-portrait svg,
+.cz-cmd-portrait .lc-cosmetic-img {
+  width: 100%;
+  height: 100%;
 }
 
 .cz-cmd-portrait svg {
-  width: 30px;
-  height: 30px;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 .cz-cmd.sel .cz-cmd-portrait {
@@ -4796,6 +4829,7 @@ input:focus {
   box-sizing: border-box;
   padding: 2px;
   background: var(--accent-grad, var(--accent, var(--gold)));
+  overflow: hidden;
 }
 
 .lc-avatar-face {
@@ -4813,6 +4847,22 @@ input:focus {
 .lc-avatar-face svg {
   width: 62%;
   height: 62%;
+}
+
+.lc-cosmetic-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+}
+
+.lc-avatar-face .lc-cosmetic-img,
+.lc-inline .lc-cosmetic-img {
+  border-radius: 50%;
 }
 
 .lc-avatar-photo {
@@ -4928,6 +4978,10 @@ input:focus {
 
 /* Retrato da arena: o Avatar preenche o botão responsivo (.portrait). */
 .portrait-avatar.lc-avatar {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   box-shadow: none;
 }
 

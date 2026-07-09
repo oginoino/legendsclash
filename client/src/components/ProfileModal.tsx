@@ -9,7 +9,7 @@ import { GiLaurelsTrophy, GiPadlock, GiStarFormation } from 'react-icons/gi';
 import {
   removeAvatarPhoto, updateProfile, uploadAvatarPhoto, useAppState,
 } from '../store';
-import { Avatar, CosmeticIcon, accentVars, downscaleImage } from '../cosmetics';
+import { Avatar, CosmeticPortrait, accentVars, downscaleImage } from '../cosmetics';
 
 /** Selo de prestígio do cosmético, agora em ícone (sem emoji). */
 function TierBadge({ req }: { req: string | undefined }) {
@@ -95,7 +95,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
         <div className="commander-preview">
           <Avatar
             iconId={commander}
-            photo={v2 ? p.photo : null}
+            photo={null}
             frame={v2 ? frame : 'none'}
             accent={accent}
             accentStyle={accentStyle}
@@ -152,7 +152,9 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
               data-avatar={a.id}
               onClick={() => setAvatar(a.id)}
             >
-              <CosmeticIcon id={a.id} size={24} />
+              <span className="cz-avatar-portrait">
+                <CosmeticPortrait id={a.id} />
+              </span>
             </button>
           ))}
         </div>
@@ -175,7 +177,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
               >
                 {!locked && <TierBadge req={unlockReq} />}
                 <span className="cz-cmd-portrait">
-                  {locked ? <GiPadlock /> : <CosmeticIcon id={c.id} size={28} />}
+                  {locked ? <GiPadlock /> : <CosmeticPortrait id={c.id} />}
                 </span>
                 <span className="cz-cmd-title">{locked ? req : c.title}</span>
                 {prog && (

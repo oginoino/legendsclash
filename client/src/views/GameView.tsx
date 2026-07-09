@@ -1252,7 +1252,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         <Avatar
           className="portrait-avatar"
           iconId={seat.commander || seat.avatar}
-          photo={seat.photo}
+          photo={null}
           frame={seat.frame}
           accent={seat.accent}
           accentStyle={seat.accentStyle}
