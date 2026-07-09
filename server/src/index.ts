@@ -96,7 +96,13 @@ const server = createServer(async (req, res) => {
     // Arquivos estáticos do cliente (build do Vite), com fallback de SPA
     // para que o convite por link (/room/CODIGO) funcione.
     if (existsSync(CLIENT_DIST)) {
-      const safePath = normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(url.pathname);
+      } catch {
+        return json(res, 400, { error: 'URL inválida.' });
+      }
+      const safePath = normalize(decodedPath).replace(/^(\.\.[/\\])+/, '');
       let filePath = join(CLIENT_DIST, safePath);
       if (!filePath.startsWith(CLIENT_DIST) || !existsSync(filePath) || extname(filePath) === '') {
         filePath = join(CLIENT_DIST, 'index.html');
