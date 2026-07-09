@@ -26,6 +26,13 @@ type Selection =
   | null;
 
 type HoverTarget = { kind: 'face' } | { kind: 'creature'; iid: string } | null;
+type InspectCard = {
+  iid: string;
+  defId: string;
+  x: number;
+  y: number;
+  source: 'hand' | 'creature';
+};
 
 /** Efeito flutuante transitório, ancorado a um elemento da arena.
  *  dmg/heal = vida; shield = dano absorvido pelo escudo; buff = empoderamento. */
@@ -174,13 +181,14 @@ export function GameView() {
   const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
   // inspeção no hover (desktop): carta ampliada flutuando acima da mão —
   // a mão é um scroll container, então escalar a carta no lugar seria cortado
-  const [inspect, setInspect] = useState<{ iid: string; defId: string; x: number; y: number } | null>(null);
+  const [inspect, setInspect] = useState<InspectCard | null>(null);
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
   const prevRef = useRef<GameViewState | null>(null);
   const prevChatLenRef = useRef(0);
   const tauntCooldownRef = useRef(0);
+  const inspectTimerRef = useRef<number | null>(null);
   const dragRef = useRef<DragState | null>(null);
   // após um arrasto real, o clique sintético do mouse não deve disparar ações
   const suppressClickRef = useRef(false);
@@ -194,6 +202,31 @@ export function GameView() {
   } | null>(null);
 
   const game = s.game;
+
+  function clearInspect(source?: InspectCard['source']) {
+    if (inspectTimerRef.current) {
+      window.clearTimeout(inspectTimerRef.current);
+      inspectTimerRef.current = null;
+    }
+    setInspect((cur) => (!source || cur?.source === source ? null : cur));
+  }
+
+  function showInspect(next: InspectCard, ttlMs?: number) {
+    if (inspectTimerRef.current) {
+      window.clearTimeout(inspectTimerRef.current);
+      inspectTimerRef.current = null;
+    }
+    setInspect(next);
+    if (ttlMs) {
+      inspectTimerRef.current = window.setTimeout(() => {
+        setInspect((cur) => (
+          cur?.iid === next.iid && cur.source === next.source ? null : cur
+        ));
+        inspectTimerRef.current = null;
+      }, ttlMs);
+    }
+  }
+
   const visibleImageKey = useMemo(() => {
     if (!game) return '';
     const ids = [
@@ -222,6 +255,10 @@ export function GameView() {
     if (!visibleImageKey) return;
     preloadCardImages(visibleImageKey.split('|'), { priority: 'high', decode: true });
   }, [visibleImageKey]);
+
+  useEffect(() => () => {
+    if (inspectTimerRef.current) window.clearTimeout(inspectTimerRef.current);
+  }, []);
   // cancela a seleção com Esc ou clique com o botão direito
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -871,6 +908,7 @@ export function GameView() {
           if (!(e.target as Element).closest('[data-anchor], button, .hand')) {
             setSelection(null);
             setTauntOpen(false);
+            clearInspect('creature');
           }
         }}
       >
@@ -910,6 +948,13 @@ export function GameView() {
                 onHover={(on) => setHover(on ? { kind: 'creature', iid: c.iid } : null)}
                 fx={fxFor(`cr-${c.iid}`)}
                 onClick={() => clickEnemyCreature(c)}
+                onInspect={(e) => showInspect({
+                  iid: c.iid,
+                  defId: c.defId,
+                  x: e.clientX,
+                  y: e.clientY - 12,
+                  source: 'creature',
+                }, 3200)}
                 style={{ order: i * 2 }}
               />
             );
@@ -994,6 +1039,13 @@ export function GameView() {
               fx={fxFor(`cr-${c.iid}`)}
               onClick={() => clickMyCreature(c)}
               onPointerDown={(e) => onTargetPointerDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
+              onInspect={(e) => showInspect({
+                iid: c.iid,
+                defId: c.defId,
+                x: e.clientX,
+                y: e.clientY - 12,
+                source: 'creature',
+              }, 3200)}
               style={{ order: i * 2 }}
             />
           ))}
@@ -1032,9 +1084,15 @@ export function GameView() {
                   if (myTurn && affordable) setHoverCost(CARDS[c.defId].cost);
                   if (!CAN_HOVER) return;
                   const r = e.currentTarget.getBoundingClientRect();
-                  setInspect({ iid: c.iid, defId: c.defId, x: r.left + r.width / 2, y: r.top - 10 });
+                  showInspect({
+                    iid: c.iid,
+                    defId: c.defId,
+                    x: r.left + r.width / 2,
+                    y: r.top - 10,
+                    source: 'hand',
+                  });
                 }}
-                onMouseLeave={() => { setHoverCost(0); setInspect(null); }}
+                onMouseLeave={() => { setHoverCost(0); clearInspect('hand'); }}
                 style={lifting ? {
                   // a carta segue o dedo na vertical; soltar bem acima joga
                   transform: `translateY(${lift!.dy}px) scale(1.12)`,
@@ -1147,12 +1205,17 @@ export function GameView() {
         ))}
       </div>
 
-      {inspect && !selection && !lift && game.status === 'active' && game.hand.some((c) => c.iid === inspect.iid) && (
+      {inspect && (!selection || inspect.source === 'creature') && !lift && game.status === 'active' && (
         <div
-          className="card-inspect"
+          className={`card-inspect ${inspect.source === 'creature' ? 'board-inspect' : ''}`}
           style={{
-            left: Math.min(Math.max(inspect.x, 130), window.innerWidth - 130),
-            top: inspect.y,
+            left: Math.min(
+              Math.max(inspect.x, inspect.source === 'creature' ? 160 : 130),
+              window.innerWidth - (inspect.source === 'creature' ? 160 : 130),
+            ),
+            top: inspect.source === 'creature'
+              ? Math.min(Math.max(inspect.y, 460), window.innerHeight - 12)
+              : inspect.y,
           }}
         >
           <CardView defId={inspect.defId} />
@@ -1293,7 +1356,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, style }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onInspect, style }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
@@ -1311,6 +1374,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
   fx: FloatFx[];
   onClick: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
+  onInspect?: (e: React.MouseEvent) => void;
   style?: React.CSSProperties;
 }) {
   const def = CARDS[c.defId];
@@ -1338,12 +1402,20 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     buffed ? 'buffed-flash' : '',
   ].join(' ');
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       className={classes}
       data-anchor={`cr-${c.iid}`}
       style={style}
       onClick={onClick}
       onPointerDown={onPointerDown}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        if ((e.target as HTMLElement).closest('.creature-info')) return;
+        e.preventDefault();
+        onClick();
+      }}
       title={
         blocked
           ? 'Protegido por Provocar — ataque o Golem primeiro'
@@ -1356,6 +1428,19 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >
+      <button
+        type="button"
+        className="creature-info"
+        aria-label={`Ver carta: ${def.name}`}
+        title={def.text ? `${def.name}: ${def.text}` : `Ver carta: ${def.name}`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onInspect?.(e);
+        }}
+      >
+        <IcoRules />
+      </button>
       {isTaunt && <span className="taunt-badge" title="Provocar"><IcoShield /></span>}
       {c.ward && (
         <span className="ward-badge" title="Escudo Arcano: o próximo dano será anulado"><IcoWard /></span>
@@ -1373,7 +1458,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       {preview && <PreviewChip p={preview} dim={previewDim} />}
       {retaliation && <PreviewChip p={retaliation} self />}
       <FxLayer fx={fx} />
-    </button>
+    </div>
   );
 }
 

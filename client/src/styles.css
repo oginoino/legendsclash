@@ -33,9 +33,9 @@
   --rar-legendary: #ffae34;
   /* dimensões padronizadas das cartas — mesma medida na mão, nas escolhas
      iniciais (mulligan) e proporção compatível na ficha da mesa */
-  --card-w: 132px;
-  --card-h: 192px;
-  --card-art-h: 50px;
+  --card-w: 156px;
+  --card-h: 314px;
+  --card-art-h: 128px;
   --token-w: 110px;
   --token-art-h: 54px;
   /* ── Tokens de design ─────────────────────────────────────────
@@ -71,7 +71,7 @@
   /* métricas fluidas da arena (respiram entre celular e desktop) */
   --portrait: clamp(44px, 5.5vw, 68px);
   --board-min: clamp(78px, 12vh, 112px);
-  --hand-min: clamp(158px, 26vh, 226px);
+  --hand-min: clamp(298px, 40vh, 364px);
   /* grão sutil de textura para superfícies grandes (SVG inline, sem rede) */
   --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
@@ -941,10 +941,12 @@ input:focus {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+  min-width: 0;
 }
 
 .chat-input input {
   flex: 1;
+  min-width: 0;
 }
 
 .emote-row {
@@ -1043,6 +1045,7 @@ input:focus {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .side-top {
@@ -1466,13 +1469,50 @@ input:focus {
   color: var(--text);
   padding: 5px 5px 13px;
   width: var(--token-w);
+  min-width: 0;
   cursor: pointer;
   font-size: 12px;
   touch-action: none;
+  user-select: none;
   /* arrastar daqui inicia a mira, nunca rolagem */
   animation: summon .3s cubic-bezier(.2, 1.6, .5, 1);
   transition: border-color .12s, box-shadow .12s, transform .12s;
   box-shadow: 0 6px 14px #00000077, inset 0 1px 0 #ffffff18;
+}
+
+.creature:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.creature-info {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 5;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #ffffff2e;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #1d2a42ee, #101724f2);
+  color: var(--text);
+  cursor: help;
+  box-shadow: 0 5px 14px #000b, inset 0 1px 0 #ffffff1f;
+  touch-action: manipulation;
+}
+
+.creature-info svg {
+  width: 14px;
+  height: 14px;
+}
+
+.creature-info:hover,
+.creature-info:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold-soft);
+  outline: none;
 }
 
 /* filete interno: moldura dupla discreta de "peça de tabuleiro" */
@@ -1702,7 +1742,7 @@ input:focus {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   /* tamanho fixo e idêntico em toda a mão e no mulligan: nada de altura
      desigual quando o texto/keywords variam de carta para carta */
   width: var(--card-w);
@@ -1716,7 +1756,7 @@ input:focus {
   border: 2px solid #3a4a6e;
   border-radius: 12px;
   color: var(--text);
-  padding: 8px 7px;
+  padding: 9px 8px 10px;
   text-align: center;
   font-size: 11px;
   cursor: default;
@@ -1797,7 +1837,7 @@ input:focus {
    da mesa/codex (que nunca dessaturam). O realce azul + brilho da .playable
    já distingue o que dá pra jogar. */
 .card:not(.playable) {
-  opacity: .72;
+  opacity: .88;
 }
 
 .card-cost {
@@ -1823,11 +1863,14 @@ input:focus {
 .card-name {
   font-family: var(--font-heading);
   font-weight: 800;
-  font-size: 11.5px;
-  line-height: 1.18;
+  font-size: 12px;
+  line-height: 1.12;
   letter-spacing: .2px;
   text-shadow: 0 1px 2px #000a;
-  margin-top: 3px;
+  min-height: 26px;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
 }
 
 /* ornamento sob o nome: filetes + losango na cor da raridade */
@@ -1835,7 +1878,7 @@ input:focus {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 1px 8px;
+  margin: 0 8px;
 }
 
 .card-ornament::before,
@@ -1887,43 +1930,68 @@ input:focus {
   color: #ffe9a8;
 }
 
-.card-type {
-  font-size: 8.5px;
-  text-transform: uppercase;
-  letter-spacing: 1.8px;
-  font-weight: 700;
-}
-
 .card-creature {
   background: var(--noise), radial-gradient(120% 60% at 50% 0%, #e3b34112, transparent 60%), linear-gradient(180deg, #34415e, #1c2235);
-}
-
-.card-creature .card-type {
-  color: var(--gold);
 }
 
 .card-spell {
   background: var(--noise), radial-gradient(120% 60% at 50% 0%, #4d8dff14, transparent 60%), linear-gradient(180deg, #253b66, #151f3a);
 }
 
-.card-spell .card-type {
-  color: #7fb1ff;
-}
-
 .card-artifact {
   background: var(--noise), radial-gradient(120% 60% at 50% 0%, #c4d2e410, transparent 60%), linear-gradient(180deg, #333b4a, #1b212d);
-}
-
-.card-artifact .card-type {
-  color: #b8c4d4;
 }
 
 .card-tactic {
   background: var(--noise), radial-gradient(120% 60% at 50% 0%, #b083f014, transparent 60%), linear-gradient(180deg, #392e58, #1e1932);
 }
 
+.card-meta {
+  min-height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.card-type {
+  border: 1px solid #ffffff1f;
+  border-radius: 99px;
+  padding: 1px 7px;
+  background: #05091566;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.card-creature .card-type {
+  color: var(--gold);
+  border-color: #e3b34155;
+}
+
+.card-spell .card-type {
+  color: #7fb1ff;
+  border-color: #7fb1ff55;
+}
+
+.card-artifact .card-type {
+  color: #c4d2e4;
+  border-color: #c4d2e455;
+}
+
 .card-tactic .card-type {
   color: var(--purple);
+  border-color: #b083f055;
+}
+
+.card-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
 }
 
 .keyword-chip {
@@ -1931,23 +1999,39 @@ input:focus {
   background: #0d142299;
   border: 1px solid #8fa3c855;
   border-radius: 99px;
-  padding: 1px 8px;
-  font-size: 9px;
+  padding: 1px 6px;
+  font-size: 8.5px;
   font-weight: 800;
   color: #c8d6ea;
-  letter-spacing: .4px;
+  letter-spacing: .2px;
+  line-height: 1.35;
 }
 
-/* texto de regras: ocupa o espaço restante da carta de altura fixa e corta
-   o excedente (a leitura completa fica na inspeção ampliada no hover) */
+/* texto de regras: painel próprio para contraste, com área estável e legível. */
 .card-text {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  color: #b6c1d2;
-  line-height: 1.35;
-  font-size: 10.5px;
-  padding: 0 2px;
+  display: block;
+  color: #d7e0ec;
+  background: linear-gradient(180deg, #0a1020cc, #080d18e6);
+  border: 1px solid #ffffff1a;
+  border-radius: 7px;
+  line-height: 1.25;
+  font-size: 11.2px;
+  padding: 6px 7px;
+  text-align: left;
+  box-shadow: inset 0 1px 0 #ffffff0c;
+}
+
+.card.text-dense-1 .card-text {
+  font-size: 10.4px;
+  line-height: 1.18;
+}
+
+.card.text-dense-2 .card-text {
+  font-size: 9.8px;
+  line-height: 1.15;
 }
 
 /* criaturas reservam a faixa inferior para as gemas de ataque/vida: a
@@ -2433,7 +2517,7 @@ input:focus {
 /* ── Inspeção de carta no hover (desktop) ─────────────────────── */
 .card-inspect {
   position: fixed;
-  transform: translate(-50%, -100%) scale(1.45);
+  transform: translate(-50%, -100%) scale(1.18);
   transform-origin: 50% 100%;
   pointer-events: none;
   z-index: 55;
@@ -2442,23 +2526,70 @@ input:focus {
 }
 
 .card-inspect .card {
+  width: 204px;
+  height: 372px;
+  --card-art-h: 158px;
   animation: none;
   opacity: 1;
   filter: none;
   box-shadow: 0 0 0 1px #ffffff22, 0 18px 50px #000d;
 }
 
+.card-inspect .card .card-art.card-art-frame {
+  height: var(--card-art-h);
+}
+
+.card-inspect.board-inspect {
+  z-index: 64;
+}
+
+.card-inspect .card-name {
+  font-size: 13px;
+  min-height: 29px;
+}
+
+.card-inspect .card-text {
+  font-size: 12.6px;
+  line-height: 1.28;
+  padding: 7px 8px;
+}
+
 @keyframes inspect-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -100%) scale(1.2);
+    transform: translate(-50%, -100%) scale(1.04);
   }
 }
 
 /* cinto e suspensório: nunca exibir a inspeção em telas sem hover */
 @media (hover: none) {
-  .card-inspect {
+  .card-inspect:not(.board-inspect) {
     display: none;
+  }
+
+  .card-inspect.board-inspect {
+    display: block;
+    transform: translate(-50%, -100%) scale(.96);
+  }
+}
+
+@media (max-width: 640px) {
+  .card-inspect.board-inspect .card {
+    width: 178px;
+    height: 318px;
+    --card-art-h: 132px;
+  }
+}
+
+@media (max-height: 500px) {
+  .card-inspect.board-inspect {
+    transform: translate(-50%, -100%) scale(.72);
+  }
+
+  .card-inspect.board-inspect .card {
+    width: 160px;
+    height: 250px;
+    --card-art-h: 96px;
   }
 }
 
@@ -2489,6 +2620,9 @@ input:focus {
 }
 
 .card-reveal .card {
+  width: 158px;
+  height: 278px;
+  --card-art-h: 116px;
   box-shadow: 0 16px 50px #000c, 0 0 26px #4d8dff44;
   opacity: 1;
   filter: none;
@@ -3271,8 +3405,10 @@ input:focus {
   height: var(--card-art-h);
   font-size: 38px;
   align-self: center;
-  margin-top: 2px;
+  margin-top: 0;
   flex-shrink: 0;
+  border-color: #ffffff2b;
+  box-shadow: 0 3px 9px #0008, inset 0 0 0 1px #ffffff0f;
 }
 
 .creature-art.card-art-frame {
@@ -3283,7 +3419,7 @@ input:focus {
 }
 
 .card-reveal .card-art.card-art-frame {
-  height: 62px;
+  height: 116px;
 }
 
 .image-art.card-art-frame {
@@ -3294,9 +3430,10 @@ input:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
+  object-position: center 42%;
   border-radius: inherit;
   display: block;
+  transform: scale(1.02);
 }
 
 .login-note.credits a {
@@ -3504,7 +3641,7 @@ input:focus {
 
   /* mão compacta com sobreposição (rola na horizontal se precisar) */
   .hand {
-    min-height: 196px;
+    min-height: 300px;
     padding: 14px 8px 8px;
     gap: 0;
   }
@@ -3514,12 +3651,30 @@ input:focus {
   }
 
   .card {
-    width: clamp(102px, 27vw, 132px);
-    height: 178px;
+    width: clamp(120px, 31vw, 146px);
+    height: 282px;
+    padding: 8px 7px 10px;
+  }
+
+  .card-name {
+    font-size: 10.5px;
+    min-height: 23px;
   }
 
   .card-text {
-    font-size: 10px;
+    font-size: 9.6px;
+    line-height: 1.18;
+    padding: 4px 5px;
+  }
+
+  .card.text-dense-1 .card-text {
+    font-size: 9.1px;
+    line-height: 1.12;
+  }
+
+  .card.text-dense-2 .card-text {
+    font-size: 8.6px;
+    line-height: 1.08;
   }
 
   .card-cost {
@@ -3546,7 +3701,7 @@ input:focus {
   }
 
   .card-art.card-art-frame {
-    height: 50px;
+    height: 98px;
     font-size: 36px;
   }
 
@@ -3565,7 +3720,7 @@ input:focus {
 
   /* a dica de mira sobe para não brigar com a mão */
   .target-hint {
-    bottom: calc(170px + env(safe-area-inset-bottom));
+    bottom: calc(276px + env(safe-area-inset-bottom));
     width: calc(100% - 16px);
     justify-content: space-between;
   }
@@ -3626,13 +3781,14 @@ input:focus {
   }
 
   .hand {
-    min-height: 150px;
+    min-height: 162px;
     padding: 10px 6px 6px;
   }
 
   .card {
     width: 100px;
-    height: 138px;
+    height: 150px;
+    padding: 6px 5px 8px;
   }
 
   .card-text {
@@ -3640,7 +3796,7 @@ input:focus {
   }
 
   .card-art.card-art-frame {
-    height: 38px;
+    height: 56px;
     font-size: 26px;
   }
 
@@ -4625,7 +4781,12 @@ input:focus {
 
 /* ── Mulligan: troca da mão inicial ───────────────────────────── */
 .panel.mulligan {
+  width: min(960px, calc(100vw - 24px));
   max-width: 960px;
+  max-height: min(92dvh, 820px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 0;
   text-align: center;
 }
 
@@ -4647,7 +4808,8 @@ input:focus {
   gap: 14px;
   justify-content: center;
   align-items: flex-end;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
 }
 
 .mulligan-slot {
