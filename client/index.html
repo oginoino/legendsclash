@@ -4,18 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0e16" />
+    <meta name="color-scheme" content="dark" />
     <title>Legends Clash — duelo de cartas em tempo real</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>" />
     <!-- Direção tipográfica medieval/editorial:
          Cinzel Decorative → títulos cerimoniais e elementos de destaque;
          Cinzel → títulos compactos (ex.: nome de carta), legível em corpo pequeno;
          Mozilla Text → corpo, descrições, subtítulos e detalhes (sans-serif de leitura limpa). -->
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Cinzel+Decorative:wght@400;700;900&family=Mozilla+Text:wght@400..700&display=swap"
+    />
+    <link
       href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Cinzel+Decorative:wght@400;700;900&family=Mozilla+Text:wght@400..700&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Cinzel+Decorative:wght@400;700;900&family=Mozilla+Text:wght@400..700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>

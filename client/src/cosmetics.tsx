@@ -75,8 +75,28 @@ const ICONS: Record<string, IconType> = {
   robot: GiRobotGolem,
 };
 
+const PORTRAIT_IMAGES: Record<string, string> = {
+  shield: '/assets/cards/Escudo de Aco.png',
+  'crossed-swords': '/assets/cards/Abordagem.png',
+  wolf: '/assets/cards/Lobo das Sombras.png',
+  dragon: '/assets/cards/Dragao Cinzento.png',
+  bow: '/assets/cards/Aqueira eifica.png',
+  orb: '/assets/cards/Orbe de Eter.png',
+  eagle: '/assets/cards/Sentinela das Copas.png',
+  moon: '/assets/cards/Pacto Sombrio.png',
+  'dragon-spirit': '/assets/cards/Serpente do Abismo.png',
+  crown: '/assets/cards/Campea Aurora.png',
+  wizard: '/assets/cards/Arquimago da Fenda.png',
+  dagger: '/assets/cards/Duelista Elfica.png',
+  robot: '/assets/cards/Golem de Pedra.png',
+};
+
 export function iconFor(id: string | undefined | null): IconType {
   return ICONS[normalizeIconId(id)] ?? ICONS[DEFAULT_AVATAR];
+}
+
+export function portraitImageFor(id: string | undefined | null): string | undefined {
+  return PORTRAIT_IMAGES[normalizeIconId(id)];
 }
 
 /** Ícone-cosmético "cru" (sem medalhão) — herda a cor via `currentColor`. */
@@ -85,6 +105,15 @@ export function CosmeticIcon({
 }: { id: string; size?: number | string; className?: string; title?: string }) {
   const Icon = iconFor(id);
   return <Icon size={size} className={className} aria-hidden title={title} />;
+}
+
+/** Retrato visual de um cosmético: imagem curada quando existe, ícone como fallback. */
+export function CosmeticPortrait({
+  id, className = '', alt = '',
+}: { id: string; className?: string; alt?: string }) {
+  const src = portraitImageFor(id);
+  if (src) return <img src={src} alt={alt} loading="lazy" decoding="async" className={`lc-cosmetic-img ${className}`.trim()} />;
+  return <CosmeticIcon id={id} size="100%" className={className} />;
 }
 
 /**
@@ -116,16 +145,16 @@ export function InlineAvatar({
   return (
     <span className={`lc-inline ${className}`.trim()} style={{ width: size, height: size }}>
       {photo
-        ? <img src={photo} alt="" className="lc-inline-photo" />
-        : <CosmeticIcon id={iconId} size="100%" />}
+        ? <img src={photo} alt="" decoding="async" className="lc-inline-photo" />
+        : <CosmeticPortrait id={iconId} />}
     </span>
   );
 }
 
 /**
- * Medalhão de identidade reutilizável: foto recortada OU ícone, com anel em
- * gradiente, brilho e moldura decorativa opcional. Usado no preview de
- * personalização, no card de oponente e na arena (a foto é visível ao oponente).
+ * Medalhão de identidade reutilizável: foto recortada OU retrato do cosmético,
+ * com anel em gradiente, brilho e moldura decorativa opcional. A arena passa
+ * `photo={null}` para preservar o comandante escolhido como retrato.
  */
 export function Avatar({
   iconId, photo, frame = 'none', accent, accentStyle, size = 56, fill = false, className = '', alt,
@@ -153,8 +182,8 @@ export function Avatar({
       <span className="lc-avatar-ring">
         <span className="lc-avatar-face">
           {photo
-            ? <img src={photo} alt={alt ?? ''} className="lc-avatar-photo" />
-            : <CosmeticIcon id={iconId} size="62%" />}
+            ? <img src={photo} alt={alt ?? ''} decoding="async" className="lc-avatar-photo" />
+            : <CosmeticPortrait id={iconId} alt={alt ?? ''} />}
         </span>
       </span>
     </span>

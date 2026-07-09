@@ -1,3 +1,4 @@
+import type { ImgHTMLAttributes } from 'react';
 import type { IconType } from 'react-icons';
 import {
   GiArcher, GiBiceps, GiBigWave, GiCoinflip, GiCrossedSabres, GiCrystalWand, GiCultist,
@@ -96,7 +97,7 @@ const ART: Record<string, Art> = {
   t_moeda: { Icon: GiCoinflip, fg: '#ffdf8f', bg: 'linear-gradient(160deg, #7a5e1e, #30240c)' },
 };
 
-const IMAGE_MAP: Record<string, string> = {
+export const CARD_IMAGE_MAP: Record<string, string> = {
   // Criaturas
   c_recruta: '/assets/cards/Recruta da Vanguarda.png',
   c_lobo: '/assets/cards/Lobo das Sombras.png',
@@ -162,17 +163,36 @@ const IMAGE_MAP: Record<string, string> = {
   t_saque: '/assets/cards/Mapa do Saque.png',
 };
 
-export function CardArt({ defId, className }: { defId: string; className?: string }) {
-  const imageUrl = IMAGE_MAP[defId];
+export type ImageFetchPriority = 'high' | 'low' | 'auto';
+
+export function cardImageUrl(defId: string): string | undefined {
+  return CARD_IMAGE_MAP[defId];
+}
+
+export function CardArt({
+  defId,
+  className,
+  loading = 'lazy',
+  fetchPriority = 'auto',
+}: {
+  defId: string;
+  className?: string;
+  loading?: 'eager' | 'lazy';
+  fetchPriority?: ImageFetchPriority;
+}) {
+  const imageUrl = cardImageUrl(defId);
 
   if (imageUrl) {
+    const priorityProps = { fetchPriority } as unknown as ImgHTMLAttributes<HTMLImageElement>;
     return (
       <span className={`card-art-frame image-art ${className ?? ''}`}>
         <img
           src={imageUrl}
           alt={CARDS[defId]?.name}
-          loading="lazy"
+          loading={loading}
+          decoding="async"
           className="card-art-img"
+          {...priorityProps}
         />
       </span>
     );

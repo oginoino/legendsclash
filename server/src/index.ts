@@ -44,6 +44,22 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+function cacheControl(filePath: string): string {
+  const ext = extname(filePath);
+  const rel = filePath.slice(CLIENT_DIST.length).replace(/\\/g, '/');
+  if (ext === '.html') return 'no-cache';
+  if (/\/assets\/[^/]+-[A-Za-z0-9_-]+\.(css|js)$/.test(rel)) {
+    return 'public, max-age=31536000, immutable';
+  }
+  if (rel.startsWith('/assets/cards/') && /\.(png|webp|jpg|jpeg|svg)$/i.test(rel)) {
+    return 'public, max-age=604800, stale-while-revalidate=86400';
+  }
+  if (/\.(png|webp|jpg|jpeg|svg|woff2?)$/i.test(rel)) {
+    return 'public, max-age=604800';
+  }
+  return 'no-cache';
+}
+
 const store = await Store.create();
 const app = new App(store);
 const auth = createAuthService(store);
@@ -86,7 +102,10 @@ const server = createServer(async (req, res) => {
         filePath = join(CLIENT_DIST, 'index.html');
       }
       const content = await readFile(filePath);
-      res.writeHead(200, { 'content-type': MIME[extname(filePath)] ?? 'application/octet-stream' });
+      res.writeHead(200, {
+        'content-type': MIME[extname(filePath)] ?? 'application/octet-stream',
+        'cache-control': cacheControl(filePath),
+      });
       return res.end(content);
     }
 

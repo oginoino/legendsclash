@@ -18,6 +18,7 @@ import { Tutorial } from '../components/Tutorial';
 import { CodexView } from './CodexView';
 import { SoundControl } from '../components/SoundControl';
 import { sfx } from '../sounds';
+import { preloadCardImages } from '../preload';
 
 type Selection =
   | { kind: 'hand'; iid: string }
@@ -193,6 +194,15 @@ export function GameView() {
   } | null>(null);
 
   const game = s.game;
+  const visibleImageKey = useMemo(() => {
+    if (!game) return '';
+    const ids = [
+      ...game.hand.map((c) => c.defId),
+      ...game.seats.flatMap((seat) => seat.board.map((c) => c.defId)),
+      ...reveals.map((r) => r.cardId),
+    ];
+    return [...new Set(ids)].join('|');
+  }, [game, reveals]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -208,6 +218,10 @@ export function GameView() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (!visibleImageKey) return;
+    preloadCardImages(visibleImageKey.split('|'), { priority: 'high', decode: true });
+  }, [visibleImageKey]);
   // cancela a seleção com Esc ou clique com o botão direito
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1351,7 +1365,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
           {posIndex}
         </span>
       )}
-      <CardArt defId={c.defId} className="creature-art" />
+      <CardArt defId={c.defId} className="creature-art" loading="eager" fetchPriority="auto" />
       <span className="creature-name">{def.name}</span>
       <span className={`stat-gem atk ${atkBuffed ? 'buffed' : ''}`}>{c.attack + bonus}</span>
       <span className={`stat-gem hp ${hpHurt ? 'hurt' : hpBuffed ? 'buffed' : ''}`}>{c.health}</span>
@@ -1369,7 +1383,7 @@ function GhostCreature({ g }: { g: Ghost }) {
     // order = slot*2 - 1: a caveira fica imediatamente antes de quem assumiu
     // o lugar, animando a morte na posição exata em que a carta estava.
     <span className="creature ghost" style={{ order: g.slot * 2 - 1 }}>
-      <CardArt defId={g.creature.defId} className="creature-art" />
+      <CardArt defId={g.creature.defId} className="creature-art" loading="eager" fetchPriority="auto" />
       <span className="creature-name">{def.name}</span>
       <span className="ghost-skull"><IcoDeath /></span>
     </span>
@@ -1514,7 +1528,7 @@ function GameOverOverlay() {
             <div className="go-recap">
               {mvp && CARDS[mvp.defId] && (
                 <div className="go-mvp">
-                  <CardArt defId={mvp.defId} className="go-mvp-art" />
+                      <CardArt defId={mvp.defId} className="go-mvp-art" loading="eager" fetchPriority="auto" />
                   <div className="go-mvp-info">
                     <span className="go-mvp-name"><IcoStar className="ic" /> {CARDS[mvp.defId].name}</span>
                     <span className="go-mvp-line">

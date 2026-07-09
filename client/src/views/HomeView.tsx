@@ -83,7 +83,7 @@ export function HomeView() {
             const def = CARDS[cod];
             return def ? (
               <div className="card-of-day" title={def.text}>
-                <CardArt defId={cod} className="cod-art" />
+                <CardArt defId={cod} className="cod-art" loading="eager" fetchPriority="high" />
                 <div className="cod-info">
                   <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
                   <span className="cod-name">{def.name}</span>

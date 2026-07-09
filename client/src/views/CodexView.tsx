@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CardType } from '@legendsclash/shared';
-import { CardArt } from '../components/CardArt';
+import { CardView } from '../components/CardView';
 import { CARD_LORE, FACTIONS, WORLD } from '../lore';
 import { IcoClose, IcoAttack, IcoHealth, IcoCost, IcoEvents } from '../icons';
 import { Sigil } from '../cosmetics';
+import { allCardImageIds, preloadCardImages, warmCardImages } from '../preload';
 
 /**
  * O Arquivo de Aurélia — o "local de consulta" das cartas. Reúne todo o
@@ -23,6 +24,7 @@ const TYPE_LABEL: Record<CardType, string> = {
 const FACTION_ORDER = ['vanguarda', 'silvanos', 'eter', 'profundezas', 'mares'];
 
 export function CodexView({ onClose }: { onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const [factionFilter, setFactionFilter] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -39,9 +41,18 @@ export function CodexView({ onClose }: { onClose: () => void }) {
 
   const shownFactions = factionFilter ? [factionFilter] : FACTION_ORDER;
 
+  useEffect(() => {
+    preloadCardImages(allIds.slice(0, 8), { priority: 'auto', decode: false });
+    warmCardImages(allCardImageIds(), { batchSize: 4, priority: 'low' });
+  }, [allIds]);
+
+  useEffect(() => {
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }, [selected, factionFilter]);
+
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="panel codex" onClick={(e) => e.stopPropagation()}>
+      <div className="panel codex" ref={panelRef} onClick={(e) => e.stopPropagation()}>
         <button className="btn small ghost codex-close" onClick={onClose}><IcoClose className="ic" /> Fechar</button>
 
         {selected ? (
@@ -139,22 +150,28 @@ export function CodexView({ onClose }: { onClose: () => void }) {
 
 /** Tile de índice — a carta vista de relance, com o epíteto sob o nome. */
 function CodexTile({ defId, onClick }: { defId: string; onClick: () => void }) {
-  const def = CARDS[defId];
   const lore = CARD_LORE[defId];
   return (
-    <button className={`codex-tile card-${def.type}`} onClick={onClick}>
-      <span className="card-cost">{def.cost}</span>
-      <CardArt defId={defId} className="codex-tile-art" />
-      <span className="codex-tile-name">{def.name}</span>
+    <div
+      className="codex-tile"
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        onClick();
+      }}
+    >
+      <CardView
+        defId={defId}
+        as="div"
+        className="codex-tile-card"
+        imageLoading="lazy"
+        imagePriority="low"
+      />
       {lore && <span className="codex-tile-epithet">{lore.epithet}</span>}
-      <span className="card-type">{TYPE_LABEL[def.type]}</span>
-      {def.type === 'creature' && (
-        <span className="codex-tile-stats">
-          <b className="atk"><IcoAttack className="ic" /> {def.attack}</b>
-          <b className="hp"><IcoHealth className="ic" /> {def.health}</b>
-        </span>
-      )}
-    </button>
+    </div>
   );
 }
 
@@ -170,7 +187,13 @@ function CardLorePage({ defId, onBack }: { defId: string; onBack: () => void }) 
       <button className="btn small ghost codex-back" onClick={onBack}>← Voltar ao Arquivo</button>
 
       <div className="codex-detail-head">
-        <CardArt defId={defId} className="codex-detail-art" />
+        <CardView
+          defId={defId}
+          as="div"
+          className="codex-detail-card"
+          imageLoading="eager"
+          imagePriority="high"
+        />
         <div className="codex-detail-id">
           {faction && (
             <span className="codex-faction-chip"><Sigil id={faction.sigil} className="ic" /> {faction.name}</span>
