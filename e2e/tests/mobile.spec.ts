@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loginAs, passMulligan, passTutorial, shotPath } from './helpers.js';
+import { loginAs, passMulligan, passTutorial, shotPath, surrender } from './helpers.js';
 
 /**
  * Experiência mobile: login a 390px, partida por toque (tap-tap), gaveta de
@@ -114,7 +114,7 @@ test.describe('mobile: login, partida por toque e gaveta', () => {
     expect(attacked, 'o ataque por tap-tap deveria ter acontecido').toBe(true);
 
     // fim de partida legível no celular
-    await desk.click('button:has-text("Desistir")');
+    await surrender(desk);
     await expect(phone.locator('.game-over')).toContainText('Vitória');
     await phone.screenshot({ path: shotPath('10-mobile-fim.png') });
 

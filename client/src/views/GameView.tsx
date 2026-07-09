@@ -12,6 +12,7 @@ import {
 import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
 import { Tutorial } from '../components/Tutorial';
@@ -130,6 +131,16 @@ function arrowPath(a: { x1: number; y1: number; x2: number; y2: number }): strin
   return `M ${a.x1} ${a.y1} Q ${cx} ${cy} ${a.x2} ${a.y2}`;
 }
 
+function arrowPoint(a: { x1: number; y1: number; x2: number; y2: number }, t: number): { x: number; y: number } {
+  const cx = (a.x1 + a.x2) / 2;
+  const cy = Math.min(a.y1, a.y2) - 60;
+  const mt = 1 - t;
+  return {
+    x: mt * mt * a.x1 + 2 * mt * t * cx + t * t * a.x2,
+    y: mt * mt * a.y1 + 2 * mt * t * cy + t * t * a.y2,
+  };
+}
+
 /**
  * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
  * `pending` ainda pode virar clique; `target` mira com a seta; `lift` levanta
@@ -186,6 +197,7 @@ export function GameView() {
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
+  const [confirmSurrenderOpen, setConfirmSurrenderOpen] = useState(false);
   const prevRef = useRef<GameViewState | null>(null);
   const prevChatLenRef = useRef(0);
   const tauntCooldownRef = useRef(0);
@@ -524,6 +536,15 @@ export function GameView() {
     myTurn &&
     !game.hand.some((c) => CARDS[c.defId].cost <= me.energy) &&
     !me.board.some((c) => c.canAttack);
+  const playableCardCount = myTurn ? game.hand.filter((c) => CARDS[c.defId].cost <= me.energy).length : 0;
+  const readyAttackerCount = myTurn ? me.board.filter((c) => c.canAttack).length : 0;
+  const playableCardText = playableCardCount === 1 ? '1 carta jogável' : `${playableCardCount} cartas jogáveis`;
+  const readyAttackerText = readyAttackerCount === 1 ? '1 atacante pronto' : `${readyAttackerCount} atacantes prontos`;
+  const actionCoach = myTurn
+    ? noMovesLeft
+      ? 'Sem ações disponíveis — encerre o turno'
+      : `${playableCardText} · ${readyAttackerText}`
+    : null;
 
   // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
   // e magias (apenas efeitos especiais "pierce" atravessam).
@@ -531,6 +552,7 @@ export function GameView() {
   // Provocar: prioridade entre criaturas — a com a palavra-chave vai primeiro
   const enemyTaunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
   const mustHitTaunt = selection?.kind === 'attacker' && enemyTaunts.length > 0;
+  const tauntFocusName = enemyTaunts[0] ? CARDS[enemyTaunts[0].defId].name : 'criatura com Provocar';
 
   // Cartas iguais na mesa ganham o número da posição (casa com o log do
   // servidor) — assim o efeito/dano nunca fica ambíguo entre cópias idênticas.
@@ -600,6 +622,19 @@ export function GameView() {
     if (ts - tauntCooldownRef.current < TAUNT_COOLDOWN_MS) return;
     tauntCooldownRef.current = ts;
     send({ t: 'chat:taunt', id });
+  }
+
+  function requestSurrender() {
+    sfx.click();
+    setTauntOpen(false);
+    setSidePane(null);
+    setConfirmSurrenderOpen(true);
+  }
+
+  function confirmSurrender() {
+    sfx.click();
+    setConfirmSurrenderOpen(false);
+    send({ t: 'game:surrender' });
   }
 
   /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
@@ -892,13 +927,60 @@ export function GameView() {
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
   const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
-  // cor da mira: letal = vermelho · ataque = ouro · magia = roxo
-  const aimColor = lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0';
+  const aimMode = lethalAim
+    ? 'lethal'
+    : selection?.kind === 'attacker'
+      ? 'attack'
+      : targetingFriendly
+        ? 'support'
+        : 'spell';
+  const aimColor = aimMode === 'lethal'
+    ? '#f85149'
+    : aimMode === 'attack'
+      ? '#e3b341'
+      : aimMode === 'support'
+        ? '#3fb950'
+        : '#b083f0';
+  const aimAccent = aimMode === 'attack' ? me.accent : aimMode === 'lethal' ? '#ffd970' : aimMode === 'support' ? '#8ef0a0' : '#7fb1ff';
+  const aimLabel = aimMode === 'lethal'
+    ? 'LETAL'
+    : aimMode === 'attack'
+      ? 'ATAQUE'
+      : aimMode === 'support'
+        ? 'ALIADO'
+        : selectedHandDef?.type === 'tactic'
+          ? 'TÁTICA'
+          : 'MAGIA';
+  const aimMid = arrow ? arrowPoint(arrow, 0.52) : null;
+  const aimRuneA = arrow ? arrowPoint(arrow, 0.32) : null;
+  const aimRuneB = arrow ? arrowPoint(arrow, 0.72) : null;
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
+  const enemyFatiguePressure = enemy.fatigue > 0 || (enemy.deckCount <= 3 && enemy.deckCount >= 0);
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
   const staticFacePreview = targetingEnemy && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
+  const targetHint = selection?.kind === 'attacker'
+    ? {
+        mode: 'attack',
+        title: selectedAttacker ? CARDS[selectedAttacker.defId].name : 'Ataque selecionado',
+        body: mustHitTaunt
+          ? `${tauntFocusName} está protegendo a mesa. Ataque Provocar primeiro.`
+          : faceShielded
+            ? 'As criaturas inimigas protegem o comandante. Remova a mesa para abrir dano direto.'
+            : 'Mesa livre. Escolha um alvo e confirme pela prévia de dano.',
+      }
+    : selection?.kind === 'hand' && selectedHandDef
+      ? {
+          mode: selectedHandDef.target === 'friendly-creature' ? 'support' : 'spell',
+          title: selectedHandDef.name,
+          body: selectedHandDef.target === 'friendly-creature'
+            ? 'Escolha uma criatura aliada para receber o efeito.'
+            : faceShielded && !selectedHandDef.pierce
+              ? 'As criaturas inimigas bloqueiam o comandante. Mire uma criatura primeiro.'
+              : 'Escolha o melhor alvo usando a prévia de dano.',
+        }
+      : null;
 
   return (
     <div
@@ -936,7 +1018,7 @@ export function GameView() {
         <SoundControl />
         <button
           className="btn small ghost danger"
-          onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
+          onClick={requestSurrender}
           title="Desistir"
           aria-label="Desistir da partida"
         >
@@ -1034,10 +1116,21 @@ export function GameView() {
                 <IcoWarning className="ic" /> Fadiga à vista ({me.deckCount} no deck)
               </span>
             )}
+            {enemyFatiguePressure && (
+              <span className="pace-opportunity" title="O oponente está perto de sofrer dano por fadiga">
+                <IcoDeath className="ic" /> Pressione o deck inimigo
+              </span>
+            )}
+            {actionCoach && (
+              <span className={`pace-action ${noMovesLeft ? 'done' : ''}`} title="Resumo das ações disponíveis neste turno">
+                <IcoHint className="ic" /> {actionCoach}
+              </span>
+            )}
           </div>
           {myTurn && (
             <button
               className={`btn end-turn ${noMovesLeft ? 'pulse' : ''}`}
+              aria-label={noMovesLeft ? 'Encerrar turno, sem ações disponíveis' : 'Encerrar turno'}
               onClick={() => { sfx.click(); send({ t: 'game:endTurn' }); }}
             >
               Encerrar turno ▸
@@ -1121,6 +1214,9 @@ export function GameView() {
                 playable={myTurn && affordable}
                 selected={isSelected}
                 lifting={lifting}
+                className={myTurn && !affordable ? 'unaffordable' : undefined}
+                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : undefined}
+                statusTone="warn"
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
                 onMouseDown={myTurn ? (e) => onTargetMouseDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
@@ -1166,7 +1262,7 @@ export function GameView() {
           </span>
           <button
             className="btn small ghost danger"
-            onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
+            onClick={requestSurrender}
           >
             <IcoSurrender className="ic" /> Desistir
           </button>
@@ -1183,52 +1279,73 @@ export function GameView() {
         </div>
       </aside>
 
-      {selection && (
-        <div className="target-hint">
+      {targetHint && (
+        <div className={`target-hint ${targetHint.mode}`}>
+          <span className="target-hint-icon">
+            {targetHint.mode === 'attack' ? <IcoAttack /> : targetHint.mode === 'support' ? <IcoBuff /> : <IcoSparkle />}
+          </span>
           <span className="target-hint-text">
-            {selection.kind === 'attacker'
-              ? `Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
-                  mustHitTaunt
-                    ? 'Provocar — ataque o Golem antes das outras criaturas'
-                    : faceShielded
-                      ? 'as criaturas inimigas protegem o comandante — derrote-as primeiro'
-                      : 'mesa livre — ataque o comandante ou veja a prévia no alvo'
-                }`
-              : selectedHandDef?.target === 'friendly-creature'
-                ? 'Escolha uma criatura aliada'
-                : faceShielded && !selectedHandDef?.pierce
-                  ? 'Escolha uma criatura inimiga — elas protegem o comandante'
-                  : 'Escolha um alvo inimigo — a prévia de dano aparece em cada um'}
+            <strong>{targetHint.title}</strong>
+            <span>{targetHint.body}</span>
           </span>
           <button className="btn small cancel-pill" onClick={clearAim}><IcoClose className="ic" /> Cancelar</button>
         </div>
       )}
 
       {arrow && (
-        <svg className="aim-arrow" width="100%" height="100%" style={{ filter: `drop-shadow(0 0 7px ${aimColor}aa)` }}>
+        <svg
+          className={`aim-arrow aim-${aimMode} ${lockOn ? 'locked' : ''}`}
+          width="100%"
+          height="100%"
+          style={{
+            ['--aim' as string]: aimColor,
+            ['--aim-2' as string]: aimAccent,
+            filter: `drop-shadow(0 0 7px ${aimColor}aa)`,
+          } as React.CSSProperties}
+        >
           <defs>
+            <linearGradient id="aim-gradient" gradientUnits="userSpaceOnUse" x1={arrow.x1} y1={arrow.y1} x2={arrow.x2} y2={arrow.y2}>
+              <stop offset="0%" stopColor={aimAccent} />
+              <stop offset="58%" stopColor={aimColor} />
+              <stop offset="100%" stopColor={lethalAim ? '#ff9d96' : aimAccent} />
+            </linearGradient>
             <marker id="arrowhead" markerWidth="9" markerHeight="9" refX="5" refY="4.5" orient="auto">
               <path d="M0,0 L9,4.5 L0,9 L2.6,4.5 Z" fill={aimColor} />
             </marker>
           </defs>
-          {/* trilho translúcido: o "corpo" luminoso da seta */}
-          <path d={arrowPath(arrow)} stroke={aimColor} strokeOpacity="0.22" strokeWidth="12" strokeLinecap="round" fill="none" />
-          {/* linha viva com tracejado correndo rumo ao alvo */}
+          <g className="aim-origin">
+            <circle cx={arrow.x1} cy={arrow.y1} r="18" fill="none" stroke={aimAccent} strokeOpacity="0.32" strokeWidth="8" />
+            <circle cx={arrow.x1} cy={arrow.y1} r="12" fill="none" stroke={aimColor} strokeWidth="2" />
+          </g>
+          <path className="aim-trail" d={arrowPath(arrow)} stroke="url(#aim-gradient)" strokeOpacity="0.2" strokeWidth="16" strokeLinecap="round" fill="none" />
+          <path className="aim-rail" d={arrowPath(arrow)} stroke="url(#aim-gradient)" strokeOpacity="0.55" strokeWidth="7" strokeLinecap="round" fill="none" />
           <path
             className="aim-flow"
             d={arrowPath(arrow)}
-            stroke={aimColor}
-            strokeWidth="4"
+            stroke="url(#aim-gradient)"
+            strokeWidth="4.5"
             strokeDasharray="11 9"
             strokeLinecap="round"
             fill="none"
             markerEnd={lockOn ? undefined : 'url(#arrowhead)'}
           />
+          {aimRuneA && (
+            <g className="aim-rune" transform={`translate(${aimRuneA.x} ${aimRuneA.y}) rotate(45)`}>
+              <rect x="-5" y="-5" width="10" height="10" rx="1.5" fill={aimColor} fillOpacity="0.18" stroke={aimAccent} strokeWidth="1.5" />
+            </g>
+          )}
+          {aimRuneB && (
+            <g className="aim-rune delay" transform={`translate(${aimRuneB.x} ${aimRuneB.y}) rotate(45)`}>
+              <rect x="-4" y="-4" width="8" height="8" rx="1.5" fill={aimAccent} fillOpacity="0.18" stroke={aimColor} strokeWidth="1.4" />
+            </g>
+          )}
           {/* retícula de "travado no alvo" */}
           {lockOn && (
             <g className={`aim-reticle ${lethalAim ? 'lethal' : ''}`}>
-              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
+              <circle className="reticle-aura" cx={arrow.x2} cy={arrow.y2} r="34" fill={aimColor} fillOpacity="0.09" />
+              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke="url(#aim-gradient)" strokeWidth="2.5" />
               <circle className="reticle-ping" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
+              <rect className="reticle-gem" x={arrow.x2 - 5} y={arrow.y2 - 5} width="10" height="10" rx="1.5" fill={aimAccent} fillOpacity="0.24" stroke={aimColor} strokeWidth="1.5" transform={`rotate(45 ${arrow.x2} ${arrow.y2})`} />
               <g stroke={aimColor} strokeWidth="2.5" strokeLinecap="round">
                 <line x1={arrow.x2 - 34} y1={arrow.y2} x2={arrow.x2 - 21} y2={arrow.y2} />
                 <line x1={arrow.x2 + 21} y1={arrow.y2} x2={arrow.x2 + 34} y2={arrow.y2} />
@@ -1238,6 +1355,19 @@ export function GameView() {
             </g>
           )}
         </svg>
+      )}
+      {arrow && aimMid && (
+        <div
+          className={`aim-callout aim-${aimMode} ${lockOn ? 'locked' : ''}`}
+          style={{
+            left: aimMid.x,
+            top: aimMid.y,
+            ['--aim' as string]: aimColor,
+            ['--aim-2' as string]: aimAccent,
+          } as React.CSSProperties}
+        >
+          {aimLabel}
+        </div>
       )}
 
       <div className="reveal-stack">
@@ -1280,6 +1410,18 @@ export function GameView() {
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
       {showTutorial && !s.gameOver && <Tutorial onClose={() => setShowTutorial(false)} />}
+      {confirmSurrenderOpen && (
+        <ConfirmDialog
+          tone="danger"
+          icon={<IcoSurrender />}
+          title="Desistir da partida?"
+          message="A derrota será registrada imediatamente e o oponente receberá a vitória. Use apenas se não quiser continuar este duelo."
+          cancelLabel="Continuar jogando"
+          confirmLabel="Desistir agora"
+          onCancel={() => setConfirmSurrenderOpen(false)}
+          onConfirm={confirmSurrender}
+        />
+      )}
       {s.gameOver && <GameOverOverlay />}
     </div>
   );
@@ -1339,6 +1481,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   const hit = fx.some((f) => f.kind === 'dmg');
   const shielded = fx.some((f) => f.kind === 'shield');
   const title = commanderTitle(seat.commander);
+  const deckRisk = seat.fatigue > 0 || seat.deckCount <= 3;
   return (
     <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
       {bubble && (
@@ -1393,7 +1536,14 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         </span>
       </div>
       <div className="hero-meta">
-        <span className="meta-chip" title="Cartas no deck"><IcoDeck className="ic" /> {seat.deckCount}</span>
+        <span
+          className={`meta-chip ${deckRisk ? 'deck-risk' : ''}`}
+          title={seat.fatigue > 0
+            ? `Fadiga ${seat.fatigue}: cada compra sem carta causa dano`
+            : `Cartas no deck: ${seat.deckCount}`}
+        >
+          <IcoDeck className="ic" /> {seat.deckCount}
+        </span>
         {isEnemy && <span className="meta-chip" title="Cartas na mão"><IcoHand className="ic" /> {seat.handCount}</span>}
         {seat.attackBonus > 0 && (
           <span className="meta-chip buff" title="Estandarte de Guerra"><IcoBanner className="ic" /> +{seat.attackBonus}</span>
@@ -1440,6 +1590,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     mine ? 'mine' : '',
     selected ? 'selected' : '',
     mine && c.canAttack ? 'ready' : '',
+    mine && !c.canAttack ? 'exhausted' : '',
     buffTarget && mine ? 'buff-target' : '',
     blocked ? 'blocked' : '',
     warn ? 'cant-attack' : '',
@@ -1505,7 +1656,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       <span className="creature-name">{def.name}</span>
       <span className={`stat-gem atk ${atkBuffed ? 'buffed' : ''}`}>{c.attack + bonus}</span>
       <span className={`stat-gem hp ${hpHurt ? 'hurt' : hpBuffed ? 'buffed' : ''}`}>{c.health}</span>
-      {mine && c.canAttack && <span className="ready-dot" />}
+      {mine && c.canAttack && <span className="ready-dot" title="Pronta para atacar" />}
       {preview && <PreviewChip p={preview} dim={previewDim} />}
       {retaliation && <PreviewChip p={retaliation} self />}
       <FxLayer fx={fx} />
@@ -1552,7 +1703,7 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
     });
   }
 
-  function confirm() {
+  function confirmMulligan() {
     sfx.mulligan();
     send({ t: 'game:mulligan', iids: [...swap] });
   }
@@ -1575,6 +1726,13 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
             </span>
             <span className={`mulligan-secs ${secondsLeft <= 10 ? 'urgent' : ''}`}>{secondsLeft}s</span>
           </div>
+        )}
+        {confirmed ? (
+          <p className="mulligan-waiting">Mão confirmada — aguardando o oponente…</p>
+        ) : (
+          <button className="btn primary big mulligan-confirm" onClick={confirmMulligan}>
+            {swap.size ? `Trocar ${swap.size} e começar` : 'Manter a mão e começar'}
+          </button>
         )}
         <div className="mulligan-hand">
           {game.hand.map((c) => {
@@ -1599,13 +1757,6 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
             );
           })}
         </div>
-        {confirmed ? (
-          <p className="mulligan-waiting">Mão confirmada — aguardando o oponente…</p>
-        ) : (
-          <button className="btn primary big mulligan-confirm" onClick={confirm}>
-            {swap.size ? `Trocar ${swap.size} e começar` : 'Manter a mão e começar'}
-          </button>
-        )}
       </div>
     </div>
   );

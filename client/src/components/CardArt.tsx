@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ImgHTMLAttributes } from 'react';
 import type { IconType } from 'react-icons';
 import {
@@ -186,22 +187,35 @@ export function CardArt({
 }) {
   const imageUrl = cardImageUrl(defId);
   const fallbackUrl = cardFallbackImageUrl(defId);
+  const [src, setSrc] = useState(imageUrl);
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>(imageUrl ? 'loading' : 'loaded');
 
-  if (imageUrl) {
+  useEffect(() => {
+    setSrc(imageUrl);
+    setStatus(imageUrl ? 'loading' : 'loaded');
+  }, [imageUrl]);
+
+  if (src && status !== 'failed') {
     const priorityProps = { fetchPriority } as unknown as ImgHTMLAttributes<HTMLImageElement>;
     return (
-      <span className={`card-art-frame image-art ${className ?? ''}`}>
+      <span className={`card-art-frame image-art image-${status} ${className ?? ''}`}>
         <img
-          src={imageUrl}
+          key={src}
+          src={src}
           alt={CARDS[defId]?.name}
           loading={loading}
           decoding="async"
           draggable={false}
           className="card-art-img"
+          onLoad={() => setStatus('loaded')}
           onError={(event) => {
-            if (!fallbackUrl || event.currentTarget.dataset.fallback === '1') return;
-            event.currentTarget.dataset.fallback = '1';
-            event.currentTarget.src = fallbackUrl;
+            if (fallbackUrl && event.currentTarget.dataset.fallback !== '1') {
+              event.currentTarget.dataset.fallback = '1';
+              setStatus('loading');
+              setSrc(fallbackUrl);
+              return;
+            }
+            setStatus('failed');
           }}
           {...priorityProps}
         />
