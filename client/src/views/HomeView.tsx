@@ -43,6 +43,8 @@ export function HomeView() {
   if (!p) return <div className="centered">Carregando perfil…</div>;
 
   const progress = leagueProgress(p.mmr);
+  const dailyCardId = cardOfDay(Date.now());
+  const dailyCard = CARDS[dailyCardId];
 
   return (
     <div className="home-screen">
@@ -75,22 +77,30 @@ export function HomeView() {
         </div>
       </header>
 
+      <section className="home-vista" aria-label="Panorama de Aurélia">
+        <div className="home-vista-copy">
+          <span className="home-vista-kicker">Aurélia</span>
+          <strong>O céu partiu. As cartas decidirão quem fica com os cristais.</strong>
+          <span>{dailyCard ? `Hoje em destaque: ${dailyCard.name}` : 'Escolha seu próximo duelo.'}</span>
+        </div>
+        <div className="home-vista-meta">
+          <span><LeagueBadge league={p.league} /> {p.mmr} MMR</span>
+          {!p.guest && s.myRank != null ? <span>Ranking #{s.myRank}</span> : <span>Ranqueada disponível</span>}
+        </div>
+      </section>
+
       <main className="home-main">
         <section className="panel play-panel">
           <h2>Jogar</h2>
-          {(() => {
-            const cod = cardOfDay(Date.now());
-            const def = CARDS[cod];
-            return def ? (
-              <div className="card-of-day" title={def.text}>
-                <CardArt defId={cod} className="cod-art" loading="eager" fetchPriority="high" />
-                <div className="cod-info">
-                  <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
-                  <span className="cod-name">{def.name}</span>
-                </div>
+          {dailyCard ? (
+            <div className="card-of-day" title={dailyCard.text}>
+              <CardArt defId={dailyCardId} className="cod-art" loading="eager" fetchPriority="high" />
+              <div className="cod-info">
+                <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
+                <span className="cod-name">{dailyCard.name}</span>
               </div>
-            ) : null;
-          })()}
+            </div>
+          ) : null}
           {!p.guest && (
             <div className="daily-strip">
               <span className="streak" title="Dias seguidos com partida">

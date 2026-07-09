@@ -5,7 +5,7 @@ import { CardView } from '../components/CardView';
 import { CARD_LORE, FACTIONS, WORLD } from '../lore';
 import { IcoClose, IcoAttack, IcoHealth, IcoCost, IcoEvents } from '../icons';
 import { Sigil } from '../cosmetics';
-import { allCardImageIds, preloadCardImages, warmCardImages } from '../preload';
+import { ILLUSTRATION_ASSETS, allCardImageIds, preloadCardImages, preloadImageUrls, warmCardImages } from '../preload';
 
 /**
  * O Arquivo de Aurélia — o "local de consulta" das cartas. Reúne todo o
@@ -61,6 +61,7 @@ export function CodexView({ onClose }: { onClose: () => void }) {
   const shownFactions = factionFilter ? [factionFilter] : FACTION_ORDER;
 
   useEffect(() => {
+    void preloadImageUrls([ILLUSTRATION_ASSETS.aureliaArchive], { priority: 'high', decode: false });
     preloadCardImages(allIds.slice(0, 8), { priority: 'auto', decode: false });
     warmCardImages(allCardImageIds(), { batchSize: 4, priority: 'low' });
   }, [allIds]);

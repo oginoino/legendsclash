@@ -542,17 +542,45 @@ input:focus {
 
 /* ── Home ─────────────────────────────────────────────────────── */
 .home-screen {
-  max-width: 1100px;
+  position: relative;
+  isolation: isolate;
+  max-width: 1180px;
   margin: 0 auto;
   padding: var(--pad-container);
+}
+
+.home-screen::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, #070b12cc 0%, #0a0e16f4 58%, #0a0e16 100%),
+    linear-gradient(90deg, #0a0e16 0%, #0a0e16aa 34%, #0a0e1630 72%),
+    url('/assets/illustrations/aurelia-panorama.webp') center top / cover no-repeat;
+}
+
+.home-screen::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(800px 360px at 72% 18%, #e3b34120, transparent 65%),
+    radial-gradient(680px 320px at 22% 24%, #4d8dff18, transparent 70%);
+  mix-blend-mode: screen;
+  opacity: .75;
 }
 
 .home-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  gap: 16px;
+  padding: 6px 0 16px;
+  border-bottom: 1px solid #ffffff1f;
   margin-bottom: 20px;
 }
 
@@ -563,6 +591,12 @@ input:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
+  padding: 8px;
+  border: 1px solid #ffffff18;
+  border-radius: var(--r-xl);
+  background: #0c1322a8;
+  box-shadow: 0 10px 28px #0006, inset 0 1px 0 #ffffff0e;
+  backdrop-filter: blur(10px);
 }
 
 .profile-sub {
@@ -589,17 +623,106 @@ input:focus {
   align-items: start;
 }
 
+.home-vista {
+  position: relative;
+  min-height: clamp(140px, 18vw, 208px);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+  margin: 0 0 16px;
+  padding: clamp(16px, 3vw, 28px);
+  border: 1px solid #ffffff22;
+  border-radius: 20px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, #07101edc 0%, #07101eb8 38%, #07101e22 76%),
+    linear-gradient(180deg, #05091226 0%, #050912e6 100%),
+    url('/assets/illustrations/aurelia-panorama.webp') center 42% / cover no-repeat;
+  box-shadow: 0 18px 58px #0008, inset 0 1px 0 #ffffff18;
+}
+
+.home-vista::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 19px;
+  border: 1px solid #e3b34128;
+  pointer-events: none;
+}
+
+.home-vista-copy,
+.home-vista-meta {
+  position: relative;
+  z-index: 1;
+}
+
+.home-vista-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 620px;
+}
+
+.home-vista-kicker {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+.home-vista-copy strong {
+  max-width: 16ch;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1.08;
+  text-shadow: 0 3px 24px #000f;
+}
+
+.home-vista-copy span:last-child {
+  color: #d4deec;
+  font-size: 14px;
+  text-shadow: 0 2px 8px #000d;
+}
+
+.home-vista-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.home-vista-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid #ffffff24;
+  border-radius: var(--r-pill);
+  background: #08101ed9;
+  color: #d6e1ef;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 #ffffff10;
+  backdrop-filter: blur(8px);
+}
+
 .play-panel {
   display: flex;
   flex-direction: column;
 }
 
 .panel {
-  background: linear-gradient(180deg, #1a2335, #161f30);
+  background:
+    var(--noise),
+    linear-gradient(180deg, #1a2335f2, #161f30f0);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: clamp(14px, 2.5vw, 20px);
   box-shadow: var(--elev-3), inset 0 1px 0 #ffffff0d;
+  backdrop-filter: blur(8px);
 }
 
 .panel h3 {
@@ -1035,18 +1158,31 @@ input:focus {
   z-index: 0;
   /* contexto próprio: o brasão (z -1) fica acima do fundo, abaixo das peças */
   background:
+    linear-gradient(180deg, #07101dd4 0%, #091321cc 52%, #060b13eb 100%),
+    radial-gradient(70% 42% at 50% 44%, #06111c18 0%, #050913a8 72%),
     var(--noise),
-    radial-gradient(85% 60% at 50% 36%, #23396433 0%, transparent 70%),
-    radial-gradient(110% 80% at 50% 115%, #2a1d4242 0%, transparent 60%),
+    url('/assets/illustrations/aether-arena.webp') center 44% / cover no-repeat,
     linear-gradient(180deg, #111a2cf2, #0c1322f2);
   border: 1px solid #31426488;
   border-radius: 18px;
   padding: 14px;
   box-shadow:
     inset 0 0 110px #000000aa,
+    inset 0 -22px 90px #050913e6,
     inset 0 1px 0 #ffffff10,
     0 18px 50px #00000077;
   overflow: hidden;
+}
+
+.game-board::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 28% at 50% 46%, #4d8dff14, transparent 72%),
+    radial-gradient(38% 22% at 50% 98%, #e3b34114, transparent 76%);
 }
 
 .game-side {
@@ -3008,7 +3144,11 @@ input:focus {
   overflow-y: auto;
   padding: 0 30px 30px;
   text-align: left;
+  background:
+    var(--noise),
+    linear-gradient(180deg, #1a2335, #141c2c);
   animation: pop-in .35s cubic-bezier(.2, 1.4, .45, 1);
+  backdrop-filter: blur(18px);
   scrollbar-width: thin;
 }
 
@@ -3028,8 +3168,37 @@ input:focus {
 }
 
 .codex-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   text-align: center;
-  padding: 6px 0 4px;
+  min-height: clamp(190px, 24vw, 270px);
+  padding: 26px 18px;
+  margin: 2px 0 18px;
+  overflow: hidden;
+  border: 1px solid #ffffff22;
+  border-radius: 18px;
+  background:
+    radial-gradient(58% 52% at 50% 48%, #0a0e163a, #070b13da 78%),
+    linear-gradient(180deg, #080d17a8 0%, #080d17dc 100%),
+    url('/assets/illustrations/aurelia-archive.webp') center 46% / cover no-repeat;
+  box-shadow: 0 16px 44px #0008, inset 0 1px 0 #ffffff18;
+}
+
+.codex-hero::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border: 1px solid #e3b34124;
+  border-radius: 17px;
+  pointer-events: none;
+}
+
+.codex-hero>* {
+  position: relative;
+  z-index: 1;
 }
 
 .codex-kicker {
@@ -3054,9 +3223,10 @@ input:focus {
 
 .codex-tagline {
   margin: 0;
-  color: #b6c1d2;
+  color: #d4deec;
   font-style: italic;
   font-size: 15px;
+  text-shadow: 0 2px 10px #000f;
 }
 
 .codex-intro {
@@ -3617,9 +3787,19 @@ input:focus {
     max-height: 94dvh;
   }
 
+  .codex-hero {
+    min-height: 184px;
+    padding: 22px 14px;
+    background-position: 50% center;
+  }
+
   .codex-realm {
     font-size: 34px;
     letter-spacing: 3px;
+  }
+
+  .codex-tagline {
+    max-width: 28ch;
   }
 
   /* factions e gallery agora refluem sozinhos (auto-fit/clamp) — sem override */
@@ -4159,6 +4339,40 @@ input:focus {
   .home-header {
     flex-wrap: wrap;
     gap: 10px;
+  }
+
+  .profile-chip {
+    width: 100%;
+  }
+
+  .home-screen::before {
+    background-position: 58% top;
+  }
+
+  .home-screen::after {
+    opacity: .45;
+  }
+
+  .home-vista {
+    min-height: 174px;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-start;
+    background-position: 60% center;
+  }
+
+  .home-vista-copy strong {
+    max-width: 15ch;
+    font-size: 1.55rem;
+  }
+
+  .home-vista-meta {
+    justify-content: flex-start;
+  }
+
+  .home-vista-meta span {
+    min-height: 30px;
+    font-size: 12px;
   }
 
   /* placar vira cartões de 2 linhas: sem nomes truncados nem colunas escondidas */
