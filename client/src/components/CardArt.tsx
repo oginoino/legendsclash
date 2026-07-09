@@ -195,7 +195,7 @@ export function CardArt({
     setStatus(imageUrl ? 'loading' : 'loaded');
   }, [imageUrl]);
 
-  if (src) {
+  if (src && status !== 'failed') {
     const priorityProps = { fetchPriority } as unknown as ImgHTMLAttributes<HTMLImageElement>;
     return (
       <span className={`card-art-frame image-art image-${status} ${className ?? ''}`}>

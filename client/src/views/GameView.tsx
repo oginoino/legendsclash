@@ -524,6 +524,15 @@ export function GameView() {
     myTurn &&
     !game.hand.some((c) => CARDS[c.defId].cost <= me.energy) &&
     !me.board.some((c) => c.canAttack);
+  const playableCardCount = myTurn ? game.hand.filter((c) => CARDS[c.defId].cost <= me.energy).length : 0;
+  const readyAttackerCount = myTurn ? me.board.filter((c) => c.canAttack).length : 0;
+  const playableCardText = playableCardCount === 1 ? '1 carta jogável' : `${playableCardCount} cartas jogáveis`;
+  const readyAttackerText = readyAttackerCount === 1 ? '1 atacante pronto' : `${readyAttackerCount} atacantes prontos`;
+  const actionCoach = myTurn
+    ? noMovesLeft
+      ? 'Sem ações disponíveis — encerre o turno'
+      : `${playableCardText} · ${readyAttackerText}`
+    : null;
 
   // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
   // e magias (apenas efeitos especiais "pierce" atravessam).
@@ -1062,6 +1071,11 @@ export function GameView() {
                 <IcoDeath className="ic" /> Pressione o deck inimigo
               </span>
             )}
+            {actionCoach && (
+              <span className={`pace-action ${noMovesLeft ? 'done' : ''}`} title="Resumo das ações disponíveis neste turno">
+                <IcoHint className="ic" /> {actionCoach}
+              </span>
+            )}
           </div>
           {myTurn && (
             <button
@@ -1150,6 +1164,9 @@ export function GameView() {
                 playable={myTurn && affordable}
                 selected={isSelected}
                 lifting={lifting}
+                className={myTurn && !affordable ? 'unaffordable' : undefined}
+                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : undefined}
+                statusTone="warn"
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
                 onMouseDown={myTurn ? (e) => onTargetMouseDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}

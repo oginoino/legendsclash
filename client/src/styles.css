@@ -1875,6 +1875,34 @@ input:focus {
   z-index: 3;
 }
 
+.card-status {
+  position: absolute;
+  top: 35px;
+  right: 7px;
+  z-index: 4;
+  max-width: calc(100% - 18px);
+  border: 1px solid #ffffff24;
+  border-radius: 99px;
+  padding: 2px 7px;
+  background: #050915cc;
+  color: var(--dim-strong);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.2;
+  box-shadow: 0 3px 10px #0009;
+  pointer-events: none;
+}
+
+.card-status-warn {
+  color: #ffb3ad;
+  border-color: #f8514966;
+  background: #2a0c0acc;
+}
+
+.card.unaffordable .card-cost {
+  filter: drop-shadow(0 0 6px #f8514977) saturate(.75);
+}
+
 .card-name {
   font-family: var(--font-heading);
   font-weight: 800;
@@ -4492,6 +4520,15 @@ input:focus {
 .pace-opportunity {
   color: var(--gold-2);
   font-weight: 700;
+}
+
+.pace-action {
+  color: var(--dim-strong);
+  font-weight: 700;
+}
+
+.pace-action.done {
+  color: var(--green);
 }
 
 /* ── Tutorial da 1ª partida ────────────────────────────────────── */

@@ -33,6 +33,8 @@ interface Props {
   onMouseDown?: (e: React.MouseEvent) => void;
   imageLoading?: 'eager' | 'lazy';
   imagePriority?: ImageFetchPriority;
+  statusLabel?: string;
+  statusTone?: 'warn' | 'neutral';
 }
 
 export function CardView({
@@ -51,6 +53,8 @@ export function CardView({
   onMouseDown,
   imageLoading = 'eager',
   imagePriority = 'auto',
+  statusLabel,
+  statusTone = 'neutral',
 }: Props) {
   const def = CARDS[defId];
   if (!def) return null;
@@ -69,6 +73,7 @@ export function CardView({
   const content = (
     <>
       <span className="card-cost">{def.cost}</span>
+      {statusLabel && <span className={`card-status card-status-${statusTone}`}>{statusLabel}</span>}
       <span className="card-name">{def.name}</span>
       <span className="card-ornament" title={`Raridade: ${RARITY_LABEL[def.rarity]}`}>
         <i className="rarity-gem" />
