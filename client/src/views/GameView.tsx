@@ -124,6 +124,56 @@ const CAN_HOVER = typeof window !== 'undefined'
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
 
+/**
+ * Layout estável para o HUD de ritmo do turno.
+ * Mantém os chips em uma linha, impede wrap imprevisível e substitui
+ * tooltips nativos por aria-label — o browser não desenha aquela caixa
+ * branca por cima da arena.
+ */
+const PACE_HUD_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  minWidth: 0,
+  maxWidth: 'min(44vw, 520px)',
+  height: 28,
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+  flexWrap: 'nowrap',
+  lineHeight: 1,
+};
+
+const PACE_CHIP_STYLE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  minWidth: 0,
+  maxWidth: 180,
+  height: 24,
+  padding: '0 8px',
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+  textOverflow: 'ellipsis',
+  flex: '0 1 auto',
+  lineHeight: 1,
+  verticalAlign: 'middle',
+};
+
+const PACE_CHIP_TIGHT_STYLE: React.CSSProperties = {
+  ...PACE_CHIP_STYLE,
+  maxWidth: 132,
+  flex: '0 0 auto',
+};
+
+const PACE_CHIP_TEXT_STYLE: React.CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+
 /** Curva da seta de mira: arco quadrático do atacante/carta até o alvo. */
 function arrowPath(a: { x1: number; y1: number; x2: number; y2: number }): string {
   const cx = (a.x1 + a.x2) / 2;
@@ -541,9 +591,13 @@ export function GameView() {
   const playableCardText = playableCardCount === 1 ? '1 carta jogável' : `${playableCardCount} cartas jogáveis`;
   const readyAttackerText = readyAttackerCount === 1 ? '1 atacante pronto' : `${readyAttackerCount} atacantes prontos`;
   const actionCoach = myTurn
-    ? noMovesLeft
-      ? 'Sem ações disponíveis — encerre o turno'
-      : `${playableCardText} · ${readyAttackerText}`
+    ? {
+      done: noMovesLeft,
+      label: noMovesLeft ? 'Encerrar' : `${playableCardCount} cartas · ${readyAttackerCount} ataques`,
+      aria: noMovesLeft
+        ? 'Sem ações disponíveis. Encerre o turno.'
+        : `${playableCardText}. ${readyAttackerText}.`,
+    }
     : null;
 
   // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
@@ -1115,21 +1169,39 @@ export function GameView() {
               />
             </span>
           </div>
-          <div className="pace-hud">
-            <span className="pace-turn" title="Turno da partida">Turno {game.turnNumber}</span>
+          <div className="pace-hud" style={PACE_HUD_STYLE} aria-label="Ritmo do turno">
+            <span className="pace-turn" style={PACE_CHIP_TIGHT_STYLE} aria-label={`Turno ${game.turnNumber}`}>
+              <span style={PACE_CHIP_TEXT_STYLE}>Turno {game.turnNumber}</span>
+            </span>
             {me.fatigue === 0 && me.deckCount <= 3 && (
-              <span className="pace-fatigue" title="Seu baralho está acabando — em breve cada compra custa vida">
-                <IcoWarning className="ic" /> Fadiga à vista ({me.deckCount} no deck)
+              <span
+                className="pace-fatigue"
+                style={PACE_CHIP_STYLE}
+                aria-label={`Seu baralho está acabando. ${me.deckCount} cartas no deck antes da fadiga.`}
+              >
+                <IcoWarning className="ic" />
+                <span style={PACE_CHIP_TEXT_STYLE}>Fadiga à vista</span>
+                <strong>{me.deckCount}</strong>
               </span>
             )}
             {enemyFatiguePressure && (
-              <span className="pace-opportunity" title="O oponente está perto de sofrer dano por fadiga">
-                <IcoDeath className="ic" /> Pressione o deck inimigo
+              <span
+                className="pace-opportunity"
+                style={PACE_CHIP_STYLE}
+                aria-label="O oponente está perto de sofrer dano por fadiga."
+              >
+                <IcoDeath className="ic" />
+                <span style={PACE_CHIP_TEXT_STYLE}>Pressione o deck</span>
               </span>
             )}
             {actionCoach && (
-              <span className={`pace-action ${noMovesLeft ? 'done' : ''}`} title="Resumo das ações disponíveis neste turno">
-                <IcoHint className="ic" /> {actionCoach}
+              <span
+                className={`pace-action ${actionCoach.done ? 'done' : ''}`}
+                style={PACE_CHIP_STYLE}
+                aria-label={actionCoach.aria}
+              >
+                <IcoHint className="ic" />
+                <span style={PACE_CHIP_TEXT_STYLE}>{actionCoach.label}</span>
               </span>
             )}
           </div>
