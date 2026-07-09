@@ -76,19 +76,19 @@ const ICONS: Record<string, IconType> = {
 };
 
 const PORTRAIT_IMAGES: Record<string, string> = {
-  shield: '/assets/cards/Escudo de Aco.png',
-  'crossed-swords': '/assets/cards/Abordagem.png',
-  wolf: '/assets/cards/Lobo das Sombras.png',
-  dragon: '/assets/cards/Dragao Cinzento.png',
-  bow: '/assets/cards/Aqueira eifica.png',
-  orb: '/assets/cards/Orbe de Eter.png',
-  eagle: '/assets/cards/Sentinela das Copas.png',
-  moon: '/assets/cards/Pacto Sombrio.png',
-  'dragon-spirit': '/assets/cards/Serpente do Abismo.png',
-  crown: '/assets/cards/Campea Aurora.png',
-  wizard: '/assets/cards/Arquimago da Fenda.png',
-  dagger: '/assets/cards/Duelista Elfica.png',
-  robot: '/assets/cards/Golem de Pedra.png',
+  shield: '/assets/cards/Escudo de Aco.webp',
+  'crossed-swords': '/assets/cards/Abordagem.webp',
+  wolf: '/assets/cards/Lobo das Sombras.webp',
+  dragon: '/assets/cards/Dragao Cinzento.webp',
+  bow: '/assets/cards/Aqueira eifica.webp',
+  orb: '/assets/cards/Orbe de Eter.webp',
+  eagle: '/assets/cards/Sentinela das Copas.webp',
+  moon: '/assets/cards/Pacto Sombrio.webp',
+  'dragon-spirit': '/assets/cards/Serpente do Abismo.webp',
+  crown: '/assets/cards/Campea Aurora.webp',
+  wizard: '/assets/cards/Arquimago da Fenda.webp',
+  dagger: '/assets/cards/Duelista Elfica.webp',
+  robot: '/assets/cards/Golem de Pedra.webp',
 };
 
 export function iconFor(id: string | undefined | null): IconType {
@@ -97,6 +97,10 @@ export function iconFor(id: string | undefined | null): IconType {
 
 export function portraitImageFor(id: string | undefined | null): string | undefined {
   return PORTRAIT_IMAGES[normalizeIconId(id)];
+}
+
+function pngFallback(src: string): string {
+  return src.replace(/\.webp$/i, '.png');
 }
 
 /** Ícone-cosmético "cru" (sem medalhão) — herda a cor via `currentColor`. */
@@ -112,7 +116,22 @@ export function CosmeticPortrait({
   id, className = '', alt = '',
 }: { id: string; className?: string; alt?: string }) {
   const src = portraitImageFor(id);
-  if (src) return <img src={src} alt={alt} loading="lazy" decoding="async" className={`lc-cosmetic-img ${className}`.trim()} />;
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        className={`lc-cosmetic-img ${className}`.trim()}
+        onError={(event) => {
+          if (event.currentTarget.dataset.fallback === '1') return;
+          event.currentTarget.dataset.fallback = '1';
+          event.currentTarget.src = pngFallback(src);
+        }}
+      />
+    );
+  }
   return <CosmeticIcon id={id} size="100%" className={className} />;
 }
 

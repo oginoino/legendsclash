@@ -30,6 +30,7 @@ interface Props {
   onMouseEnter?: (e: React.MouseEvent) => void;
   onMouseLeave?: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
   imageLoading?: 'eager' | 'lazy';
   imagePriority?: ImageFetchPriority;
 }
@@ -47,6 +48,7 @@ export function CardView({
   onMouseEnter,
   onMouseLeave,
   onPointerDown,
+  onMouseDown,
   imageLoading = 'eager',
   imagePriority = 'auto',
 }: Props) {
@@ -104,7 +106,8 @@ export function CardView({
         data-anchor={anchorId}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
-        onPointerDown={onPointerDown}
+        onPointerDownCapture={onPointerDown}
+        onMouseDownCapture={onMouseDown}
         onKeyDown={onClick ? (e) => {
           if (e.key !== 'Enter' && e.key !== ' ') return;
           e.preventDefault();
@@ -125,7 +128,8 @@ export function CardView({
       data-anchor={anchorId}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      onPointerDown={onPointerDown}
+      onPointerDownCapture={onPointerDown}
+      onMouseDownCapture={onMouseDown}
     >
       {content}
     </button>

@@ -8,6 +8,7 @@ import { Store } from './store.js';
 import { App } from './app.js';
 import { createAuthService, handleAuthRoute } from './auth.js';
 import { handleAvatarRoute } from './avatar.js';
+import { RuntimeSnapshot } from './snapshot.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,7 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
@@ -63,6 +65,8 @@ function cacheControl(filePath: string): string {
 const store = await Store.create();
 const app = new App(store);
 const auth = createAuthService(store);
+const runtime = new RuntimeSnapshot(app, store);
+runtime.start();
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -153,14 +157,14 @@ server.listen(PORT, () => {
   console.log(`⚔️  Legends Clash — servidor autoritativo em http://localhost:${PORT}`);
 });
 
-// Encerramento gracioso: um deploy/restart (systemd manda SIGTERM) tira os
-// jogadores das partidas em andamento de volta ao menu sem perda de Elo, em vez
-// de matar o processo com as batalhas em memória ainda ativas.
+// Encerramento gracioso: um deploy/restart (systemd manda SIGTERM) salva o
+// estado vivo em disco antes de trocar o processo. O boot seguinte restaura.
 let shuttingDown = false;
 function gracefulShutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[shutdown] ${signal} — encerrando partidas e fechando o servidor`);
+  console.log(`[runtime] ${signal} recebido — salvando estado vivo antes de sair`);
+  runtime.shutdown();
   app.shutdown();
   wss.close();
   server.close(() => process.exit(0));

@@ -30,12 +30,12 @@ export interface MatchPlayer {
   mmr: number;
 }
 
-interface CardInstance {
+export interface CardInstance {
   iid: string;
   defId: string;
 }
 
-interface Creature extends CardInstance {
+export interface Creature extends CardInstance {
   attack: number;
   health: number;
   baseHealth: number;
@@ -69,10 +69,55 @@ interface Seat {
   out: boolean;
   mulliganDone: boolean;
   reconnectTimer: NodeJS.Timeout | null;
+  /** Prazo absoluto da janela de reconexão — vai ao snapshot; o timer, não. */
+  reconnectDeadline: number | null;
   /** Estatísticas acumuladas para o recap pós-partida. */
   stats: MatchStats;
   /** Dano/abates por criatura (iid), persiste após a morte → eleger o MVP. */
   creatureLog: Map<string, { defId: string; dmg: number; kills: number }>;
+}
+
+/** Estado persistível de um assento (sem timer nem socket). */
+export interface SeatSnapshot {
+  player: MatchPlayer;
+  hp: number;
+  shield: number;
+  energy: number;
+  maxEnergy: number;
+  deck: CardInstance[];
+  hand: CardInstance[];
+  board: Creature[];
+  artifacts: string[];
+  attackBonus: number;
+  spellBonus: number;
+  regen: number;
+  shieldRegen: number;
+  fatigue: number;
+  out: boolean;
+  mulliganDone: boolean;
+  /** null = estava conectado quando o snapshot foi tirado. */
+  reconnectDeadline: number | null;
+  stats: MatchStats;
+  creatureLog: Array<[string, { defId: string; dmg: number; kills: number }]>;
+}
+
+/**
+ * Partida serializada para sobreviver à troca de processo (deploy/restart).
+ * Contém apenas estado puro — timers são rearmados em Match.restore().
+ */
+export interface MatchSnapshot {
+  id: string;
+  startedAt: number;
+  status: 'mulligan' | 'active';
+  turnSeat: number;
+  turnNumber: number;
+  turnSeconds: number;
+  useMulligan: boolean;
+  botIds: string[];
+  content: MatchContent;
+  seats: SeatSnapshot[];
+  log: GameLogEntry[];
+  plays: Array<{ seat: number; cardId: string; at: number }>;
 }
 
 export interface EngineResult {
@@ -100,10 +145,25 @@ const MAX_TURNS = 40;
 const BOT_TURN_DELAY_MS = 750;
 /** Teto do escudo acumulável por artefato (Figura de Proa) — evita tartaruga infinita. */
 const MAX_ARTIFACT_SHIELD = 10;
+/** Folga mínima quando o prazo de reconexão vence durante o restart/deploy. */
+const RESTORE_MIN_GRACE_MS = 15_000;
 
 let nextIid = 1;
 function newIid(): string {
   return 'i' + nextIid++;
+}
+
+function observeIid(iid: string): void {
+  const n = /^i(\d+)$/.exec(iid)?.[1];
+  if (!n) return;
+  nextIid = Math.max(nextIid, Number(n) + 1);
+}
+
+function observeSnapshotIids(snap: MatchSnapshot): void {
+  for (const seat of snap.seats) {
+    for (const c of [...seat.deck, ...seat.hand, ...seat.board]) observeIid(c.iid);
+    for (const [iid] of seat.creatureLog) observeIid(iid);
+  }
 }
 
 /** Fisher–Yates com aleatoriedade do servidor (anti-cheat: não auditável pelo cliente). */
@@ -130,7 +190,7 @@ export interface MatchContent {
 }
 
 export class Match {
-  readonly id = 'm' + randomBytes(6).toString('hex');
+  readonly id: string;
   readonly seats: Seat[];
   private turnSeat = 0;
   private turnNumber = 0;
@@ -140,11 +200,14 @@ export class Match {
   private botTimer: NodeJS.Timeout | null = null;
   private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
-  private readonly startedAt = Date.now();
+  private readonly startedAt: number;
   private log: GameLogEntry[] = [];
   private plays: Array<{ seat: number; cardId: string; at: number }> = [];
 
-  /** onUpdate: reenvia visões; onFinish: Elo/histórico/notificação. */
+  /**
+   * onUpdate: reenvia visões; onFinish: Elo/histórico/notificação.
+   * `restored` hidrata uma partida salva em snapshot, sem comprar novas mãos.
+   */
   constructor(
     players: MatchPlayer[],
     private onUpdate: () => void,
@@ -156,30 +219,45 @@ export class Match {
     private botIds: string[] = [],
     /** Conteúdo variável (Fase 6): facções por jogador + carta de Resistência. */
     private content: MatchContent = {},
+    restored?: MatchSnapshot,
   ) {
     if (players.length < 2) throw new Error('partida exige ao menos 2 jogadores');
-    this.seats = players.map((player) => ({
-      player,
-      hp: STARTING_HP,
-      shield: 0,
-      energy: 0,
-      maxEnergy: 0,
-      deck: buildDeck(content.factions?.[player.id], content.comeback ?? false),
-      hand: [],
-      board: [],
-      artifacts: [],
-      attackBonus: 0,
-      spellBonus: 0,
-      regen: 0,
-      shieldRegen: 0,
-      fatigue: 0,
-      connected: true,
-      out: false,
-      mulliganDone: false,
-      reconnectTimer: null,
-      stats: { creaturesSummoned: 0, spellsCast: 0, damageDealt: 0, shieldAbsorbed: 0 },
-      creatureLog: new Map(),
-    }));
+    this.id = restored?.id ?? 'm' + randomBytes(6).toString('hex');
+    this.startedAt = restored?.startedAt ?? Date.now();
+    if (restored) {
+      this.status = restored.status;
+      this.turnSeat = restored.turnSeat;
+      this.turnNumber = restored.turnNumber;
+      this.log = [...restored.log];
+      this.plays = [...restored.plays];
+      observeSnapshotIids(restored);
+    }
+    this.seats = players.map((player, i) => {
+      const snap = restored?.seats[i];
+      return {
+        player,
+        hp: snap?.hp ?? STARTING_HP,
+        shield: snap?.shield ?? 0,
+        energy: snap?.energy ?? 0,
+        maxEnergy: snap?.maxEnergy ?? 0,
+        deck: snap ? snap.deck.map((c) => ({ ...c })) : buildDeck(content.factions?.[player.id], content.comeback ?? false),
+        hand: snap ? snap.hand.map((c) => ({ ...c })) : [],
+        board: snap ? snap.board.map((c) => ({ ...c })) : [],
+        artifacts: snap ? [...snap.artifacts] : [],
+        attackBonus: snap?.attackBonus ?? 0,
+        spellBonus: snap?.spellBonus ?? 0,
+        regen: snap?.regen ?? 0,
+        shieldRegen: snap?.shieldRegen ?? 0,
+        fatigue: snap?.fatigue ?? 0,
+        connected: !restored,
+        out: snap?.out ?? false,
+        mulliganDone: snap?.mulliganDone ?? false,
+        reconnectTimer: null,
+        reconnectDeadline: null,
+        stats: snap?.stats ? { ...snap.stats } : { creaturesSummoned: 0, spellsCast: 0, damageDealt: 0, shieldAbsorbed: 0 },
+        creatureLog: new Map(snap?.creatureLog ?? []),
+      };
+    });
   }
 
   /** Acumula dano/abates de uma atacante para eleger o MVP (sobrevive à morte). */
@@ -203,8 +281,7 @@ export class Match {
     if (this.useMulligan) {
       // Fase de troca: cada jogador ajusta a mão inicial antes do turno 1.
       this.status = 'mulligan';
-      this.turnEndsAt = Date.now() + MULLIGAN_SECONDS * 1000;
-      this.mulliganTimer = setTimeout(() => this.forceFinishMulligan(), MULLIGAN_SECONDS * 1000);
+      this.armMulliganTimer();
       this.addLog('Fase de troca: ajuste a mão inicial');
       // o bot de treino não troca cartas — confirma a mão na hora
       for (const id of this.botIds) {
@@ -215,6 +292,12 @@ export class Match {
     }
     this.beginTurn(0);
     this.onUpdate();
+  }
+
+  private armMulliganTimer(ms = MULLIGAN_SECONDS * 1000): void {
+    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
+    this.turnEndsAt = Date.now() + ms;
+    this.mulliganTimer = setTimeout(() => this.forceFinishMulligan(), ms);
   }
 
   // ─── Mulligan (troca da mão inicial, antes do turno 1) ──────────
@@ -291,6 +374,7 @@ export class Match {
 
     // Fase de Compra
     this.draw(seat);
+    if (this.status !== 'active') return;
 
     for (const c of seat.board) {
       c.canAttack = true;
@@ -338,8 +422,12 @@ export class Match {
       // Fadiga: evita partidas infinitas quando o deck acaba
       seat.fatigue++;
       seat.hp -= seat.fatigue;
-      if (!silent) this.addLog(`${seat.player.name} está em fadiga e sofre ${seat.fatigue} de dano`);
-      this.checkEnd();
+      if (!silent) {
+        this.addLog(
+          `${seat.player.name} tentou comprar, mas o baralho acabou: fadiga ${seat.fatigue} causou ${seat.fatigue} de dano`,
+        );
+      }
+      this.checkEnd('fatigue');
       return;
     }
     if (seat.hand.length >= MAX_HAND) {
@@ -713,18 +801,25 @@ export class Match {
 
   handleDisconnect(playerId: string): void {
     const idx = this.seatOf(playerId);
-    if (idx < 0 || this.status !== 'active') return;
+    if (idx < 0 || this.status === 'finished') return;
     const seat = this.seats[idx];
-    seat.connected = false;
     this.addLog(`${seat.player.name} desconectou — ${RECONNECT_GRACE_MS / 60000} min para reconectar`);
+    this.armReconnectTimer(seat, RECONNECT_GRACE_MS);
+    this.onUpdate();
+  }
+
+  /** Agenda a derrota por ausência e registra o prazo persistível. */
+  private armReconnectTimer(seat: Seat, ms: number): void {
+    if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
+    seat.connected = false;
+    seat.reconnectDeadline = Date.now() + ms;
     seat.reconnectTimer = setTimeout(() => {
-      if (this.status !== 'active' || seat.connected) return;
+      if (this.status === 'finished' || seat.connected) return;
       seat.out = true;
       this.addLog(`${seat.player.name} não voltou a tempo`);
       this.checkEnd('timeout');
       this.onUpdate();
-    }, RECONNECT_GRACE_MS);
-    this.onUpdate();
+    }, ms);
   }
 
   handleReconnect(playerId: string): void {
@@ -733,11 +828,95 @@ export class Match {
     const seat = this.seats[idx];
     if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
     seat.reconnectTimer = null;
+    seat.reconnectDeadline = null;
     if (!seat.connected) {
       seat.connected = true;
       this.addLog(`${seat.player.name} reconectou`);
       this.onUpdate();
     }
+  }
+
+  // ─── Snapshot (partidas sobrevivem a deploys/restarts) ─────────
+
+  /** Estado persistível — sem timers nem sockets; ver snapshot.ts. */
+  toSnapshot(): MatchSnapshot {
+    if (this.status === 'finished') throw new Error('Partida encerrada não deve ser serializada.');
+    return {
+      id: this.id,
+      startedAt: this.startedAt,
+      status: this.status,
+      turnSeat: this.turnSeat,
+      turnNumber: this.turnNumber,
+      turnSeconds: this.turnSeconds,
+      useMulligan: this.useMulligan,
+      botIds: [...this.botIds],
+      content: {
+        factions: this.content.factions ? { ...this.content.factions } : undefined,
+        comeback: this.content.comeback,
+      },
+      seats: this.seats.map((s) => ({
+        player: { ...s.player },
+        hp: s.hp,
+        shield: s.shield,
+        energy: s.energy,
+        maxEnergy: s.maxEnergy,
+        deck: s.deck.map((c) => ({ ...c })),
+        hand: s.hand.map((c) => ({ ...c })),
+        board: s.board.map((c) => ({ ...c })),
+        artifacts: [...s.artifacts],
+        attackBonus: s.attackBonus,
+        spellBonus: s.spellBonus,
+        regen: s.regen,
+        shieldRegen: s.shieldRegen,
+        fatigue: s.fatigue,
+        out: s.out,
+        mulliganDone: s.mulliganDone,
+        reconnectDeadline: s.connected ? null : s.reconnectDeadline,
+        stats: { ...s.stats },
+        creatureLog: [...s.creatureLog.entries()],
+      })),
+      log: this.log.slice(-100),
+      plays: this.plays.slice(-12),
+    };
+  }
+
+  /**
+   * Recria a partida no processo novo. Todos os assentos nascem desconectados:
+   * quem estava conectado ganha a janela cheia; quem já estava desconectado
+   * mantém o prazo restante, com folga mínima para cobrir o downtime do deploy.
+   */
+  static restore(
+    snap: MatchSnapshot,
+    onUpdate: () => void,
+    onFinish: (result: EngineResult) => void,
+  ): Match {
+    const players = snap.seats.map((s) => s.player);
+    const m = new Match(
+      players,
+      onUpdate,
+      onFinish,
+      snap.turnSeconds,
+      snap.useMulligan,
+      snap.botIds,
+      snap.content,
+      snap,
+    );
+    m.addLog('Servidor atualizado — partida restaurada');
+    for (const [i, seat] of m.seats.entries()) {
+      if (seat.out) continue;
+      const deadline = snap.seats[i].reconnectDeadline;
+      m.armReconnectTimer(seat, deadline === null
+        ? RECONNECT_GRACE_MS
+        : Math.max(RESTORE_MIN_GRACE_MS, deadline - Date.now()));
+    }
+    if (m.status === 'mulligan') {
+      m.armMulliganTimer();
+    } else if (m.status === 'active') {
+      m.armTurnTimer();
+      const current = m.seats[m.turnSeat];
+      if (current && m.botIds.includes(current.player.id)) m.scheduleBotTurn(current.player.id);
+    }
+    return m;
   }
 
   // ─── Fim de jogo ────────────────────────────────────────────────
@@ -987,8 +1166,8 @@ export class Match {
   }
 
   private checkEnd(reasonHint?: MatchEndReason): void {
-    if (this.status !== 'active') return;
-    this.refreshComeback(); // reavalia a Resistência a cada mudança de estado
+    if (this.status === 'finished') return;
+    if (this.status === 'active') this.refreshComeback(); // reavalia a Resistência a cada mudança de estado
     for (const seat of this.seats) {
       if (!seat.out && seat.hp <= 0) {
         seat.out = true;
@@ -1000,8 +1179,12 @@ export class Match {
 
     this.status = 'finished';
     this.clearTurnTimer();
+    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
+    this.mulliganTimer = null;
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
+      seat.reconnectTimer = null;
+      seat.reconnectDeadline = null;
     }
     const winnerSeat = alive.length === 1 ? alive[0].i : 0;
     this.result = {
@@ -1182,6 +1365,8 @@ export class Match {
     if (this.botTimer) clearTimeout(this.botTimer);
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
+      seat.reconnectTimer = null;
+      seat.reconnectDeadline = null;
     }
   }
 }

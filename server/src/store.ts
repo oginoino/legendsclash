@@ -694,6 +694,41 @@ export class Store {
     return true;
   }
 
+  // ─── Snapshot de runtime (convidados sobrevivem a restarts) ──────
+  // Convidado existe só em memória por design; sem isso, todo deploy o
+  // deslogava e apagava o progresso da sessão. Ver snapshot.ts.
+
+  /** Convidados vivos + suas sessões, para o snapshot de runtime. */
+  exportGuests(): { users: UserRecord[]; sessions: SessionRecord[] } {
+    const users = [...this.byId.values()].filter((u) => u.guest);
+    const ids = new Set(users.map((u) => u.id));
+    const sessions = [...this.sessions.values()].filter((s) => ids.has(s.playerId));
+    return { users, sessions };
+  }
+
+  /**
+   * Reimporta convidados do processo anterior. A validade é a da própria
+   * sessão (expiresAt); convidado sem sessão viva é inalcançável e não volta.
+   * Retorna quantos convidados foram restaurados.
+   */
+  importGuests(users: UserRecord[], sessions: SessionRecord[]): number {
+    const now = Date.now();
+    const alive = sessions.filter((s) => s.expiresAt > now && !this.sessions.has(s.tokenHash));
+    const reachable = new Set(alive.map((s) => s.playerId));
+    let restored = 0;
+    for (const u of users) {
+      if (!u.guest || this.byId.has(u.id) || !reachable.has(u.id)) continue;
+      this.byId.set(u.id, u);
+      restored++;
+    }
+    for (const s of alive) {
+      if (!this.byId.get(s.playerId)?.guest) continue;
+      this.sessions.set(s.tokenHash, s);
+      this.db.sessions.push(s);
+    }
+    return restored;
+  }
+
   userById(id: string): UserRecord | undefined {
     return this.byId.get(id);
   }

@@ -99,74 +99,78 @@ const ART: Record<string, Art> = {
 
 export const CARD_IMAGE_MAP: Record<string, string> = {
   // Criaturas
-  c_recruta: '/assets/cards/Recruta da Vanguarda.png',
-  c_lobo: '/assets/cards/Lobo das Sombras.png',
-  c_arqueira: '/assets/cards/Aqueira eifica.png',
-  c_cavaleiro: '/assets/cards/Cavaleiro de Ferro.png',
-  c_golem: '/assets/cards/Golem de Pedra.png',
-  c_campea: '/assets/cards/Campea Aurora.png',
-  c_dragao: '/assets/cards/Dragao Cinzento.png',
-  c_renegado: '/assets/cards/Renegado Ferido.png',
+  c_recruta: '/assets/cards/Recruta da Vanguarda.webp',
+  c_lobo: '/assets/cards/Lobo das Sombras.webp',
+  c_arqueira: '/assets/cards/Aqueira eifica.webp',
+  c_cavaleiro: '/assets/cards/Cavaleiro de Ferro.webp',
+  c_golem: '/assets/cards/Golem de Pedra.webp',
+  c_campea: '/assets/cards/Campea Aurora.webp',
+  c_dragao: '/assets/cards/Dragao Cinzento.webp',
+  c_renegado: '/assets/cards/Renegado Ferido.webp',
   // Criaturas — expansão "Maré Sem Rei" (Vanguarda)
-  c_escudeira: '/assets/cards/Escudeira de Ferro.png',
-  c_cleriga: '/assets/cards/Clériga da Aurora.png',
-  c_templario: '/assets/cards/Templario do Amanhecer.png',
+  c_escudeira: '/assets/cards/Escudeira de Ferro.webp',
+  c_cleriga: '/assets/cards/Clériga da Aurora.webp',
+  c_templario: '/assets/cards/Templario do Amanhecer.webp',
   // Criaturas — expansão "Maré Sem Rei" (Silvanos)
-  c_sentinela: '/assets/cards/Sentinela das Copas.png',
-  c_duelista: '/assets/cards/Duelista Elfica.png',
-  c_bardo: '/assets/cards/Bardo da Clareira.png',
-  c_cervo: '/assets/cards/Cervo Rei da Clareira.png',
+  c_sentinela: '/assets/cards/Sentinela das Copas.webp',
+  c_duelista: '/assets/cards/Duelista Elfica.webp',
+  c_bardo: '/assets/cards/Bardo da Clareira.webp',
+  c_cervo: '/assets/cards/Cervo Rei da Clareira.webp',
   // Criaturas — expansão "Maré Sem Rei" (Éter)
-  c_fada: '/assets/cards/Fada Cintilante.png',
-  c_elemental: '/assets/cards/Elemental de Eter.png',
-  c_maga: '/assets/cards/Maga do Conclave.png',
-  c_arquimago: '/assets/cards/Arquimago da Fenda.png',
+  c_fada: '/assets/cards/Fada Cintilante.webp',
+  c_elemental: '/assets/cards/Elemental de Eter.webp',
+  c_maga: '/assets/cards/Maga do Conclave.webp',
+  c_arquimago: '/assets/cards/Arquimago da Fenda.webp',
   // Criaturas — expansão "Maré Sem Rei" (Profundezas)
-  c_morcego: '/assets/cards/Morcego Abissal.png',
-  c_cultista: '/assets/cards/Cultista do Vazio.png',
-  c_espectro: '/assets/cards/Espector da Fenda.png',
-  c_horror: '/assets/cards/Horror Rastejante.png',
+  c_morcego: '/assets/cards/Morcego Abissal.webp',
+  c_cultista: '/assets/cards/Cultista do Vazio.webp',
+  c_espectro: '/assets/cards/Espector da Fenda.webp',
+  c_horror: '/assets/cards/Horror Rastejante.webp',
   // Criaturas — expansão "Maré Sem Rei" (Maré)
-  c_grumete: '/assets/cards/Grumete Intrepido.png',
-  c_corsaria: '/assets/cards/Corsaria de Salobra.png',
-  c_aguaviva: '/assets/cards/Agua Viva Espectral.png',
-  c_sereia: '/assets/cards/Sereia do Recife.png',
-  c_tubarao: '/assets/cards/Terror de Casco.png',
-  c_serpente: '/assets/cards/Serpente do Abismo.png',
-  c_kraken: '/assets/cards/O Kraken de Salmarra.png',
+  c_grumete: '/assets/cards/Grumete Intrepido.webp',
+  c_corsaria: '/assets/cards/Corsaria de Salobra.webp',
+  c_aguaviva: '/assets/cards/Agua Viva Espectral.webp',
+  c_sereia: '/assets/cards/Sereia do Recife.webp',
+  c_tubarao: '/assets/cards/Terror de Casco.webp',
+  c_serpente: '/assets/cards/Serpente do Abismo.webp',
+  c_kraken: '/assets/cards/O Kraken de Salmarra.webp',
   // Magias
-  s_faisca: '/assets/cards/Faisca.png',
-  s_bola_de_fogo: '/assets/cards/Bola de Fogo.png',
-  s_bencao: '/assets/cards/Bencao Vital.png',
-  s_fortalecer: '/assets/cards/Fortalecer.png',
-  s_tempestade: '/assets/cards/Tempestade.png',
+  s_faisca: '/assets/cards/Faisca.webp',
+  s_bola_de_fogo: '/assets/cards/Bola de Fogo.webp',
+  s_bencao: '/assets/cards/Bencao Vital.webp',
+  s_fortalecer: '/assets/cards/Fortalecer.webp',
+  s_tempestade: '/assets/cards/Tempestade.webp',
   // Magias — expansão "Maré Sem Rei"
-  s_julgamento: '/assets/cards/Luz de Julgamento.png',
-  s_canto: '/assets/cards/Canto Revigorante.png',
-  s_lanca_gelo: '/assets/cards/Lanca de Gelo.png',
-  s_pacto: '/assets/cards/Pacto Sombrio.png',
-  s_maremoto: '/assets/cards/Marremoto.png',
+  s_julgamento: '/assets/cards/Luz de Julgamento.webp',
+  s_canto: '/assets/cards/Canto Revigorante.webp',
+  s_lanca_gelo: '/assets/cards/Lanca de Gelo.webp',
+  s_pacto: '/assets/cards/Pacto Sombrio.webp',
+  s_maremoto: '/assets/cards/Marremoto.webp',
   // Artefatos
-  a_escudo: '/assets/cards/Escudo de Aco.png',
-  a_estandarte: '/assets/cards/Estandarte de Guerra.png',
+  a_escudo: '/assets/cards/Escudo de Aco.webp',
+  a_estandarte: '/assets/cards/Estandarte de Guerra.webp',
   // Artefatos — expansão "Maré Sem Rei"
-  a_relicario: '/assets/cards/Relicario da Aurora.png',
-  a_orbe: '/assets/cards/Orbe de Eter.png',
-  a_figura: '/assets/cards/Figura de Proa Sereia.png',
+  a_relicario: '/assets/cards/Relicario da Aurora.webp',
+  a_orbe: '/assets/cards/Orbe de Eter.webp',
+  a_figura: '/assets/cards/Figura de Proa Sereia.webp',
   // Táticas
-  t_reforcos: '/assets/cards/Reforcos.png',
-  t_surto: '/assets/cards/Surto de Energia.png',
-  t_recuo: '/assets/cards/Recuo Tatico.png',
+  t_reforcos: '/assets/cards/Reforcos.webp',
+  t_surto: '/assets/cards/Surto de Energia.webp',
+  t_recuo: '/assets/cards/Recuo Tatico.webp',
   // Táticas — expansão "Maré Sem Rei"
-  t_matilha: '/assets/cards/Chamado da Matilha.png',
-  t_abordagem: '/assets/cards/Abordagem.png',
-  t_saque: '/assets/cards/Mapa do Saque.png',
+  t_matilha: '/assets/cards/Chamado da Matilha.webp',
+  t_abordagem: '/assets/cards/Abordagem.webp',
+  t_saque: '/assets/cards/Mapa do Saque.webp',
 };
 
 export type ImageFetchPriority = 'high' | 'low' | 'auto';
 
 export function cardImageUrl(defId: string): string | undefined {
   return CARD_IMAGE_MAP[defId];
+}
+
+export function cardFallbackImageUrl(defId: string): string | undefined {
+  return CARD_IMAGE_MAP[defId]?.replace(/\.webp$/i, '.png');
 }
 
 export function CardArt({
@@ -181,6 +185,7 @@ export function CardArt({
   fetchPriority?: ImageFetchPriority;
 }) {
   const imageUrl = cardImageUrl(defId);
+  const fallbackUrl = cardFallbackImageUrl(defId);
 
   if (imageUrl) {
     const priorityProps = { fetchPriority } as unknown as ImgHTMLAttributes<HTMLImageElement>;
@@ -191,7 +196,13 @@ export function CardArt({
           alt={CARDS[defId]?.name}
           loading={loading}
           decoding="async"
+          draggable={false}
           className="card-art-img"
+          onError={(event) => {
+            if (!fallbackUrl || event.currentTarget.dataset.fallback === '1') return;
+            event.currentTarget.dataset.fallback = '1';
+            event.currentTarget.src = fallbackUrl;
+          }}
           {...priorityProps}
         />
       </span>

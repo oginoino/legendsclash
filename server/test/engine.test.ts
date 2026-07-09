@@ -695,7 +695,7 @@ describe('condições de vitória (slide "Conceito e condições de vitória")',
   });
 
   it('fadiga: deck vazio causa dano crescente e encerra partidas longas', () => {
-    const { m } = makeMatch();
+    const { m, result } = makeMatch();
     track(m).start();
     m.seats[0].deck = [];
     m.seats[0].hp = 3;
@@ -704,6 +704,7 @@ describe('condições de vitória (slide "Conceito e condições de vitória")',
     m.endTurn('p0');
     m.endTurn('p1'); // fadiga 2 → hp 0
     expect(m.finished).toBe(true);
+    expect(result()!.reason).toBe('fatigue');
   });
 });
 

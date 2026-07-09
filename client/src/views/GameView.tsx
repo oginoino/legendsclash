@@ -138,6 +138,7 @@ function arrowPath(a: { x1: number; y1: number; x2: number; y2: number }): strin
  */
 interface DragState {
   pointerId: number;
+  pointerType: string;
   kind: 'hand' | 'creature';
   iid: string;
   defId: string;
@@ -272,14 +273,30 @@ export function GameView() {
   // (no toque o pointer é capturado pelo elemento de origem; na window os
   // eventos chegam igual e o alvo real vem de elementFromPoint).
   useEffect(() => {
+    const moveDrag = (drag: DragState, x: number, y: number) => {
+      if (!dragApiRef.current) return;
+      if (drag.mode === 'pending') {
+        if (Math.hypot(x - drag.startX, y - drag.startY) < DRAG_THRESHOLD_PX) return;
+        dragApiRef.current.begin(drag);
+      }
+      dragApiRef.current.move(drag, x, y);
+    };
+    const finishDrag = (drag: DragState, x: number, y: number) => {
+      if (!dragApiRef.current) return;
+      dragRef.current = null;
+      if (drag.mode === 'pending') {
+        if (drag.pointerType === 'touch') setMouse(null);
+        return; // foi um toque/clique: a ação nativa decide
+      }
+      // o mouse sintetiza um click após o arrasto — não pode virar ação
+      suppressClickRef.current = true;
+      setTimeout(() => { suppressClickRef.current = false; }, 400);
+      dragApiRef.current.finish(drag, x, y);
+    };
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
-      if (drag.mode === 'pending') {
-        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
-        dragApiRef.current.begin(drag);
-      }
-      dragApiRef.current.move(drag, e.clientX, e.clientY);
+      moveDrag(drag, e.clientX, e.clientY);
     };
     const onUp = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -288,15 +305,7 @@ export function GameView() {
         if (e.pointerType === 'touch') setMouse(null);
         return;
       }
-      dragRef.current = null;
-      if (drag.mode === 'pending') {
-        if (e.pointerType === 'touch') setMouse(null);
-        return; // foi um toque: o click nativo decide a ação
-      }
-      // o mouse sintetiza um click após o arrasto — não pode virar ação
-      suppressClickRef.current = true;
-      setTimeout(() => { suppressClickRef.current = false; }, 400);
-      dragApiRef.current.finish(drag, e.clientX, e.clientY);
+      finishDrag(drag, e.clientX, e.clientY);
     };
     const onCancel = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -304,13 +313,27 @@ export function GameView() {
       dragRef.current = null;
       dragApiRef.current.cancel(drag);
     };
+    const onMouseMove = (e: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerType !== 'mouse') return;
+      moveDrag(drag, e.clientX, e.clientY);
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerType !== 'mouse') return;
+      finishDrag(drag, e.clientX, e.clientY);
+    };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
     };
   }, []);
 
@@ -718,8 +741,23 @@ export function GameView() {
   /** Início de gesto numa carta da mão ou criatura própria. */
   function onTargetPointerDown(e: React.PointerEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
     if (!myTurn || !e.isPrimary || e.button !== 0) return;
+    if ((e.target as Element).closest('.creature-info')) return;
     dragRef.current = {
       pointerId: e.pointerId,
+      pointerType: e.pointerType,
+      ...origin,
+      startX: e.clientX,
+      startY: e.clientY,
+      mode: 'pending',
+    };
+  }
+
+  function onTargetMouseDown(e: React.MouseEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
+    if (!myTurn || e.button !== 0 || dragRef.current) return;
+    if ((e.target as Element).closest('.creature-info')) return;
+    dragRef.current = {
+      pointerId: -1,
+      pointerType: 'mouse',
       ...origin,
       startX: e.clientX,
       startY: e.clientY,
@@ -1043,6 +1081,7 @@ export function GameView() {
               fx={fxFor(`cr-${c.iid}`)}
               onClick={() => clickMyCreature(c)}
               onPointerDown={(e) => onTargetPointerDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
+              onMouseDown={(e) => onTargetMouseDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
               onInspect={(e) => showInspect({
                 iid: c.iid,
                 defId: c.defId,
@@ -1084,6 +1123,7 @@ export function GameView() {
                 lifting={lifting}
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
+                onMouseDown={myTurn ? (e) => onTargetMouseDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
                 onMouseEnter={(e) => {
                   if (myTurn && affordable) setHoverCost(CARDS[c.defId].cost);
                   if (!CAN_HOVER) return;
@@ -1364,7 +1404,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onInspect, style }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onMouseDown, onInspect, style }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
@@ -1382,6 +1422,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
   fx: FloatFx[];
   onClick: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
   onInspect?: (e: React.MouseEvent) => void;
   style?: React.CSSProperties;
 }) {
@@ -1417,7 +1458,8 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       data-anchor={`cr-${c.iid}`}
       style={style}
       onClick={onClick}
-      onPointerDown={onPointerDown}
+      onPointerDownCapture={onPointerDown}
+      onMouseDownCapture={onMouseDown}
       onKeyDown={(e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         if ((e.target as HTMLElement).closest('.creature-info')) return;
@@ -1442,6 +1484,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
         aria-label={`Ver carta: ${def.name}`}
         title={def.text ? `${def.name}: ${def.text}` : `Ver carta: ${def.name}`}
         onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           onInspect?.(e);
@@ -1580,6 +1623,9 @@ function GameOverOverlay() {
     hp: won ? 'Você zerou a vida do oponente!' : 'Sua vida chegou a zero.',
     surrender: won ? 'O oponente desistiu da partida.' : 'Você desistiu da partida.',
     timeout: won ? 'O oponente não voltou a tempo.' : 'Você ficou desconectado por muito tempo.',
+    fatigue: won
+      ? 'O baralho do oponente acabou e a fadiga consumiu a última vida.'
+      : 'Seu baralho acabou e a fadiga consumiu sua última vida.',
   };
 
   return (
@@ -1601,7 +1647,7 @@ function GameOverOverlay() {
       <div className={`panel game-over ${won ? 'won' : 'lost'}`} role="alert" aria-live="assertive">
         <div className="go-emblem">{won ? <IcoVictory /> : <IcoDeath />}</div>
         <h2>{won ? 'Vitória!' : 'Derrota'}</h2>
-        <p>{reasonText[result.reason]}</p>
+        <p>{reasonText[result.reason] ?? 'A partida foi encerrada.'}</p>
         <p className="dim">{result.turns} turnos · {Math.max(1, Math.round(result.durationMs / 60000))} min</p>
         {my && (
           <p className="mmr-change">

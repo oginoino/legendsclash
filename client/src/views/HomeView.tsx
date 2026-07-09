@@ -253,6 +253,7 @@ export function HomeView() {
                 const open = openMatch === key;
                 const reason = h.reason === 'hp' ? 'Vida zerada'
                   : h.reason === 'surrender' ? 'Desistência'
+                  : h.reason === 'fatigue' ? 'Fadiga / baralho esgotado'
                   : 'Tempo esgotado / desconexão';
                 return (
                   <li key={key} className={`${h.won ? 'won' : 'lost'} ${open ? 'open' : ''}`}>

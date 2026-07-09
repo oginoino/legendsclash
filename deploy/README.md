@@ -63,4 +63,7 @@ systemctl reload caddy                # recarregar o proxy após editar o Caddyf
 
 - **Não exponha a porta 8787** — só o Caddy fala com o Node (a `ufw` libera apenas 22/80/443).
 - Game state vive em memória: **não rode duas instâncias** do serviço.
+- Deploys não encerram batalhas: no `systemctl restart`, o SIGTERM salva partidas
+  em andamento e convidados em `server/data/runtime.json`; o processo novo restaura
+  tudo no boot. Por isso `server/data` fica fora do rsync.
 - Banco e migrações: ver `supabase/migrations/` e o `README.md` da raiz.

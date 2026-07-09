@@ -7,7 +7,7 @@ import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry,
 import { Store, type UserRecord } from './store.js';
 import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
-import { Match, GameError, type EngineResult, type MatchPlayer, type MatchContent } from './game/engine.js';
+import { Match, GameError, type EngineResult, type MatchPlayer, type MatchContent, type MatchSnapshot } from './game/engine.js';
 import { applyElo, leagueOf } from './elo.js';
 import { filterText, MAX_CHAT_LENGTH } from './wordfilter.js';
 import { RateLimiter } from './ratelimit.js';
@@ -61,6 +61,8 @@ export class App {
   private tauntLimiter = new RateLimiter(1, 0.4); // provocação: ~1 a cada 2,5 s
   private socialLimiter = new RateLimiter(4, 0.5); // revanche/amigo/perfil: anti-enumeração
   private queueTimer: NodeJS.Timeout;
+  /** Avisa o snapshot de runtime quando o conjunto de partidas muda. */
+  onMatchesChanged: (() => void) | null = null;
 
   constructor(private store: Store) {
     this.queueTimer = setInterval(() => this.tickQueue(), QUEUE_TICK_MS);
@@ -386,6 +388,46 @@ export class App {
         content: { factions: content.factions ?? null, comeback: !!content.comeback },
       },
     });
+    this.onMatchesChanged?.();
+  }
+
+  // ─── Snapshot de runtime (partidas sobrevivem a deploys) ─────────
+
+  /** Partidas ativas, deduplicadas, em formato persistível. Treino não restaura. */
+  exportMatches(): MatchSnapshot[] {
+    const seen = new Set<string>();
+    const out: MatchSnapshot[] = [];
+    for (const match of this.matches.values()) {
+      if (match.finished || this.practiceMatches.has(match.id) || seen.has(match.id)) continue;
+      seen.add(match.id);
+      out.push(match.toSnapshot());
+    }
+    return out;
+  }
+
+  /**
+   * Religa as partidas do processo anterior. Cada uma volta com os jogadores
+   * desconectados; o hello de reconexão os traz de volta à batalha.
+   */
+  restoreMatches(snaps: MatchSnapshot[]): number {
+    let restored = 0;
+    for (const snap of snaps) {
+      try {
+        const ids = snap.seats.map((s) => s.player.id);
+        if (ids.some((id) => !this.store.userById(id) || this.matches.has(id))) continue;
+        let match: Match;
+        match = Match.restore(
+          snap,
+          () => this.broadcastMatch(match),
+          (result) => this.finishMatch(match, result),
+        );
+        for (const id of ids) this.matches.set(id, match);
+        restored++;
+      } catch (err) {
+        console.error('[runtime] partida descartada na restauração:', err);
+      }
+    }
+    return restored;
   }
 
   private withMatch(user: UserRecord, fn: (m: Match) => void): void {
@@ -451,6 +493,7 @@ export class App {
       });
     }
     match.dispose();
+    this.onMatchesChanged?.();
   }
 
   private broadcastMatch(match: Match): void {
@@ -565,6 +608,7 @@ export class App {
       if (u) this.sendTo(pid, { t: 'profile', profile: this.store.profileOf(u) });
     }
     match.dispose();
+    this.onMatchesChanged?.();
   }
 
   // ─── Chat (filtro, mute e report — slide "MVP — 90 dias") ───────
@@ -777,27 +821,19 @@ export class App {
     if (ws) this.send(ws, msg);
   }
 
-  /**
-   * Encerramento gracioso (SIGTERM/restart de deploy): tira os jogadores das
-   * partidas em andamento de volta ao menu SEM perda de Elo — a partida foi
-   * interrompida pelo servidor, não perdida —, em vez de sumir junto com o
-   * processo (que deixava os clientes pendurados até a reconexão).
-   */
+  /** Encerramento gracioso após snapshot: libera timers sem abortar partidas. */
   shutdown(): void {
-    for (const match of new Set(this.matches.values())) {
-      if (match.finished) continue;
-      for (const pid of match.playerIds()) {
-        this.store.recordEvent('match_aborted', { userId: pid, matchId: match.id });
-        this.sendTo(pid, { t: 'game:state', view: null });
-      }
-      match.dispose();
-    }
-    this.matches.clear();
     this.dispose();
   }
 
   dispose(): void {
     clearInterval(this.queueTimer);
+    const seen = new Set<string>();
+    for (const match of this.matches.values()) {
+      if (seen.has(match.id)) continue;
+      seen.add(match.id);
+      match.dispose();
+    }
   }
 }
 

@@ -5,11 +5,15 @@ import { connect } from './store';
 import { primeVisualAssets } from './preload';
 import './styles.css';
 
-primeVisualAssets();
-connect(); // retoma a sessão se houver token salvo
+async function boot(): Promise<void> {
+  await primeVisualAssets();
+  connect(); // retoma a sessão se houver token salvo
 
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+  createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}
+
+void boot();

@@ -169,7 +169,7 @@ describe('app · moderação e anti-abuso', () => {
     expect(store.userById(a.id)!.muted).toContain(b.id); // auto-silenciado
   });
 
-  it('shutdown gracioso tira os jogadores da partida sem Elo e registra match_aborted', async () => {
+  it('shutdown gracioso não aborta a partida; o snapshot assume a continuidade', async () => {
     const { store, app, connect } = await makeApp();
     dispose = () => app.dispose();
     const a = store.createGuest('A', '🦊');
@@ -185,9 +185,9 @@ describe('app · moderação e anti-abuso', () => {
 
     app.shutdown();
 
-    expect(wsA.byType('game:state').at(-1)).toEqual({ t: 'game:state', view: null });
+    expect(wsA.byType('game:state').at(-1)!.view).not.toBeNull();
     expect(wsA.byType('game:over')).toHaveLength(0); // sem resultado/Elo
-    expect(store.recentEvents().filter((e) => e.type === 'match_aborted')).toHaveLength(2);
+    expect(store.recentEvents().filter((e) => e.type === 'match_aborted')).toHaveLength(0);
   });
 
   it('rejeita id de provocação fora do catálogo', async () => {
