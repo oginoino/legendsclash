@@ -935,13 +935,19 @@ export function GameView() {
         ? 'support'
         : 'spell';
   const aimColor = aimMode === 'lethal'
-    ? '#f85149'
+    ? '#e8665d'
     : aimMode === 'attack'
-      ? '#e3b341'
+      ? '#d7a84c'
       : aimMode === 'support'
-        ? '#3fb950'
-        : '#b083f0';
-  const aimAccent = aimMode === 'attack' ? me.accent : aimMode === 'lethal' ? '#ffd970' : aimMode === 'support' ? '#8ef0a0' : '#7fb1ff';
+        ? '#4fc36b'
+        : '#9d7ce8';
+  const aimAccent = aimMode === 'attack'
+    ? '#f2d28a'
+    : aimMode === 'lethal'
+      ? '#ffd6a3'
+      : aimMode === 'support'
+        ? '#a7efb1'
+        : '#9fc3ff';
   const aimLabel = aimMode === 'lethal'
     ? 'LETAL'
     : aimMode === 'attack'
@@ -1300,29 +1306,38 @@ export function GameView() {
           style={{
             ['--aim' as string]: aimColor,
             ['--aim-2' as string]: aimAccent,
-            filter: `drop-shadow(0 0 7px ${aimColor}aa)`,
+            filter: `drop-shadow(0 0 3px ${aimColor}66)`,
           } as React.CSSProperties}
         >
           <defs>
             <linearGradient id="aim-gradient" gradientUnits="userSpaceOnUse" x1={arrow.x1} y1={arrow.y1} x2={arrow.x2} y2={arrow.y2}>
-              <stop offset="0%" stopColor={aimAccent} />
-              <stop offset="58%" stopColor={aimColor} />
-              <stop offset="100%" stopColor={lethalAim ? '#ff9d96' : aimAccent} />
+              <stop offset="0%" stopColor={aimAccent} stopOpacity="0.62" />
+              <stop offset="54%" stopColor={aimColor} stopOpacity="0.82" />
+              <stop offset="100%" stopColor={lethalAim ? '#f4aaa0' : aimAccent} stopOpacity="0.68" />
             </linearGradient>
-            <marker id="arrowhead" markerWidth="13" markerHeight="13" refX="8" refY="6.5" orient="auto">
-              <path d="M0,0 L13,6.5 L0,13 L3.8,6.5 Z" fill={aimColor} stroke={aimAccent} strokeWidth="0.75" />
+            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="6.7" refY="5" orient="auto">
+              <path
+                d="M1,1 L9,5 L1,9 L3.2,5 Z"
+                fill={lethalAim ? '#f1a097' : aimAccent}
+                fillOpacity="0.78"
+                stroke={aimColor}
+                strokeOpacity="0.7"
+                strokeWidth="0.65"
+              />
             </marker>
           </defs>
-          <g className="aim-origin">
-            <circle cx={arrow.x1} cy={arrow.y1} r="18" fill="none" stroke={aimAccent} strokeOpacity="0.32" strokeWidth="8" />
-            <circle cx={arrow.x1} cy={arrow.y1} r="12" fill="none" stroke={aimColor} strokeWidth="2" />
+
+          <g className="aim-origin" opacity="0.72">
+            <circle cx={arrow.x1} cy={arrow.y1} r="14" fill="none" stroke={aimAccent} strokeOpacity="0.16" strokeWidth="6" />
+            <circle cx={arrow.x1} cy={arrow.y1} r="7.5" fill="none" stroke={aimColor} strokeOpacity="0.42" strokeWidth="1.4" />
           </g>
+
           <path
             className="aim-aura"
             d={arrowPath(arrow)}
             stroke="url(#aim-gradient)"
-            strokeOpacity="0.16"
-            strokeWidth="24"
+            strokeOpacity="0.07"
+            strokeWidth="15"
             strokeLinecap="round"
             fill="none"
           />
@@ -1330,8 +1345,8 @@ export function GameView() {
             className="aim-trail"
             d={arrowPath(arrow)}
             stroke="url(#aim-gradient)"
-            strokeOpacity="0.26"
-            strokeWidth="15"
+            strokeOpacity="0.15"
+            strokeWidth="9"
             strokeLinecap="round"
             fill="none"
           />
@@ -1339,8 +1354,8 @@ export function GameView() {
             className="aim-rail"
             d={arrowPath(arrow)}
             stroke="url(#aim-gradient)"
-            strokeOpacity="0.78"
-            strokeWidth="8"
+            strokeOpacity="0.44"
+            strokeWidth="5.25"
             strokeLinecap="round"
             fill="none"
           />
@@ -1348,8 +1363,8 @@ export function GameView() {
             className="aim-flow"
             d={arrowPath(arrow)}
             stroke="url(#aim-gradient)"
-            strokeOpacity="0.98"
-            strokeWidth="4.25"
+            strokeOpacity="0.82"
+            strokeWidth="2.75"
             strokeLinecap="round"
             fill="none"
             markerEnd={lockOn ? undefined : 'url(#arrowhead)'}
@@ -1358,35 +1373,42 @@ export function GameView() {
           <path
             className="aim-core"
             d={arrowPath(arrow)}
-            stroke={lethalAim ? '#fff0b3' : '#fff7d6'}
-            strokeOpacity="0.42"
-            strokeWidth="1.8"
+            stroke={lethalAim ? '#fff2cb' : '#fff9e6'}
+            strokeOpacity="0.34"
+            strokeWidth="0.95"
             strokeLinecap="round"
             fill="none"
             style={{ strokeDasharray: 'none', strokeDashoffset: 0 }}
           />
+
           {aimRuneA && (
-            <g className="aim-rune" transform={`translate(${aimRuneA.x} ${aimRuneA.y}) rotate(45)`}>
-              <rect x="-5" y="-5" width="10" height="10" rx="1.5" fill={aimColor} fillOpacity="0.18" stroke={aimAccent} strokeWidth="1.5" />
+            <g className="aim-rune" transform={`translate(${aimRuneA.x} ${aimRuneA.y}) rotate(45)`} opacity="0.56">
+              <rect x="-3.25" y="-3.25" width="6.5" height="6.5" rx="1.15" fill={aimColor} fillOpacity="0.12" stroke={aimAccent} strokeOpacity="0.55" strokeWidth="1" />
+              <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.2s" repeatCount="indefinite" additive="sum" />
             </g>
           )}
           {aimRuneB && (
-            <g className="aim-rune delay" transform={`translate(${aimRuneB.x} ${aimRuneB.y}) rotate(45)`}>
-              <rect x="-4" y="-4" width="8" height="8" rx="1.5" fill={aimAccent} fillOpacity="0.18" stroke={aimColor} strokeWidth="1.4" />
+            <g className="aim-rune delay" transform={`translate(${aimRuneB.x} ${aimRuneB.y}) rotate(45)`} opacity="0.44">
+              <rect x="-2.6" y="-2.6" width="5.2" height="5.2" rx="1" fill={aimAccent} fillOpacity="0.12" stroke={aimColor} strokeOpacity="0.48" strokeWidth="0.9" />
+              <animateTransform attributeName="transform" type="scale" values="1;1.06;1" dur="2.6s" repeatCount="indefinite" additive="sum" />
             </g>
           )}
+
           {/* retícula de "travado no alvo" */}
           {lockOn && (
-            <g className={`aim-reticle ${lethalAim ? 'lethal' : ''}`}>
-              <circle className="reticle-aura" cx={arrow.x2} cy={arrow.y2} r="34" fill={aimColor} fillOpacity="0.09" />
-              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke="url(#aim-gradient)" strokeWidth="2.5" />
-              <circle className="reticle-ping" cx={arrow.x2} cy={arrow.y2} r="26" fill="none" stroke={aimColor} strokeWidth="2.5" />
-              <rect className="reticle-gem" x={arrow.x2 - 5} y={arrow.y2 - 5} width="10" height="10" rx="1.5" fill={aimAccent} fillOpacity="0.24" stroke={aimColor} strokeWidth="1.5" transform={`rotate(45 ${arrow.x2} ${arrow.y2})`} />
-              <g stroke={aimColor} strokeWidth="2.5" strokeLinecap="round">
-                <line x1={arrow.x2 - 34} y1={arrow.y2} x2={arrow.x2 - 21} y2={arrow.y2} />
-                <line x1={arrow.x2 + 21} y1={arrow.y2} x2={arrow.x2 + 34} y2={arrow.y2} />
-                <line x1={arrow.x2} y1={arrow.y2 - 34} x2={arrow.x2} y2={arrow.y2 - 21} />
-                <line x1={arrow.x2} y1={arrow.y2 + 21} x2={arrow.x2} y2={arrow.y2 + 34} />
+            <g className={`aim-reticle ${lethalAim ? 'lethal' : ''}`} opacity="0.9">
+              <circle className="reticle-aura" cx={arrow.x2} cy={arrow.y2} r="25" fill={aimColor} fillOpacity="0.055" />
+              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="19" fill="none" stroke="url(#aim-gradient)" strokeOpacity="0.72" strokeWidth="1.75" />
+              <circle className="reticle-ping" cx={arrow.x2} cy={arrow.y2} r="19" fill="none" stroke={aimColor} strokeOpacity="0.38" strokeWidth="1.5">
+                <animate attributeName="r" values="19;25" dur="1.65s" repeatCount="indefinite" />
+                <animate attributeName="stroke-opacity" values="0.38;0" dur="1.65s" repeatCount="indefinite" />
+              </circle>
+              <rect className="reticle-gem" x={arrow.x2 - 3.5} y={arrow.y2 - 3.5} width="7" height="7" rx="1.2" fill={aimAccent} fillOpacity="0.18" stroke={aimColor} strokeOpacity="0.62" strokeWidth="1" transform={`rotate(45 ${arrow.x2} ${arrow.y2})`} />
+              <g stroke={aimColor} strokeOpacity="0.55" strokeWidth="1.6" strokeLinecap="round">
+                <line x1={arrow.x2 - 25} y1={arrow.y2} x2={arrow.x2 - 17} y2={arrow.y2} />
+                <line x1={arrow.x2 + 17} y1={arrow.y2} x2={arrow.x2 + 25} y2={arrow.y2} />
+                <line x1={arrow.x2} y1={arrow.y2 - 25} x2={arrow.x2} y2={arrow.y2 - 17} />
+                <line x1={arrow.x2} y1={arrow.y2 + 17} x2={arrow.x2} y2={arrow.y2 + 25} />
               </g>
             </g>
           )}
