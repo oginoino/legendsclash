@@ -12,6 +12,7 @@ import {
 import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
 import { Chat } from '../components/Chat';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { RulesModal } from '../components/RulesModal';
 import { Tutorial } from '../components/Tutorial';
@@ -196,6 +197,7 @@ export function GameView() {
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
+  const [confirmSurrenderOpen, setConfirmSurrenderOpen] = useState(false);
   const prevRef = useRef<GameViewState | null>(null);
   const prevChatLenRef = useRef(0);
   const tauntCooldownRef = useRef(0);
@@ -622,6 +624,19 @@ export function GameView() {
     send({ t: 'chat:taunt', id });
   }
 
+  function requestSurrender() {
+    sfx.click();
+    setTauntOpen(false);
+    setSidePane(null);
+    setConfirmSurrenderOpen(true);
+  }
+
+  function confirmSurrender() {
+    sfx.click();
+    setConfirmSurrenderOpen(false);
+    send({ t: 'game:surrender' });
+  }
+
   /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
   function performAttack(attacker: CreatureOnBoard, t: AimTarget): void {
     if (!myTurn || !attacker.canAttack) return;
@@ -1003,7 +1018,7 @@ export function GameView() {
         <SoundControl />
         <button
           className="btn small ghost danger"
-          onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
+          onClick={requestSurrender}
           title="Desistir"
           aria-label="Desistir da partida"
         >
@@ -1247,7 +1262,7 @@ export function GameView() {
           </span>
           <button
             className="btn small ghost danger"
-            onClick={() => { if (confirm('Desistir da partida?')) send({ t: 'game:surrender' }); }}
+            onClick={requestSurrender}
           >
             <IcoSurrender className="ic" /> Desistir
           </button>
@@ -1395,6 +1410,18 @@ export function GameView() {
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
       {showTutorial && !s.gameOver && <Tutorial onClose={() => setShowTutorial(false)} />}
+      {confirmSurrenderOpen && (
+        <ConfirmDialog
+          tone="danger"
+          icon={<IcoSurrender />}
+          title="Desistir da partida?"
+          message="A derrota será registrada imediatamente e o oponente receberá a vitória. Use apenas se não quiser continuar este duelo."
+          cancelLabel="Continuar jogando"
+          confirmLabel="Desistir agora"
+          onCancel={() => setConfirmSurrenderOpen(false)}
+          onConfirm={confirmSurrender}
+        />
+      )}
       {s.gameOver && <GameOverOverlay />}
     </div>
   );
@@ -1676,7 +1703,7 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
     });
   }
 
-  function confirm() {
+  function confirmMulligan() {
     sfx.mulligan();
     send({ t: 'game:mulligan', iids: [...swap] });
   }
@@ -1703,7 +1730,7 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
         {confirmed ? (
           <p className="mulligan-waiting">Mão confirmada — aguardando o oponente…</p>
         ) : (
-          <button className="btn primary big mulligan-confirm" onClick={confirm}>
+          <button className="btn primary big mulligan-confirm" onClick={confirmMulligan}>
             {swap.size ? `Trocar ${swap.size} e começar` : 'Manter a mão e começar'}
           </button>
         )}

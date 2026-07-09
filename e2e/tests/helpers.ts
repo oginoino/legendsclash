@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Browser, BrowserContextOptions, Page } from '@playwright/test';
+import { expect, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 
 // emoji legado → id de ícone (espelha LEGACY_ICON_MAP do shared). Inline aqui
 // porque o Playwright não transpila o TS do pacote shared dentro de node_modules.
@@ -101,6 +101,15 @@ export async function passTutorial(p: Page): Promise<void> {
   } catch {
     // sem tutorial (já dispensado nesta sessão) — segue o jogo
   }
+}
+
+/** Confirma a desistência pelo alerta customizado do jogo. */
+export async function surrender(p: Page): Promise<void> {
+  await p.click('button:has-text("Desistir")');
+  const modal = p.locator('.alert-modal');
+  await expect(modal).toBeVisible();
+  await expect(modal).toContainText('Desistir da partida?');
+  await modal.locator('button:has-text("Desistir agora")').click();
 }
 
 async function gameEnded(p: Page): Promise<boolean> {

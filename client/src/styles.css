@@ -269,6 +269,14 @@ h3 {
   border-color: #f8514955;
 }
 
+.btn.danger.strong {
+  background: linear-gradient(180deg, #6e211f, #3a1114);
+  border-color: #f8514977;
+  color: #ffddd9;
+  font-weight: 900;
+  box-shadow: 0 6px 18px #f8514924, inset 0 1px 0 #ffffff20;
+}
+
 .btn.end-turn {
   background: linear-gradient(180deg, #ffd970, #cf9a22 55%, #a87614);
   border: 1px solid #ffe9a8aa;
@@ -2459,6 +2467,70 @@ input:focus {
   /* respiro fluido nas bordas: painéis não encostam na tela em 641–980px */
   padding: clamp(12px, 4vw, 40px);
   animation: fade-in .3s ease;
+}
+
+.alert-overlay {
+  z-index: 90;
+  background:
+    radial-gradient(520px 280px at 50% 45%, #f8514916, transparent 70%),
+    #000c;
+}
+
+.alert-modal {
+  position: relative;
+  width: min(420px, calc(100vw - 28px));
+  text-align: center;
+  padding: 28px;
+  animation: pop-in .32s cubic-bezier(.2, 1.35, .45, 1);
+}
+
+.alert-modal h2 {
+  margin: 8px 0 8px;
+  color: var(--text);
+}
+
+.alert-modal p {
+  margin: 0;
+  color: var(--dim-strong);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.alert-danger {
+  border-color: #f8514966;
+  box-shadow: 0 20px 60px #000b, 0 0 46px #f8514920, inset 0 1px 0 #ffffff12;
+}
+
+.alert-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.alert-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 8px;
+  border: 1px solid #f8514966;
+  border-radius: 50%;
+  color: #ff9d96;
+  background: radial-gradient(circle at 50% 35%, #f8514936, #16090c 72%);
+  box-shadow: 0 0 24px #f8514930, inset 0 1px 0 #ffffff24;
+}
+
+.alert-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.alert-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
 }
 
 @keyframes fade-in {

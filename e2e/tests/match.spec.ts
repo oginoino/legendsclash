@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { greedyTurn, loginAs, passMulligan, passTutorial, playUntilOver, shotPath } from './helpers.js';
+import {
+  greedyTurn,
+  loginAs,
+  passMulligan,
+  passTutorial,
+  playUntilOver,
+  shotPath,
+  surrender,
+} from './helpers.js';
 
 test.describe('partida real: matchmaking → duelo → fim de jogo', () => {
   test('dois jogadores se enfrentam do início ao fim', async ({ browser }) => {
@@ -114,8 +122,8 @@ test.describe('resiliência: reconexão no meio da partida', () => {
     await expect(guest.locator('.game-board')).toBeVisible({ timeout: 10_000 });
     await expect(guest.locator('.hero-plate:not(.enemy) .hp-orb')).toBeVisible();
 
-    // desistência encerra com confirmação (dialog aceito pelo helper)
-    await guest.click('button:has-text("Desistir")');
+    // desistência encerra com confirmação no alerta customizado
+    await surrender(guest);
     await expect(guest.locator('.game-over')).toContainText('Derrota');
     await expect(host.locator('.game-over')).toContainText('Vitória');
 
@@ -140,7 +148,7 @@ test.describe('fluxo pós-partida', () => {
     await passTutorial(a);
     await expect(a.locator('.game-board')).toBeVisible({ timeout: 10_000 });
 
-    await a.click('button:has-text("Desistir")');
+    await surrender(a);
     await expect(a.locator('.game-over')).toBeVisible();
     await a.click('button:has-text("Jogar de novo")');
     await expect(a.locator('.home-main')).toBeVisible();
