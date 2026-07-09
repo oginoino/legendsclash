@@ -962,24 +962,24 @@ export function GameView() {
   const staticFacePreview = targetingEnemy && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
   const targetHint = selection?.kind === 'attacker'
     ? {
-        mode: 'attack',
-        title: selectedAttacker ? CARDS[selectedAttacker.defId].name : 'Ataque selecionado',
-        body: mustHitTaunt
-          ? `${tauntFocusName} está protegendo a mesa. Ataque Provocar primeiro.`
-          : faceShielded
-            ? 'As criaturas inimigas protegem o comandante. Remova a mesa para abrir dano direto.'
-            : 'Mesa livre. Escolha um alvo e confirme pela prévia de dano.',
-      }
+      mode: 'attack',
+      title: selectedAttacker ? CARDS[selectedAttacker.defId].name : 'Ataque selecionado',
+      body: mustHitTaunt
+        ? `${tauntFocusName} está protegendo a mesa. Ataque Provocar primeiro.`
+        : faceShielded
+          ? 'As criaturas inimigas protegem o comandante. Remova a mesa para abrir dano direto.'
+          : 'Mesa livre. Escolha um alvo e confirme pela prévia de dano.',
+    }
     : selection?.kind === 'hand' && selectedHandDef
       ? {
-          mode: selectedHandDef.target === 'friendly-creature' ? 'support' : 'spell',
-          title: selectedHandDef.name,
-          body: selectedHandDef.target === 'friendly-creature'
-            ? 'Escolha uma criatura aliada para receber o efeito.'
-            : faceShielded && !selectedHandDef.pierce
-              ? 'As criaturas inimigas bloqueiam o comandante. Mire uma criatura primeiro.'
-              : 'Escolha o melhor alvo usando a prévia de dano.',
-        }
+        mode: selectedHandDef.target === 'friendly-creature' ? 'support' : 'spell',
+        title: selectedHandDef.name,
+        body: selectedHandDef.target === 'friendly-creature'
+          ? 'Escolha uma criatura aliada para receber o efeito.'
+          : faceShielded && !selectedHandDef.pierce
+            ? 'As criaturas inimigas bloqueiam o comandante. Mire uma criatura primeiro.'
+            : 'Escolha o melhor alvo usando a prévia de dano.',
+      }
       : null;
 
   return (
@@ -1309,25 +1309,61 @@ export function GameView() {
               <stop offset="58%" stopColor={aimColor} />
               <stop offset="100%" stopColor={lethalAim ? '#ff9d96' : aimAccent} />
             </linearGradient>
-            <marker id="arrowhead" markerWidth="9" markerHeight="9" refX="5" refY="4.5" orient="auto">
-              <path d="M0,0 L9,4.5 L0,9 L2.6,4.5 Z" fill={aimColor} />
+            <marker id="arrowhead" markerWidth="13" markerHeight="13" refX="8" refY="6.5" orient="auto">
+              <path d="M0,0 L13,6.5 L0,13 L3.8,6.5 Z" fill={aimColor} stroke={aimAccent} strokeWidth="0.75" />
             </marker>
           </defs>
           <g className="aim-origin">
             <circle cx={arrow.x1} cy={arrow.y1} r="18" fill="none" stroke={aimAccent} strokeOpacity="0.32" strokeWidth="8" />
             <circle cx={arrow.x1} cy={arrow.y1} r="12" fill="none" stroke={aimColor} strokeWidth="2" />
           </g>
-          <path className="aim-trail" d={arrowPath(arrow)} stroke="url(#aim-gradient)" strokeOpacity="0.2" strokeWidth="16" strokeLinecap="round" fill="none" />
-          <path className="aim-rail" d={arrowPath(arrow)} stroke="url(#aim-gradient)" strokeOpacity="0.55" strokeWidth="7" strokeLinecap="round" fill="none" />
+          <path
+            className="aim-aura"
+            d={arrowPath(arrow)}
+            stroke="url(#aim-gradient)"
+            strokeOpacity="0.16"
+            strokeWidth="24"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <path
+            className="aim-trail"
+            d={arrowPath(arrow)}
+            stroke="url(#aim-gradient)"
+            strokeOpacity="0.26"
+            strokeWidth="15"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <path
+            className="aim-rail"
+            d={arrowPath(arrow)}
+            stroke="url(#aim-gradient)"
+            strokeOpacity="0.78"
+            strokeWidth="8"
+            strokeLinecap="round"
+            fill="none"
+          />
           <path
             className="aim-flow"
             d={arrowPath(arrow)}
             stroke="url(#aim-gradient)"
-            strokeWidth="4.5"
-            strokeDasharray="11 9"
+            strokeOpacity="0.98"
+            strokeWidth="4.25"
             strokeLinecap="round"
             fill="none"
             markerEnd={lockOn ? undefined : 'url(#arrowhead)'}
+            style={{ strokeDasharray: 'none', strokeDashoffset: 0 }}
+          />
+          <path
+            className="aim-core"
+            d={arrowPath(arrow)}
+            stroke={lethalAim ? '#fff0b3' : '#fff7d6'}
+            strokeOpacity="0.42"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            fill="none"
+            style={{ strokeDasharray: 'none', strokeDashoffset: 0 }}
           />
           {aimRuneA && (
             <g className="aim-rune" transform={`translate(${aimRuneA.x} ${aimRuneA.y}) rotate(45)`}>
@@ -1384,21 +1420,21 @@ export function GameView() {
         && !lift
         && game.status === 'active'
         && (inspect.source === 'creature' || game.hand.some((c) => c.iid === inspect.iid)) && (
-        <div
-          className={`card-inspect ${inspect.source === 'creature' ? 'board-inspect' : ''}`}
-          style={{
-            left: Math.min(
-              Math.max(inspect.x, inspect.source === 'creature' ? 160 : 130),
-              window.innerWidth - (inspect.source === 'creature' ? 160 : 130),
-            ),
-            top: inspect.source === 'creature'
-              ? Math.min(Math.max(inspect.y, 460), window.innerHeight - 12)
-              : inspect.y,
-          }}
-        >
-          <CardView defId={inspect.defId} />
-        </div>
-      )}
+          <div
+            className={`card-inspect ${inspect.source === 'creature' ? 'board-inspect' : ''}`}
+            style={{
+              left: Math.min(
+                Math.max(inspect.x, inspect.source === 'creature' ? 160 : 130),
+                window.innerWidth - (inspect.source === 'creature' ? 160 : 130),
+              ),
+              top: inspect.source === 'creature'
+                ? Math.min(Math.max(inspect.y, 460), window.innerHeight - 12)
+                : inspect.y,
+            }}
+          >
+            <CardView defId={inspect.defId} />
+          </div>
+        )}
 
       {banner && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
       {teach && (
@@ -1435,8 +1471,8 @@ function FxLayer({ fx }: { fx: FloatFx[] }) {
         <span key={f.id} className={`float-fx ${f.kind}`}>
           {f.kind === 'dmg' ? `▼ -${f.value}`
             : f.kind === 'heal' ? `▲ +${f.value}`
-            : f.kind === 'shield' ? <><IcoShield className="ic" /> -{f.value}</>
-            : <IcoBuff className="ic" />}
+              : f.kind === 'shield' ? <><IcoShield className="ic" /> -{f.value}</>
+                : <IcoBuff className="ic" />}
         </span>
       ))}
     </>
@@ -1742,8 +1778,8 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
             // tag de custo: ajuda a decidir o que trocar (sem ser regra)
             const costTag = token ? null
               : def.cost <= 2 ? <><IcoEnergy className="ic" /> barata</>
-              : def.cost >= 5 ? <><IcoExpensive className="ic" /> cara</>
-              : null;
+                : def.cost >= 5 ? <><IcoExpensive className="ic" /> cara</>
+                  : null;
             return (
               <div key={c.iid} className={`mulligan-slot ${picked ? 'swapping' : ''} ${token ? 'locked' : ''}`}>
                 {costTag && <span className="mulligan-cost-tag">{costTag}</span>}
@@ -1818,7 +1854,7 @@ function GameOverOverlay() {
             <div className="go-recap">
               {mvp && CARDS[mvp.defId] && (
                 <div className="go-mvp">
-                      <CardArt defId={mvp.defId} className="go-mvp-art" loading="eager" fetchPriority="auto" />
+                  <CardArt defId={mvp.defId} className="go-mvp-art" loading="eager" fetchPriority="auto" />
                   <div className="go-mvp-info">
                     <span className="go-mvp-name"><IcoStar className="ic" /> {CARDS[mvp.defId].name}</span>
                     <span className="go-mvp-line">
