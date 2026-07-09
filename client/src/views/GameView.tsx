@@ -632,6 +632,7 @@ export function GameView() {
     } else {
       return;
     }
+    clearInspect('hand');
     if (def.type === 'creature') sfx.summon(); else sfx.play();
     clearAim();
   }
@@ -648,6 +649,7 @@ export function GameView() {
       performPlay(iid, defId, null);
     } else {
       sfx.click();
+      clearInspect('hand');
       setSelection(selection?.kind === 'hand' && selection.iid === iid ? null : { kind: 'hand', iid });
     }
   }
@@ -745,6 +747,7 @@ export function GameView() {
         return;
       }
       const def = CARDS[drag.defId];
+      clearInspect('hand');
       if (!def || !myTurn) {
         drag.mode = 'dead';
       } else if (def.cost > me!.energy) {
@@ -786,6 +789,7 @@ export function GameView() {
         setHover(null);
       } else if (drag.mode === 'lift') {
         if (drag.startY - y >= PLAY_LIFT_PX) performPlay(drag.iid, drag.defId, null);
+        else clearInspect('hand');
         setLift(null);
       }
     },
@@ -1205,7 +1209,11 @@ export function GameView() {
         ))}
       </div>
 
-      {inspect && (!selection || inspect.source === 'creature') && !lift && game.status === 'active' && (
+      {inspect
+        && (!selection || inspect.source === 'creature')
+        && !lift
+        && game.status === 'active'
+        && (inspect.source === 'creature' || game.hand.some((c) => c.iid === inspect.iid)) && (
         <div
           className={`card-inspect ${inspect.source === 'creature' ? 'board-inspect' : ''}`}
           style={{
