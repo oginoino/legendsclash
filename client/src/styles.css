@@ -34,10 +34,10 @@
   /* dimensões padronizadas das cartas — mesma medida na mão, nas escolhas
      iniciais (mulligan) e proporção compatível na ficha da mesa */
   --card-w: 156px;
-  --card-h: 314px;
-  --card-art-h: 128px;
+  --card-h: 326px;
+  --card-art-h: 140px;
   --token-w: 110px;
-  --token-art-h: 54px;
+  --token-art-h: 60px;
   /* ── Tokens de design ─────────────────────────────────────────
      escala única de espaçamento, tipografia fluida, elevação e raio:
      fonte da verdade p/ ritmo e sofisticação em todas as telas */
@@ -71,7 +71,7 @@
   /* métricas fluidas da arena (respiram entre celular e desktop) */
   --portrait: clamp(44px, 5.5vw, 68px);
   --board-min: clamp(78px, 12vh, 112px);
-  --hand-min: clamp(298px, 40vh, 364px);
+  --hand-min: clamp(318px, 42vh, 382px);
   /* grão sutil de textura para superfícies grandes (SVG inline, sem rede) */
   --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
@@ -1326,6 +1326,13 @@ input:focus {
   border-color: #f8514955;
 }
 
+.meta-chip.deck-risk {
+  color: #ffb3ad;
+  border-color: #f8514970;
+  background: linear-gradient(180deg, #2a1016, #17101a);
+  box-shadow: 0 0 12px #f8514926;
+}
+
 /* ── Mesa e criaturas ─────────────────────────────────────────── */
 .board-row {
   /* flex-wrap base: uma mesa cheia (7 fichas) quebra linha em vez de
@@ -1597,6 +1604,14 @@ input:focus {
 .creature.ready {
   border-color: var(--green);
   box-shadow: 0 0 14px #3fb95066, 0 6px 14px #00000077;
+}
+
+.creature.exhausted {
+  border-color: #30405f;
+}
+
+.creature.exhausted .creature-art {
+  filter: brightness(.74) saturate(.82);
 }
 
 .ready-dot {
@@ -2241,17 +2256,41 @@ input:focus {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: calc(100vw - 16px);
-  background: var(--panel-2);
+  max-width: min(680px, calc(100vw - 16px));
+  background: linear-gradient(180deg, #202c44f8, #141c2cf8);
   border: 1px solid var(--gold-soft);
-  border-radius: 99px;
-  padding: 6px 8px 6px 22px;
+  border-radius: 14px;
+  padding: 8px 8px 8px 12px;
   font-size: 13px;
   z-index: 46;
   box-shadow: 0 8px 30px #000a;
   animation: msg-in .2s ease;
   pointer-events: none;
   /* não rouba toques da arena… */
+}
+
+.target-hint.attack {
+  border-color: #e3b34177;
+}
+
+.target-hint.spell {
+  border-color: #b083f088;
+}
+
+.target-hint.support {
+  border-color: #3fb95088;
+}
+
+.target-hint-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #0a0e16aa;
+  border: 1px solid #ffffff24;
+  color: var(--gold);
 }
 
 .target-hint .cancel-pill {
@@ -2264,6 +2303,18 @@ input:focus {
 
 .target-hint-text {
   min-width: 0;
+  display: grid;
+  gap: 2px;
+  line-height: 1.3;
+}
+
+.target-hint-text strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.target-hint-text span {
+  color: var(--dim-strong);
 }
 
 /* ── Fim de partida / overlays ────────────────────────────────── */
@@ -2906,6 +2957,20 @@ input:focus {
   background: linear-gradient(180deg, #141c2cf2 70%, transparent);
 }
 
+.codex-search {
+  flex: 1 1 220px;
+  min-width: min(240px, 100%);
+}
+
+.codex-search input {
+  width: 100%;
+  padding: 8px 11px;
+  font-size: 13px;
+  border-radius: 99px;
+  background: #0a0e16dd;
+  border-color: #ffffff24;
+}
+
 .codex-pill {
   --accent: var(--gold);
   background: var(--bg-2);
@@ -2996,6 +3061,13 @@ input:focus {
   font-style: italic;
   line-height: 1.25;
   max-width: var(--card-w);
+}
+
+.codex-empty {
+  margin: 28px auto 10px;
+  color: var(--dim);
+  text-align: center;
+  font-size: 14px;
 }
 
 .codex-notes {
@@ -3423,17 +3495,61 @@ input:focus {
 }
 
 .image-art.card-art-frame {
-  background: none;
+  background:
+    radial-gradient(80% 70% at 50% 38%, #ffffff14, transparent 66%),
+    linear-gradient(160deg, #1b2740, #0d1422);
+}
+
+.image-art.card-art-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(110deg, transparent 0 32%, #ffffff18 45%, transparent 58% 100%),
+    radial-gradient(80% 80% at 50% 45%, #4d8dff18, transparent 72%);
+  transform: translateX(-110%);
+  animation: image-sheen 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.image-art.image-loaded::before,
+.image-art.image-failed::before {
+  animation: none;
+  opacity: 0;
+}
+
+.image-art.image-failed {
+  background:
+    radial-gradient(70% 70% at 50% 40%, #e3b34122, transparent 68%),
+    linear-gradient(160deg, #26324b, #111827);
 }
 
 .card-art-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 42%;
+  object-position: center 39%;
   border-radius: inherit;
   display: block;
-  transform: scale(1.02);
+  opacity: 0;
+  transform: scale(1.035);
+  transition: opacity .22s ease, transform .35s ease;
+}
+
+.image-loaded .card-art-img {
+  opacity: 1;
+  transform: scale(1.015);
+}
+
+.image-failed .card-art-img {
+  opacity: .42;
+  filter: saturate(.65) contrast(.9);
+}
+
+@keyframes image-sheen {
+  to {
+    transform: translateX(110%);
+  }
 }
 
 .login-note.credits a {
@@ -3641,7 +3757,7 @@ input:focus {
 
   /* mão compacta com sobreposição (rola na horizontal se precisar) */
   .hand {
-    min-height: 300px;
+    min-height: 314px;
     padding: 14px 8px 8px;
     gap: 0;
   }
@@ -3652,7 +3768,7 @@ input:focus {
 
   .card {
     width: clamp(120px, 31vw, 146px);
-    height: 282px;
+    height: 294px;
     padding: 8px 7px 10px;
   }
 
@@ -3701,7 +3817,7 @@ input:focus {
   }
 
   .card-art.card-art-frame {
-    height: 98px;
+    height: 110px;
     font-size: 36px;
   }
 
@@ -3720,7 +3836,7 @@ input:focus {
 
   /* a dica de mira sobe para não brigar com a mão */
   .target-hint {
-    bottom: calc(276px + env(safe-area-inset-bottom));
+    bottom: calc(304px + env(safe-area-inset-bottom));
     width: calc(100% - 16px);
     justify-content: space-between;
   }
@@ -3783,6 +3899,10 @@ input:focus {
   .hand {
     min-height: 162px;
     padding: 10px 6px 6px;
+  }
+
+  .target-hint {
+    bottom: calc(154px + env(safe-area-inset-bottom));
   }
 
   .card {
@@ -4369,6 +4489,11 @@ input:focus {
   font-weight: 600;
 }
 
+.pace-opportunity {
+  color: var(--gold-2);
+  font-weight: 700;
+}
+
 /* ── Tutorial da 1ª partida ────────────────────────────────────── */
 .panel.tutorial {
   max-width: 440px;
@@ -4786,7 +4911,7 @@ input:focus {
   max-height: min(92dvh, 820px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-bottom: 0;
+  padding-bottom: 12px;
   text-align: center;
 }
 
@@ -4846,7 +4971,12 @@ input:focus {
 }
 
 .mulligan-confirm {
-  margin-top: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 auto 14px;
+  max-width: 520px;
+  box-shadow: 0 12px 30px #111827cc, 0 4px 18px #2c54a866, inset 0 1px 0 #ffffff2a;
 }
 
 /* ── Fase 2: ensino contextual + dicas de mulligan ──────────────── */

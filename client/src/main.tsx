@@ -2,11 +2,23 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { connect } from './store';
-import { primeVisualAssets } from './preload';
+import { primeVisualAssets, type VisualAssetProgress } from './preload';
 import './styles.css';
 
+function updateBootProgress(progress: VisualAssetProgress): void {
+  const root = document.getElementById('root');
+  if (!root) return;
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  const label = root.querySelector<HTMLElement>('[data-boot-label]');
+  const detail = root.querySelector<HTMLElement>('[data-boot-detail]');
+  const bar = root.querySelector<HTMLElement>('[data-boot-bar]');
+  if (label) label.textContent = progress.label;
+  if (detail) detail.textContent = `${pct}% dos recursos essenciais`;
+  if (bar) bar.style.width = `${pct}%`;
+}
+
 async function boot(): Promise<void> {
-  await primeVisualAssets();
+  await primeVisualAssets({ onProgress: updateBootProgress });
   connect(); // retoma a sessão se houver token salvo
 
   createRoot(document.getElementById('root')!).render(

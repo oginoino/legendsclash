@@ -9,12 +9,23 @@ type IdleDeadlineLike = {
 type PreloadOptions = {
   priority?: ImageFetchPriority;
   decode?: boolean;
+  onProgress?: (url: string) => void;
 };
 
 type WarmupOptions = {
   batchSize?: number;
   priority?: ImageFetchPriority;
   intervalMs?: number;
+};
+
+export type VisualAssetProgress = {
+  done: number;
+  total: number;
+  label: string;
+};
+
+type PrimeVisualAssetsOptions = {
+  onProgress?: (progress: VisualAssetProgress) => void;
 };
 
 const linked = new Set<string>();
@@ -109,7 +120,11 @@ export function preloadCardImages(defIds: readonly string[], options: PreloadOpt
   const tasks: Promise<void>[] = [];
   for (const url of uniqueUrls(defIds)) {
     preloadLink(url, priority);
-    if (options.decode ?? true) tasks.push(decodeImage(url, priority));
+    if (options.decode ?? true) {
+      tasks.push(decodeImage(url, priority).then(() => options.onProgress?.(url)));
+    } else {
+      options.onProgress?.(url);
+    }
   }
   return Promise.all(tasks).then(() => undefined);
 }
@@ -160,10 +175,9 @@ function preloadFontFaces(): Promise<void> {
     .catch(() => undefined);
 }
 
-export function primeVisualAssets(): Promise<void> {
+export function primeVisualAssets(options: PrimeVisualAssetsOptions = {}): Promise<void> {
   if (!canUseDom()) return Promise.resolve();
   const mobile = isMobileLike();
-  const fontLoad = preloadFontFaces();
 
   const critical = [
     cardOfDay(Date.now()),
@@ -179,7 +193,24 @@ export function primeVisualAssets(): Promise<void> {
     'a_estandarte',
   ];
   const firstWave = [...new Set(critical)];
-  const criticalLoad = preloadCardImages(firstWave, { priority: 'high', decode: true });
+  const criticalUrls = uniqueUrls(firstWave);
+  const total = criticalUrls.length + 1;
+  let done = 0;
+  const emit = (label: string) => options.onProgress?.({ done, total, label });
+  emit('Preparando fontes');
+
+  const fontLoad = preloadFontFaces().then(() => {
+    done = Math.min(total, done + 1);
+    emit('Fontes prontas');
+  });
+  const criticalLoad = preloadCardImages(firstWave, {
+    priority: 'high',
+    decode: true,
+    onProgress: () => {
+      done = Math.min(total, done + 1);
+      emit(done >= total ? 'Arena pronta' : 'Carregando cartas essenciais');
+    },
+  });
 
   const rest = Object.keys(CARD_IMAGE_MAP).filter((id) => !firstWave.includes(id));
   warmCardImages(rest, {
@@ -191,7 +222,10 @@ export function primeVisualAssets(): Promise<void> {
   return withTimeout(
     Promise.all([fontLoad, criticalLoad]).then(() => undefined),
     mobile ? 2400 : 1600,
-  ).then(() => undefined);
+  ).then(() => {
+    done = total;
+    emit('Arena pronta');
+  });
 }
 
 export function allCardImageIds(): string[] {

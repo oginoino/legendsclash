@@ -27,17 +27,36 @@ export function CodexView({ onClose }: { onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [factionFilter, setFactionFilter] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   // tokens concedidos por mecânica (ex.: a Moeda) não fazem parte do Arquivo
   const allIds = useMemo(() => Object.keys(CARDS).filter((id) => !CARDS[id].token), []);
+  const filteredIds = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase('pt-BR');
+    if (!q) return allIds;
+    return allIds.filter((id) => {
+      const def = CARDS[id];
+      const lore = CARD_LORE[id];
+      const haystack = [
+        def.name,
+        TYPE_LABEL[def.type],
+        def.text,
+        ...(def.keywords ?? []).map((k) => `${keywordLabel(k)} ${keywordDesc(k)}`),
+        lore?.epithet,
+        lore?.story,
+        lore ? FACTIONS[lore.factionId]?.name : undefined,
+      ].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR');
+      return haystack.includes(q);
+    });
+  }, [allIds, query]);
   const byFaction = useMemo(() => {
     const map: Record<string, string[]> = {};
-    for (const id of allIds) {
+    for (const id of filteredIds) {
       const fid = CARD_LORE[id]?.factionId ?? 'eter';
       (map[fid] ??= []).push(id);
     }
     return map;
-  }, [allIds]);
+  }, [filteredIds]);
 
   const shownFactions = factionFilter ? [factionFilter] : FACTION_ORDER;
 
@@ -92,12 +111,21 @@ export function CodexView({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="codex-filterbar">
-              <span className="dim">Cartas</span>
+              <label className="codex-search">
+                <span className="sr-only">Buscar cartas</span>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar carta, efeito ou lore"
+                  autoComplete="off"
+                />
+              </label>
+              <span className="dim">{filteredIds.length}/{allIds.length} cartas</span>
               <button
                 className={`codex-pill ${!factionFilter ? 'active' : ''}`}
                 onClick={() => setFactionFilter(null)}
               >
-                Todas ({allIds.length})
+                Todas
               </button>
               {FACTION_ORDER.map((fid) => (
                 <button
@@ -128,6 +156,9 @@ export function CodexView({ onClose }: { onClose: () => void }) {
                 </section>
               );
             })}
+            {filteredIds.length === 0 && (
+              <p className="codex-empty">Nenhuma carta encontrada para essa busca.</p>
+            )}
 
             <h3 className="codex-section-title">Da história à mesa</h3>
             <div className="codex-notes">

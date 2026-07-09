@@ -50,12 +50,13 @@
       }
       .boot-loader__mark {
         display: grid;
-        gap: 14px;
+        gap: 12px;
         justify-items: center;
         text-transform: uppercase;
         letter-spacing: 0;
         font-size: 13px;
         font-weight: 800;
+        width: min(280px, calc(100vw - 48px));
       }
       .boot-loader__sigil {
         width: 62px;
@@ -64,6 +65,30 @@
         border-radius: 50%;
         box-shadow: 0 0 28px rgba(227, 179, 65, 0.24), inset 0 0 22px rgba(77, 141, 255, 0.16);
         animation: bootPulse 1.3s ease-in-out infinite;
+      }
+      .boot-loader__bar {
+        width: 100%;
+        height: 6px;
+        border: 1px solid rgba(227, 179, 65, 0.34);
+        border-radius: 99px;
+        background: rgba(5, 9, 18, 0.72);
+        overflow: hidden;
+        box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.55);
+      }
+      .boot-loader__bar i {
+        display: block;
+        width: 8%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #4d8dff, #e3b341);
+        transition: width 180ms ease;
+      }
+      .boot-loader__detail {
+        min-height: 1.2em;
+        color: #9fb0c4;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: none;
       }
       @keyframes bootPulse {
         0%, 100% { transform: scale(0.96); opacity: 0.72; }
@@ -76,7 +101,9 @@
       <div class="boot-loader" role="status" aria-live="polite">
         <div class="boot-loader__mark">
           <span class="boot-loader__sigil"></span>
-          <span>Preparando arena</span>
+          <span data-boot-label>Preparando arena</span>
+          <span class="boot-loader__bar" aria-hidden="true"><i data-boot-bar></i></span>
+          <span class="boot-loader__detail" data-boot-detail>Carregando recursos essenciais</span>
         </div>
       </div>
     </div>

@@ -531,6 +531,7 @@ export function GameView() {
   // Provocar: prioridade entre criaturas — a com a palavra-chave vai primeiro
   const enemyTaunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
   const mustHitTaunt = selection?.kind === 'attacker' && enemyTaunts.length > 0;
+  const tauntFocusName = enemyTaunts[0] ? CARDS[enemyTaunts[0].defId].name : 'criatura com Provocar';
 
   // Cartas iguais na mesa ganham o número da posição (casa com o log do
   // servidor) — assim o efeito/dano nunca fica ambíguo entre cópias idênticas.
@@ -895,10 +896,32 @@ export function GameView() {
   // cor da mira: letal = vermelho · ataque = ouro · magia = roxo
   const aimColor = lethalAim ? '#f85149' : selection?.kind === 'attacker' ? '#e3b341' : '#b083f0';
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
+  const enemyFatiguePressure = enemy.fatigue > 0 || (enemy.deckCount <= 3 && enemy.deckCount >= 0);
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
   const staticFacePreview = targetingEnemy && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
+  const targetHint = selection?.kind === 'attacker'
+    ? {
+        mode: 'attack',
+        title: selectedAttacker ? CARDS[selectedAttacker.defId].name : 'Ataque selecionado',
+        body: mustHitTaunt
+          ? `${tauntFocusName} está protegendo a mesa. Ataque Provocar primeiro.`
+          : faceShielded
+            ? 'As criaturas inimigas protegem o comandante. Remova a mesa para abrir dano direto.'
+            : 'Mesa livre. Escolha um alvo e confirme pela prévia de dano.',
+      }
+    : selection?.kind === 'hand' && selectedHandDef
+      ? {
+          mode: selectedHandDef.target === 'friendly-creature' ? 'support' : 'spell',
+          title: selectedHandDef.name,
+          body: selectedHandDef.target === 'friendly-creature'
+            ? 'Escolha uma criatura aliada para receber o efeito.'
+            : faceShielded && !selectedHandDef.pierce
+              ? 'As criaturas inimigas bloqueiam o comandante. Mire uma criatura primeiro.'
+              : 'Escolha o melhor alvo usando a prévia de dano.',
+        }
+      : null;
 
   return (
     <div
@@ -1034,10 +1057,16 @@ export function GameView() {
                 <IcoWarning className="ic" /> Fadiga à vista ({me.deckCount} no deck)
               </span>
             )}
+            {enemyFatiguePressure && (
+              <span className="pace-opportunity" title="O oponente está perto de sofrer dano por fadiga">
+                <IcoDeath className="ic" /> Pressione o deck inimigo
+              </span>
+            )}
           </div>
           {myTurn && (
             <button
               className={`btn end-turn ${noMovesLeft ? 'pulse' : ''}`}
+              aria-label={noMovesLeft ? 'Encerrar turno, sem ações disponíveis' : 'Encerrar turno'}
               onClick={() => { sfx.click(); send({ t: 'game:endTurn' }); }}
             >
               Encerrar turno ▸
@@ -1183,22 +1212,14 @@ export function GameView() {
         </div>
       </aside>
 
-      {selection && (
-        <div className="target-hint">
+      {targetHint && (
+        <div className={`target-hint ${targetHint.mode}`}>
+          <span className="target-hint-icon">
+            {targetHint.mode === 'attack' ? <IcoAttack /> : targetHint.mode === 'support' ? <IcoBuff /> : <IcoSparkle />}
+          </span>
           <span className="target-hint-text">
-            {selection.kind === 'attacker'
-              ? `Atacando com ${selectedAttacker ? CARDS[selectedAttacker.defId].name : 'sua criatura'}: ${
-                  mustHitTaunt
-                    ? 'Provocar — ataque o Golem antes das outras criaturas'
-                    : faceShielded
-                      ? 'as criaturas inimigas protegem o comandante — derrote-as primeiro'
-                      : 'mesa livre — ataque o comandante ou veja a prévia no alvo'
-                }`
-              : selectedHandDef?.target === 'friendly-creature'
-                ? 'Escolha uma criatura aliada'
-                : faceShielded && !selectedHandDef?.pierce
-                  ? 'Escolha uma criatura inimiga — elas protegem o comandante'
-                  : 'Escolha um alvo inimigo — a prévia de dano aparece em cada um'}
+            <strong>{targetHint.title}</strong>
+            <span>{targetHint.body}</span>
           </span>
           <button className="btn small cancel-pill" onClick={clearAim}><IcoClose className="ic" /> Cancelar</button>
         </div>
@@ -1339,6 +1360,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   const hit = fx.some((f) => f.kind === 'dmg');
   const shielded = fx.some((f) => f.kind === 'shield');
   const title = commanderTitle(seat.commander);
+  const deckRisk = seat.fatigue > 0 || seat.deckCount <= 3;
   return (
     <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
       {bubble && (
@@ -1393,7 +1415,14 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         </span>
       </div>
       <div className="hero-meta">
-        <span className="meta-chip" title="Cartas no deck"><IcoDeck className="ic" /> {seat.deckCount}</span>
+        <span
+          className={`meta-chip ${deckRisk ? 'deck-risk' : ''}`}
+          title={seat.fatigue > 0
+            ? `Fadiga ${seat.fatigue}: cada compra sem carta causa dano`
+            : `Cartas no deck: ${seat.deckCount}`}
+        >
+          <IcoDeck className="ic" /> {seat.deckCount}
+        </span>
         {isEnemy && <span className="meta-chip" title="Cartas na mão"><IcoHand className="ic" /> {seat.handCount}</span>}
         {seat.attackBonus > 0 && (
           <span className="meta-chip buff" title="Estandarte de Guerra"><IcoBanner className="ic" /> +{seat.attackBonus}</span>
@@ -1440,6 +1469,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     mine ? 'mine' : '',
     selected ? 'selected' : '',
     mine && c.canAttack ? 'ready' : '',
+    mine && !c.canAttack ? 'exhausted' : '',
     buffTarget && mine ? 'buff-target' : '',
     blocked ? 'blocked' : '',
     warn ? 'cant-attack' : '',
@@ -1505,7 +1535,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       <span className="creature-name">{def.name}</span>
       <span className={`stat-gem atk ${atkBuffed ? 'buffed' : ''}`}>{c.attack + bonus}</span>
       <span className={`stat-gem hp ${hpHurt ? 'hurt' : hpBuffed ? 'buffed' : ''}`}>{c.health}</span>
-      {mine && c.canAttack && <span className="ready-dot" />}
+      {mine && c.canAttack && <span className="ready-dot" title="Pronta para atacar" />}
       {preview && <PreviewChip p={preview} dim={previewDim} />}
       {retaliation && <PreviewChip p={retaliation} self />}
       <FxLayer fx={fx} />
@@ -1576,6 +1606,13 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
             <span className={`mulligan-secs ${secondsLeft <= 10 ? 'urgent' : ''}`}>{secondsLeft}s</span>
           </div>
         )}
+        {confirmed ? (
+          <p className="mulligan-waiting">Mão confirmada — aguardando o oponente…</p>
+        ) : (
+          <button className="btn primary big mulligan-confirm" onClick={confirm}>
+            {swap.size ? `Trocar ${swap.size} e começar` : 'Manter a mão e começar'}
+          </button>
+        )}
         <div className="mulligan-hand">
           {game.hand.map((c) => {
             const def = CARDS[c.defId];
@@ -1599,13 +1636,6 @@ function MulliganOverlay({ game, me }: { game: GameViewState; me: SeatView }) {
             );
           })}
         </div>
-        {confirmed ? (
-          <p className="mulligan-waiting">Mão confirmada — aguardando o oponente…</p>
-        ) : (
-          <button className="btn primary big mulligan-confirm" onClick={confirm}>
-            {swap.size ? `Trocar ${swap.size} e começar` : 'Manter a mão e começar'}
-          </button>
-        )}
       </div>
     </div>
   );
