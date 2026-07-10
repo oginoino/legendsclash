@@ -1668,6 +1668,7 @@ export function GameView() {
               defId={handFocus.defId}
               as="div"
               selected
+              className="focus-preview-card"
               imageLoading="eager"
               imagePriority="high"
               statusLabel="Pronta"
