@@ -181,7 +181,8 @@ export function HomeView() {
       </section>
 
       <main className="home-main">
-        <section className="panel play-panel">
+        <div className="home-main-column home-main-column-play">
+        <section className="panel play-panel home-play-panel">
           <h2>Jogar</h2>
           {dailyCard ? (
             <div className="card-of-day" title={dailyCard.text}>
@@ -291,8 +292,10 @@ export function HomeView() {
             </>
           )}
         </section>
+        </div>
 
-        <section className="panel lore-panel">
+        <div className="home-main-column home-main-column-story">
+        <section className="panel lore-panel home-lore-panel">
           <h2>Jornada do Comandante</h2>
           <div className="home-story-beats">
             {WORLD.storyBeats.map((beat, i) => (
@@ -311,51 +314,7 @@ export function HomeView() {
           </button>
         </section>
 
-        <section className="panel">
-          <h2>Ranking · Ligas</h2>
-          {p.guest && (
-            <p className="account-cta">
-              <IcoLock className="ic" /> Convidados não pontuam no ranking.{' '}
-              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
-              para disputar as ligas.
-            </p>
-          )}
-          {!p.guest && s.myRank != null && (() => {
-            const meIdx = s.around.findIndex((e) => e.id === p.id);
-            const above = meIdx > 0 ? s.around[meIdx - 1] : null;
-            return (
-              <div className="my-rank">
-                <p className="my-rank-pos">Sua posição: <strong>#{s.myRank}</strong> · {p.mmr} MMR</p>
-                {above ? (
-                  <p className="hint">
-                    Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar <InlineAvatar iconId={above.avatar} photo={above.photo} size={18} /> {above.name}.
-                  </p>
-                ) : (
-                  <p className="hint"><IcoGold className="ic" /> Você lidera o ranking — defenda o topo!</p>
-                )}
-              </div>
-            );
-          })()}
-          {s.leaderboard.length === 0 ? (
-            <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
-          ) : (
-            <table className="board-table">
-              <tbody>
-                {s.leaderboard.map((e, i) => (
-                  <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
-                    <td className="pos">{i + 1}</td>
-                    <td className="board-player"><InlineAvatar iconId={e.avatar} photo={e.photo} size={20} /> {e.name}</td>
-                    <td><LeagueBadge league={e.league} /></td>
-                    <td className="num">{e.mmr}</td>
-                    <td className="num dim">{e.wins}V {e.losses}D</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        <section className="panel">
+        <section className="panel home-history-panel">
           <h2>Histórico de partidas</h2>
           {p.guest && (
             <p className="account-cta">
@@ -402,6 +361,53 @@ export function HomeView() {
             </ul>
           )}
         </section>
+        </div>
+
+        <div className="home-main-column home-main-column-ranking">
+        <section className="panel home-ranking-panel">
+          <h2>Ranking · Ligas</h2>
+          {p.guest && (
+            <p className="account-cta">
+              <IcoLock className="ic" /> Convidados não pontuam no ranking.{' '}
+              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+              para disputar as ligas.
+            </p>
+          )}
+          {!p.guest && s.myRank != null && (() => {
+            const meIdx = s.around.findIndex((e) => e.id === p.id);
+            const above = meIdx > 0 ? s.around[meIdx - 1] : null;
+            return (
+              <div className="my-rank">
+                <p className="my-rank-pos">Sua posição: <strong>#{s.myRank}</strong> · {p.mmr} MMR</p>
+                {above ? (
+                  <p className="hint">
+                    Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar <InlineAvatar iconId={above.avatar} photo={above.photo} size={18} /> {above.name}.
+                  </p>
+                ) : (
+                  <p className="hint"><IcoGold className="ic" /> Você lidera o ranking — defenda o topo!</p>
+                )}
+              </div>
+            );
+          })()}
+          {s.leaderboard.length === 0 ? (
+            <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
+          ) : (
+            <table className="board-table">
+              <tbody>
+                {s.leaderboard.map((e, i) => (
+                  <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
+                    <td className="pos">{i + 1}</td>
+                    <td className="board-player"><InlineAvatar iconId={e.avatar} photo={e.photo} size={20} /> {e.name}</td>
+                    <td><LeagueBadge league={e.league} /></td>
+                    <td className="num">{e.mmr}</td>
+                    <td className="num dim">{e.wins}V {e.losses}D</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+        </div>
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCustomize && <ProfileModal onClose={() => setShowCustomize(false)} />}
