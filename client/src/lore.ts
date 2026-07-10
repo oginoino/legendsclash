@@ -38,6 +38,26 @@ export const WORLD = {
     'Cada partida é um Embate: dois Cristais se reconhecem à distância e puxam seus portadores para o conflito. As criaturas não são peças sem passado; são juramentos, pactos, monstros, canções e dívidas que atravessam o mundo para atender a um chamado. Quando a última luz de um Comandante se apaga, o Embate termina — e a lenda volta ao Arquivo, esperando outra mão, outra mesa, outro destino.',
     'Nem todo estilhaço caiu em terra firme. Muitos afundaram no oceano e continuaram acesos sob a água, criando rotas de maré carregadas de Éter. Foi ali que nasceu a Maré Sem Rei: corsários, sereias, feras de casco e coisas tão antigas que nenhum mapa ousa desenhar. A Vanguarda diz que guarda Aurélia. O Pacto diz que a mata lembra. O Conclave diz que todo Cristal pode ser decifrado. Os Antigos dizem pouco. Mas o mar, quando responde, responde alto.',
   ],
+  storyBeats: [
+    {
+      icon: 'arcane',
+      kicker: 'Origem',
+      title: 'A Fratura abriu o céu',
+      text: 'Os Cristais de Éter caíram como estrelas vivas e transformaram reinos, mares e ruínas em fontes de poder instável.',
+    },
+    {
+      icon: 'shield',
+      kicker: 'Presente',
+      title: 'Comandantes atendem ao chamado',
+      text: 'Cada duelo é um Embate entre Cristais: lendas, pactos e artefatos respondem à mão de quem sustenta a luz.',
+    },
+    {
+      icon: 'death',
+      kicker: 'Risco',
+      title: 'Toda luz cobra ritmo',
+      text: 'Gastar energia, preservar o deck e escolher a hora de atacar são decisões de sobrevivência, não apenas matemática.',
+    },
+  ],
   /** Notas que amarram regra ↔ história, mostradas no rodapé do Arquivo. */
   codexNotes: [
     {
