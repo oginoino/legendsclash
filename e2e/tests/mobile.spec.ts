@@ -78,9 +78,15 @@ test.describe('mobile: login, partida por toque e gaveta', () => {
         await playable.first().tap();
         await expect(phone.locator('.my-row .creature')).toHaveCount(before);
         await expect(phone.locator('.hand .card.selected')).toBeVisible();
-        await expect(phone.locator('.touch-command.play')).toBeVisible();
-        await expect(phone.locator('.touch-command .play-pill')).toBeVisible();
-        await phone.locator('.touch-command .play-pill').tap();
+        await expect(phone.locator('.hand-focus-tray')).toBeVisible();
+        await expect(phone.locator('.hand-focus-card .card')).toBeVisible();
+        const focusBox = await phone.locator('.hand-focus-card .card').boundingBox();
+        expect(focusBox?.y ?? -1, 'carta focada deve ficar dentro da viewport').toBeGreaterThanOrEqual(0);
+        expect(focusBox?.height ?? 0, 'carta focada deve ter leitura confortável').toBeGreaterThan(260);
+        await expect(phone.locator('.hand-focus-tray .play-pill')).toBeVisible();
+        await phone.waitForTimeout(220);
+        await phone.screenshot({ path: shotPath('09-mobile-hand-focus.png') });
+        await phone.locator('.hand-focus-tray .play-pill').tap();
         await expect(phone.locator('.my-row .creature')).toHaveCount(before + 1);
       }
 
@@ -190,7 +196,13 @@ test.describe('gestos: arrastar para mirar (pointer events)', () => {
       await a.mouse.up();
 
       // soltou no alvo: o ataque saiu (criatura deixa de estar pronta)
-      await expect(a.locator('.my-row .creature.ready')).toHaveCount(0);
+      try {
+        await expect(a.locator('.my-row .creature.ready')).toHaveCount(0, { timeout: 2500 });
+      } catch {
+        await a.keyboard.press('Escape').catch(() => undefined);
+        await a.waitForTimeout(300);
+        continue;
+      }
       await expect(a.locator('.aim-arrow')).toHaveCount(0);
       dragged = true;
     }

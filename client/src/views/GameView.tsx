@@ -1234,15 +1234,15 @@ export function GameView() {
     ? {
       mode: 'play' as const,
       title: focusedHandDef.name,
-      body: 'Carta pronta na mão.',
+      body: 'Revise antes de jogar.',
       actionLabel: noTargetActionLabel(handFocus.defId),
     }
     : null;
-  const touchCommand = targetHint ?? handConfirm;
+  const touchCommand = targetHint;
 
   return (
     <div
-      className={`game-screen ${selection ? 'is-aiming' : ''}`}
+      className={`game-screen ${selection ? 'is-aiming' : ''} ${handFocus ? 'has-hand-focus' : ''}`}
       onPointerMove={selection ? (e) => setMouse({ x: e.clientX, y: e.clientY }) : undefined}
       onContextMenu={selection ? (e) => { e.preventDefault(); clearAim(); } : undefined}
       onClickCapture={(e) => {
@@ -1649,22 +1649,52 @@ export function GameView() {
               ? <IcoAttack />
               : touchCommand.mode === 'support'
                 ? <IcoBuff />
-                : touchCommand.mode === 'play'
-                  ? <IcoHand />
-                  : <IcoSparkle />}
+                : <IcoSparkle />}
           </span>
           <span className="touch-command-text">
             <strong>{touchCommand.title}</strong>
             <span>{touchCommand.body}</span>
           </span>
-          {handConfirm && (
-            <button className="btn small play-pill" onClick={confirmFocusedHandPlay} aria-label={`${handConfirm.actionLabel} ${handConfirm.title}`}>
-              <IcoCheck className="ic" /> {handConfirm.actionLabel}
-            </button>
-          )}
-          <button className="btn small cancel-pill" onClick={clearAim} aria-label={handConfirm ? 'Fechar carta focada' : 'Cancelar mira'}>
-            <IcoClose className="ic" /> {handConfirm ? 'Fechar' : 'Cancelar'}
+          <button className="btn small cancel-pill" onClick={clearAim} aria-label="Cancelar mira">
+            <IcoClose className="ic" /> Cancelar
           </button>
+        </div>
+      )}
+
+      {handConfirm && handFocus && (
+        <div className="hand-focus-tray" role="dialog" aria-live="polite" aria-label={`Carta focada: ${handConfirm.title}`}>
+          <div className="hand-focus-card" aria-hidden="true">
+            <CardView
+              defId={handFocus.defId}
+              as="div"
+              selected
+              imageLoading="eager"
+              imagePriority="high"
+              statusLabel="Pronta"
+              statusTone="good"
+            />
+          </div>
+          <div className="hand-focus-panel">
+            <span className="touch-command-icon">
+              <IcoHand />
+            </span>
+            <span className="touch-command-text">
+              <strong>{handConfirm.title}</strong>
+              <span>{handConfirm.body}</span>
+            </span>
+            <div className="hand-focus-buttons">
+              <button
+                className="btn small play-pill"
+                onClick={confirmFocusedHandPlay}
+                aria-label={`${handConfirm.actionLabel} ${handConfirm.title}`}
+              >
+                <IcoCheck className="ic" /> {handConfirm.actionLabel}
+              </button>
+              <button className="btn small cancel-pill" onClick={clearAim} aria-label="Fechar carta focada">
+                <IcoClose className="ic" /> Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
