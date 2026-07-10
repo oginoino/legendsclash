@@ -3042,8 +3042,42 @@ input:focus {
   border-color: #3fb95088;
 }
 
-.touch-command.play {
-  border-color: #4d8dff88;
+.hand-focus-tray {
+  display: none;
+}
+
+.hand-focus-card {
+  min-width: 0;
+}
+
+.hand-focus-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: stretch;
+  align-items: start;
+  gap: 10px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, #202c44, #101827),
+    var(--noise);
+  border: 1px solid #4d8dff66;
+  border-radius: 14px;
+  box-shadow: 0 14px 38px #000d, inset 0 1px 0 #ffffff14;
+}
+
+.hand-focus-buttons {
+  grid-column: 1 / -1;
+  align-self: end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.hand-focus-buttons .btn {
+  min-height: 42px;
+  border-radius: 99px;
+  white-space: nowrap;
 }
 
 @media (hover: none),
@@ -3073,19 +3107,192 @@ input:focus {
     animation: msg-in .16s ease;
   }
 
-  .touch-command .play-pill,
   .touch-command .cancel-pill {
     flex: 0 0 auto;
     border-radius: 99px;
     white-space: nowrap;
   }
 
-  .touch-command .play-pill {
+  .game-screen.has-hand-focus .hand {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .hand-focus-tray {
+    position: fixed;
+    inset: calc(54px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    z-index: 120;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    justify-items: center;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background:
+      radial-gradient(70% 60% at 50% 12%, #4d8dff24, transparent 58%),
+      linear-gradient(180deg, #07101de8, #070b14f4),
+      var(--noise);
+    border: 1px solid #ffffff22;
+    border-radius: 16px;
+    box-shadow: 0 24px 70px #000f, inset 0 1px 0 #ffffff12;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+    animation: msg-in .16s ease;
+  }
+
+  .hand-focus-card {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    align-self: center;
+  }
+
+  .hand-focus-card .card {
+    width: clamp(172px, 54vw, 220px);
+    height: clamp(330px, 58dvh, 420px);
+    --card-art-h: clamp(142px, 24dvh, 184px);
+    margin: 0;
+    opacity: 1;
+    filter: brightness(1.08) saturate(1.06);
+    transform: none !important;
+    animation: hand-focus-card-in .16s ease;
+    box-shadow: 0 0 0 1px #ffffff22, 0 18px 46px #000d, 0 0 28px #4d8dff33;
+  }
+
+  .hand-focus-card .card-art.card-art-frame {
+    height: var(--card-art-h);
+  }
+
+  .hand-focus-panel {
+    position: relative;
+    z-index: 3;
+    width: min(100%, 480px);
+    align-self: end;
+  }
+
+  .hand-focus-tray .play-pill {
     border-color: #e3b341aa;
     background: linear-gradient(180deg, #ffd970, #b98618);
     color: #261b05;
     font-weight: 900;
     box-shadow: inset 0 1px 0 #fff8, 0 5px 16px #e3b34133;
+  }
+}
+
+@keyframes hand-focus-card-in {
+  from {
+    transform: translateY(14px) scale(.96);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .hand-focus-tray {
+    inset: calc(50px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .hand-focus-card .card {
+    width: clamp(170px, 56vw, 212px);
+    height: clamp(326px, 50dvh, 406px);
+    --card-art-h: clamp(138px, 20dvh, 176px);
+  }
+
+  .hand-focus-panel {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .hand-focus-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hand-focus-tray .touch-command-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .hand-focus-tray .touch-command-text span {
+    -webkit-line-clamp: 2;
+  }
+}
+
+@media (max-width: 360px) {
+  .hand-focus-tray {
+    grid-template-columns: 1fr;
+  }
+
+  .hand-focus-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 500px) {
+  .hand-focus-tray {
+    inset: calc(44px + env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    grid-template-columns: 116px minmax(0, 1fr);
+    grid-template-rows: 1fr;
+    justify-items: stretch;
+    align-items: end;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .hand-focus-card .card {
+    width: 112px;
+    height: 206px;
+    --card-art-h: 72px;
+    padding: 6px 5px 8px;
+  }
+
+  .hand-focus-card .card-name {
+    min-height: 18px;
+    font-size: 8.5px;
+  }
+
+  .hand-focus-card .card-meta {
+    min-height: 14px;
+  }
+
+  .hand-focus-card .card-type,
+  .hand-focus-card .keyword-chip {
+    font-size: 6.8px;
+    padding: 1px 4px;
+    letter-spacing: .2px;
+  }
+
+  .hand-focus-card .card-text {
+    display: block;
+    font-size: 7.4px;
+    line-height: 1.06;
+    padding: 3px 4px;
+  }
+
+  .hand-focus-card .card-cost {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+  }
+
+  .hand-focus-card .card .stat-gem {
+    min-width: 19px;
+    height: 19px;
+    font-size: 9px;
+  }
+
+  .hand-focus-panel {
+    align-self: stretch;
+    width: 100%;
+    padding: 9px;
+  }
+
+  .hand-focus-buttons .btn {
+    min-height: 38px;
+    padding: 7px 9px;
+    font-size: 12px;
   }
 }
 
