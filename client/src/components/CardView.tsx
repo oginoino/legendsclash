@@ -34,7 +34,7 @@ interface Props {
   imageLoading?: 'eager' | 'lazy';
   imagePriority?: ImageFetchPriority;
   statusLabel?: string;
-  statusTone?: 'warn' | 'neutral';
+  statusTone?: 'warn' | 'neutral' | 'good' | 'target' | 'support';
 }
 
 export function CardView({
