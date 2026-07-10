@@ -1055,6 +1055,20 @@ export function GameView() {
         }
       }}
     >
+      <style>{`
+        .board-divider.no-divider-line {
+          border-top: 0 !important;
+          border-bottom: 0 !important;
+          box-shadow: none !important;
+          background-image: none !important;
+        }
+
+        .board-divider.no-divider-line::before,
+        .board-divider.no-divider-line::after {
+          content: none !important;
+          display: none !important;
+        }
+      `}</style>
       <div className="mobile-topbar">
         <button
           className={`btn small ghost ${sidePane === 'log' ? 'active' : ''}`}
@@ -1149,7 +1163,7 @@ export function GameView() {
           )}
         </div>
 
-        <div className="board-divider">
+        <div className="board-divider no-divider-line">
           <div className={myTurn ? 'turn-pill mine' : 'turn-pill'}>
             <span className={timeUrgent ? 'time-urgent' : ''} role="timer">
               {game.status !== 'active'
