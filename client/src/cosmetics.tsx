@@ -12,7 +12,7 @@ import {
   GiEagleEmblem, GiHighShot, GiMoon, GiRobotGolem, GiShield, GiSpikedDragonHead,
   GiWizardFace, GiWolfHead,
 } from 'react-icons/gi';
-import { accentStyleDef, DEFAULT_AVATAR, normalizeIconId } from '@legendsclash/shared';
+import { accentStyleDef, DEFAULT_AVATAR, DEFAULT_PROFILE_COVER, normalizeIconId } from '@legendsclash/shared';
 import { SIGIL_ICONS, TAUNT_ICONS } from './icons';
 
 /** Sigilo de facção / ícone de nota do Arquivo de Aurélia (id → ícone). */
@@ -91,12 +91,27 @@ const PORTRAIT_IMAGES: Record<string, string> = {
   robot: '/assets/cards/Golem de Pedra.webp',
 };
 
+const PROFILE_COVER_IMAGES: Record<string, string> = {
+  aurelia: '/assets/illustrations/aurelia-panorama.webp',
+  archive: '/assets/illustrations/aurelia-archive.webp',
+  'aether-arena': '/assets/illustrations/aether-arena.webp',
+  champion: '/assets/cards/Campea Aurora.webp',
+};
+
 export function iconFor(id: string | undefined | null): IconType {
   return ICONS[normalizeIconId(id)] ?? ICONS[DEFAULT_AVATAR];
 }
 
 export function portraitImageFor(id: string | undefined | null): string | undefined {
   return PORTRAIT_IMAGES[normalizeIconId(id)];
+}
+
+export function profileCoverImageFor(id: string | undefined | null): string {
+  return PROFILE_COVER_IMAGES[id ?? ''] ?? PROFILE_COVER_IMAGES[DEFAULT_PROFILE_COVER];
+}
+
+export function profileCoverVars(id: string | undefined | null): CSSProperties {
+  return { ['--profile-cover' as string]: `url("${profileCoverImageFor(id)}")` };
 }
 
 function pngFallback(src: string): string {

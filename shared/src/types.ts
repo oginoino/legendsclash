@@ -17,6 +17,8 @@ export interface Profile {
   frame: string;
   /** Estilo de cor do realce (sólido/gradiente/brilho — id em ACCENT_STYLES). */
   accentStyle: string;
+  /** Capa pública do card/perfil social (id em PROFILE_COVERS). */
+  profileCover: string;
   /** Convidado: joga sem cadastro, mas chat/histórico/ranking pedem conta. */
   guest: boolean;
   mmr: number;
@@ -47,6 +49,7 @@ export interface PublicProfile {
   photo: string | null;
   frame: string;
   accentStyle: string;
+  profileCover: string;
   league: League;
   mmr: number;
   wins: number;

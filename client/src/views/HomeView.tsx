@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CARDS, cardOfDay } from '@legendsclash/shared';
 import { logout, openAccountPrompt, pickFaction, send, useAppState } from '../store';
-import { Avatar, InlineAvatar, Sigil } from '../cosmetics';
+import { Avatar, InlineAvatar, Sigil, profileCoverVars } from '../cosmetics';
 import {
   IcoSparkle,
   IcoStar,
@@ -107,7 +107,7 @@ export function HomeView() {
         <h1 className="logo small">
           LEGENDS<span>CLASH</span>
         </h1>
-        <div className="profile-chip">
+        <div className="profile-chip profile-chip-cover" style={profileCoverVars(p.profileCover)}>
           <Avatar
             className="avatar-lg"
             iconId={p.avatar}

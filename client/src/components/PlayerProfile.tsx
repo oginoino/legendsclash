@@ -1,7 +1,7 @@
 import { achievementLabel } from '@legendsclash/shared';
 import { GiFlame, GiRibbonMedal, GiThreeFriends } from 'react-icons/gi';
 import { addFriend, closeProfile, removeFriend, useAppState } from '../store';
-import { Avatar } from '../cosmetics';
+import { Avatar, profileCoverVars } from '../cosmetics';
 import { LeagueBadge } from './LeagueBadge';
 
 /**
@@ -18,7 +18,7 @@ export function PlayerProfileCard() {
 
   return (
     <div className="overlay" onClick={closeProfile}>
-      <div className="panel player-profile" onClick={(e) => e.stopPropagation()}>
+      <div className="panel player-profile" style={profileCoverVars(p.profileCover)} onClick={(e) => e.stopPropagation()}>
         <div className="pp-head">
           <Avatar
             className="pp-portrait"
