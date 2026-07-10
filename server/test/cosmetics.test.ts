@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_AVATAR, accentStyleUnlocked, frameUnlocked, isValidAccentStyle, isValidAvatar,
-  isValidCommander, isValidFrame, normalizeIconId,
+  isValidCommander, isValidFrame, isValidProfileCover, normalizeIconId, profileCoverUnlocked,
 } from '@legendsclash/shared';
 import { Store } from '../src/store.js';
 import { decodeImage } from '../src/avatar.js';
@@ -34,15 +34,20 @@ describe('cosméticos v2 · normalização e validação no shared', () => {
     expect(isValidFrame('inexistente')).toBe(false);
     expect(isValidAccentStyle('aurora')).toBe(true);
     expect(isValidAccentStyle('arco-iris')).toBe(false);
+    expect(isValidProfileCover('archive')).toBe(true);
+    expect(isValidProfileCover('javascript:')).toBe(false);
   });
 
-  it('frame/estilo de prestígio exigem a conquista', () => {
+  it('frame/estilo/capa de prestígio exigem a conquista', () => {
     expect(frameUnlocked('none', [])).toBe(true); // sempre liberado
     expect(frameUnlocked('dragon', [])).toBe(false);
     expect(frameUnlocked('dragon', ['veteran_50'])).toBe(true);
     expect(accentStyleUnlocked('solid', [])).toBe(true);
     expect(accentStyleUnlocked('ember', [])).toBe(false);
     expect(accentStyleUnlocked('ember', ['veteran_10'])).toBe(true);
+    expect(profileCoverUnlocked('archive', [])).toBe(true);
+    expect(profileCoverUnlocked('champion', [])).toBe(false);
+    expect(profileCoverUnlocked('champion', ['first_win'])).toBe(true);
   });
 });
 
@@ -69,12 +74,28 @@ describe('cosméticos v2 · store', () => {
     expect(store.userById(user.id)!.accentStyle).toBe('ember');
   });
 
+  it('updateCosmetics aplica capa liberada e bloqueia capa por conquista', async () => {
+    const store = await Store.create(tmpDbPath());
+    const { user } = store.findOrCreatePlayerByAuth('capa@t.test', null);
+
+    store.updateCosmetics(user.id, { profileCover: 'archive' });
+    expect(store.userById(user.id)!.profileCover).toBe('archive');
+
+    store.updateCosmetics(user.id, { profileCover: 'champion' });
+    expect(store.userById(user.id)!.profileCover).toBe('archive');
+
+    user.wins = 1;
+    store.updateCosmetics(user.id, { profileCover: 'champion' });
+    expect(store.userById(user.id)!.profileCover).toBe('champion');
+  });
+
   it('updateCosmetics ignora valores fora da lista (anti-abuso)', async () => {
     const store = await Store.create(tmpDbPath());
     const { user } = store.findOrCreatePlayerByAuth('lixo@t.test', null);
-    store.updateCosmetics(user.id, { frame: '<b>x</b>', accentStyle: 'javascript:' });
+    store.updateCosmetics(user.id, { frame: '<b>x</b>', accentStyle: 'javascript:', profileCover: 'javascript:' });
     expect(store.userById(user.id)!.frame).toBe('none');
     expect(store.userById(user.id)!.accentStyle).toBe('solid');
+    expect(store.userById(user.id)!.profileCover).toBe('aurelia');
   });
 
   it('createGuest preserva id de avatar longo e cai no padrão se inválido', async () => {

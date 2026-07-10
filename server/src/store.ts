@@ -5,9 +5,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import {
-  DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME,
-  isValidAccent, isValidAccentStyle, isValidAvatar, isValidCommander, isValidFrame,
-  achievementsOf, accentStyleUnlocked, accentUnlocked, commanderUnlocked, frameUnlocked,
+  DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME, DEFAULT_PROFILE_COVER,
+  isValidAccent, isValidAccentStyle, isValidAvatar, isValidCommander, isValidFrame, isValidProfileCover,
+  achievementsOf, accentStyleUnlocked, accentUnlocked, commanderUnlocked, frameUnlocked, profileCoverUnlocked,
   normalizeIconId,
 } from '@legendsclash/shared';
 import { BASE_MMR, leagueOf } from './elo.js';
@@ -62,6 +62,8 @@ export interface UserRecord {
   frame: string;
   /** Estilo de cor do realce (id em ACCENT_STYLES). */
   accentStyle: string;
+  /** Capa pública do perfil/card social (id em PROFILE_COVERS). */
+  profileCover: string;
   /** Vínculo com auth.users do Supabase (login por senha). Null em convidados/contas legadas/modo local. */
   authUserId: string | null;
   /**
@@ -160,6 +162,7 @@ class JsonPersistence implements Persistence {
       u.photo ??= null;
       u.frame ??= DEFAULT_FRAME;
       u.accentStyle ??= DEFAULT_ACCENT_STYLE;
+      u.profileCover ??= DEFAULT_PROFILE_COVER;
       u.guest = false; // só contas persistem; convidados vivem em memória
       u.streak ??= 0;
       u.lastPlayDay ??= 0;
@@ -267,6 +270,7 @@ class SupabasePersistence implements Persistence {
       photo: p.photo ?? null,
       frame: p.frame ?? DEFAULT_FRAME,
       accentStyle: p.accent_style ?? DEFAULT_ACCENT_STYLE,
+      profileCover: p.profile_cover ?? DEFAULT_PROFILE_COVER,
       authUserId: p.auth_user_id ?? null,
       guest: false,
       mmr: p.mmr,
@@ -306,6 +310,7 @@ class SupabasePersistence implements Persistence {
         photo: user.photo,
         frame: user.frame,
         accent_style: user.accentStyle,
+        profile_cover: user.profileCover,
         auth_user_id: user.authUserId,
         mmr: user.mmr,
         wins: user.wins,
@@ -546,6 +551,7 @@ export class Store {
       photo: null,
       frame: DEFAULT_FRAME,
       accentStyle: DEFAULT_ACCENT_STYLE,
+      profileCover: DEFAULT_PROFILE_COVER,
       authUserId,
       guest: false,
       mmr: BASE_MMR,
@@ -581,6 +587,7 @@ export class Store {
       photo: null,
       frame: DEFAULT_FRAME,
       accentStyle: DEFAULT_ACCENT_STYLE,
+      profileCover: DEFAULT_PROFILE_COVER,
       authUserId: null,
       guest: true,
       mmr: BASE_MMR,
@@ -613,7 +620,7 @@ export class Store {
    */
   updateCosmetics(
     userId: string,
-    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string },
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string; profileCover?: string },
   ): UserRecord | undefined {
     const u = this.byId.get(userId);
     if (!u) return undefined;
@@ -636,6 +643,9 @@ export class Store {
     }
     if (patch.accentStyle && isValidAccentStyle(patch.accentStyle) && accentStyleUnlocked(patch.accentStyle, earned)) {
       u.accentStyle = patch.accentStyle;
+    }
+    if (patch.profileCover && isValidProfileCover(patch.profileCover) && profileCoverUnlocked(patch.profileCover, earned)) {
+      u.profileCover = patch.profileCover;
     }
     this.persistence.saveUser(u);
     return u;
@@ -673,6 +683,12 @@ export class Store {
 
     target.name = guest.name;
     target.avatar = guest.avatar;
+    target.commander = guest.commander;
+    target.accent = guest.accent;
+    target.photo = guest.photo;
+    target.frame = guest.frame;
+    target.accentStyle = guest.accentStyle;
+    target.profileCover = guest.profileCover;
     target.mmr = guest.mmr;
     target.wins = guest.wins;
     target.losses = guest.losses;
@@ -718,6 +734,7 @@ export class Store {
     let restored = 0;
     for (const u of users) {
       if (!u.guest || this.byId.has(u.id) || !reachable.has(u.id)) continue;
+      u.profileCover ??= DEFAULT_PROFILE_COVER;
       this.byId.set(u.id, u);
       restored++;
     }
@@ -821,6 +838,7 @@ export class Store {
       photo: u.photo,
       frame: u.frame,
       accentStyle: u.accentStyle,
+      profileCover: u.profileCover,
       guest: u.guest,
       mmr: u.mmr,
       league: leagueOf(u.mmr) as League,
@@ -845,6 +863,7 @@ export class Store {
       photo: u.photo,
       frame: u.frame,
       accentStyle: u.accentStyle,
+      profileCover: u.profileCover,
       league: leagueOf(u.mmr) as League,
       mmr: u.mmr,
       wins: u.wins,

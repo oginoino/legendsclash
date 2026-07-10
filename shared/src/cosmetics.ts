@@ -118,6 +118,30 @@ export const FRAME_UNLOCKS: Record<string, string> = {
   dragon: 'veteran_50',
 };
 
+// ─── Capas de perfil ─────────────────────────────────────────────
+
+export interface ProfileCoverDef {
+  id: string;
+  label: string;
+  /** Chave narrativa opcional usada pelo cliente para compor a arte. */
+  theme: 'aurelia' | 'archive' | 'arena' | 'champion';
+  unlockReq?: string;
+}
+
+/** Capas públicas do card de perfil. O cliente resolve o id para asset visual. */
+export const PROFILE_COVERS: ProfileCoverDef[] = [
+  { id: 'aurelia', label: 'Panorama de Aurélia', theme: 'aurelia' },
+  { id: 'archive', label: 'Arquivo de Aurélia', theme: 'archive' },
+  { id: 'aether-arena', label: 'Arena de Éter', theme: 'arena' },
+  { id: 'champion', label: 'Estandarte de Campeão', theme: 'champion', unlockReq: 'first_win' },
+];
+
+export const DEFAULT_PROFILE_COVER = 'aurelia';
+
+export const PROFILE_COVER_UNLOCKS: Record<string, string> = Object.fromEntries(
+  PROFILE_COVERS.filter((c) => c.unlockReq).map((c) => [c.id, c.unlockReq!]),
+);
+
 // ─── Estilos de cor (gradientes e brilhos) ────────────────────────
 
 export interface AccentStyleDef {
@@ -229,6 +253,10 @@ export function accentStyleUnlocked(style: string, earned: string[]): boolean {
   const req = ACCENT_STYLE_UNLOCKS[style];
   return !req || earned.includes(req);
 }
+export function profileCoverUnlocked(cover: string, earned: string[]): boolean {
+  const req = PROFILE_COVER_UNLOCKS[cover];
+  return !req || earned.includes(req);
+}
 
 /**
  * Progresso rumo a uma conquista (para barras "7/10 vitórias"). Retorna null
@@ -278,4 +306,7 @@ export function isValidFrame(v: string): boolean {
 }
 export function isValidAccentStyle(v: string): boolean {
   return ACCENT_STYLES.some((s) => s.id === v);
+}
+export function isValidProfileCover(v: string): boolean {
+  return PROFILE_COVERS.some((c) => c.id === v);
 }

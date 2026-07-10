@@ -422,6 +422,7 @@ export function updateProfile(patch: {
   accent?: string;
   frame?: string;
   accentStyle?: string;
+  profileCover?: string;
 }): void {
   send({ t: 'profile:update', ...patch });
 }

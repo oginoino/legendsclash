@@ -217,7 +217,7 @@ export class App {
 
   private profileUpdate(
     user: UserRecord,
-    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string },
+    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string; profileCover?: string },
   ): void {
     const updated = this.store.updateCosmetics(user.id, patch);
     if (!updated) throw new KnownError('Perfil não encontrado.');
