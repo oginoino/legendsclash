@@ -26,6 +26,8 @@ type Selection =
   | { kind: 'attacker'; iid: string }
   | null;
 
+type HandFocus = { iid: string; defId: string } | null;
+
 type HoverTarget = { kind: 'face' } | { kind: 'creature'; iid: string } | null;
 type InspectCard = {
   iid: string;
@@ -185,8 +187,18 @@ const DRAG_THRESHOLD_PX = 8;
  *  tap deixaria o overlay preso na tela (não há mouseleave correspondente). */
 const CAN_HOVER = typeof window !== 'undefined'
   && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+/** Fluxo mobile/touch: tap foca a carta; jogar sem alvo exige CTA explícito. */
+const TOUCH_CONFIRM_QUERY = '(hover: none), (pointer: coarse)';
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
+
+function noTargetActionLabel(defId: string): string {
+  const def = CARDS[defId];
+  if (!def) return 'Usar';
+  if (def.type === 'creature') return 'Invocar';
+  if (def.type === 'artifact') return 'Equipar';
+  return 'Usar';
+}
 
 /**
  * Layout estável para o HUD de ritmo do turno.
@@ -312,6 +324,10 @@ export function GameView() {
   const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
   const [chatSeen, setChatSeen] = useState(0);
   const [confirmSurrenderOpen, setConfirmSurrenderOpen] = useState(false);
+  const [handFocus, setHandFocus] = useState<HandFocus>(null);
+  const [touchPlayConfirm, setTouchPlayConfirm] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia(TOUCH_CONFIRM_QUERY).matches
+  ));
   const prevRef = useRef<GameViewState | null>(null);
   const prevChatLenRef = useRef(0);
   const tauntCooldownRef = useRef(0);
@@ -622,6 +638,22 @@ export function GameView() {
   const myTurn = !!game && !!me && game.turnSeat === game.yourSeat && game.status === 'active';
   const secondsLeft = game ? Math.max(0, Math.ceil((game.turnEndsAt - now) / 1000)) : 0;
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia(TOUCH_CONFIRM_QUERY);
+    const update = () => setTouchPlayConfirm(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!handFocus) return;
+    if (!game || !myTurn || !game.hand.some((c) => c.iid === handFocus.iid)) {
+      setHandFocus(null);
+    }
+  }, [game, handFocus, myTurn]);
+
   // tique-taque de urgência nos últimos 5 segundos do seu turno
   useEffect(() => {
     if (myTurn && secondsLeft > 0 && secondsLeft <= 5) sfx.tick();
@@ -645,6 +677,7 @@ export function GameView() {
   const selectedAttacker = selection?.kind === 'attacker'
     ? me.board.find((c) => c.iid === selection.iid) ?? null
     : null;
+  const focusedHandDef = handFocus ? CARDS[handFocus.defId] : null;
 
   const noMovesLeft =
     myTurn &&
@@ -736,7 +769,34 @@ export function GameView() {
     setMouse(null);
     setLift(null);
     setHoverCost(0);
+    setHandFocus(null);
     clearInspect('hand');
+  }
+
+  function focusHandCard(iid: string, defId: string) {
+    sfx.click();
+    setSelection(null);
+    setHover(null);
+    setMouse(null);
+    setLift(null);
+    clearInspect('hand');
+    setHandFocus({ iid, defId });
+    setHoverCost(CARDS[defId]?.cost ?? 0);
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-anchor="hand-${iid}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    });
+  }
+
+  function confirmFocusedHandPlay() {
+    if (!handFocus || !game) return;
+    const current = game.hand.find((c) => c.iid === handFocus.iid);
+    if (!current) {
+      setHandFocus(null);
+      return;
+    }
+    performPlay(current.iid, current.defId, null);
   }
 
   /** Dispara uma provocação no chat da partida (cadência no cliente p/ UX; o
@@ -842,9 +902,14 @@ export function GameView() {
       return;
     }
     if (def.target === 'none' || !def.target) {
+      if (touchPlayConfirm) {
+        focusHandCard(iid, defId);
+        return;
+      }
       performPlay(iid, defId, null);
     } else {
       sfx.click();
+      setHandFocus(null);
       clearInspect('hand');
       setSelection(selection?.kind === 'hand' && selection.iid === iid ? null : { kind: 'hand', iid });
     }
@@ -962,6 +1027,7 @@ export function GameView() {
         return;
       }
       const def = CARDS[drag.defId];
+      setHandFocus(null);
       clearInspect('hand');
       if (!def || !myTurn) {
         drag.mode = 'dead';
@@ -1164,6 +1230,15 @@ export function GameView() {
             : 'Escolha o melhor alvo usando a prévia de dano.',
       }
       : null;
+  const handConfirm = touchPlayConfirm && handFocus && focusedHandDef && myTurn
+    ? {
+      mode: 'play' as const,
+      title: focusedHandDef.name,
+      body: 'Carta pronta na mão.',
+      actionLabel: noTargetActionLabel(handFocus.defId),
+    }
+    : null;
+  const touchCommand = targetHint ?? handConfirm;
 
   return (
     <div
@@ -1434,6 +1509,7 @@ export function GameView() {
           {game.hand.map((c, i) => {
             const off = i - (game.hand.length - 1) / 2;
             const isSelected = selection?.kind === 'hand' && selection.iid === c.iid;
+            const isFocused = handFocus?.iid === c.iid;
             const affordable = CARDS[c.defId].cost <= me.energy;
             const lifting = lift?.iid === c.iid;
             const intent = affordable && myTurn ? handIntent(c.defId, isSelected) : null;
@@ -1443,11 +1519,11 @@ export function GameView() {
                 defId={c.defId}
                 anchorId={`hand-${c.iid}`}
                 playable={myTurn && affordable}
-                selected={isSelected}
+                selected={isSelected || isFocused}
                 lifting={lifting}
                 className={myTurn && !affordable ? 'unaffordable' : undefined}
-                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : intent?.label}
-                statusTone={myTurn && !affordable ? 'warn' : intent?.tone}
+                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : isFocused ? 'Pronta' : intent?.label}
+                statusTone={myTurn && !affordable ? 'warn' : isFocused ? 'good' : intent?.tone}
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
                 onMouseDown={myTurn ? (e) => onTargetMouseDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
@@ -1566,17 +1642,28 @@ export function GameView() {
         </div>
       )}
 
-      {targetHint && (
-        <div className={`touch-command ${targetHint.mode}`} role="status" aria-live="polite">
+      {touchCommand && (
+        <div className={`touch-command ${touchCommand.mode}`} role="status" aria-live="polite">
           <span className="touch-command-icon">
-            {targetHint.mode === 'attack' ? <IcoAttack /> : targetHint.mode === 'support' ? <IcoBuff /> : <IcoSparkle />}
+            {touchCommand.mode === 'attack'
+              ? <IcoAttack />
+              : touchCommand.mode === 'support'
+                ? <IcoBuff />
+                : touchCommand.mode === 'play'
+                  ? <IcoHand />
+                  : <IcoSparkle />}
           </span>
           <span className="touch-command-text">
-            <strong>{targetHint.title}</strong>
-            <span>{targetHint.body}</span>
+            <strong>{touchCommand.title}</strong>
+            <span>{touchCommand.body}</span>
           </span>
-          <button className="btn small cancel-pill" onClick={clearAim} aria-label="Cancelar mira">
-            <IcoClose className="ic" /> Cancelar
+          {handConfirm && (
+            <button className="btn small play-pill" onClick={confirmFocusedHandPlay} aria-label={`${handConfirm.actionLabel} ${handConfirm.title}`}>
+              <IcoCheck className="ic" /> {handConfirm.actionLabel}
+            </button>
+          )}
+          <button className="btn small cancel-pill" onClick={clearAim} aria-label={handConfirm ? 'Fechar carta focada' : 'Cancelar mira'}>
+            <IcoClose className="ic" /> {handConfirm ? 'Fechar' : 'Cancelar'}
           </button>
         </div>
       )}

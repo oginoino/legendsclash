@@ -71,11 +71,16 @@ test.describe('mobile: login, partida por toque e gaveta', () => {
         continue;
       }
 
-      // tap em carta de criatura jogável (sem alvo) invoca na mesa
+      // tap em criatura jogável foca a carta; o CTA explícito confirma a invocação
       const playable = phone.locator('.hand .card.playable.card-creature');
       if ((await playable.count()) > 0) {
         const before = await phone.locator('.my-row .creature').count();
         await playable.first().tap();
+        await expect(phone.locator('.my-row .creature')).toHaveCount(before);
+        await expect(phone.locator('.hand .card.selected')).toBeVisible();
+        await expect(phone.locator('.touch-command.play')).toBeVisible();
+        await expect(phone.locator('.touch-command .play-pill')).toBeVisible();
+        await phone.locator('.touch-command .play-pill').tap();
         await expect(phone.locator('.my-row .creature')).toHaveCount(before + 1);
       }
 
