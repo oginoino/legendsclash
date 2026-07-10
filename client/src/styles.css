@@ -1239,13 +1239,59 @@ input:focus {
 }
 
 .game-log li {
-  padding: 3px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 0;
   border-bottom: 1px dashed #2d3c5866;
   animation: msg-in .25s ease;
 }
 
 .game-log li:first-child {
   color: var(--text);
+}
+
+.log-mark {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+  border: 1px solid #ffffff18;
+  border-radius: 50%;
+  background: #0a0e1688;
+  color: var(--dim);
+}
+
+.log-mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.game-log .log-turn {
+  color: #d5deea;
+}
+
+.game-log .log-damage {
+  color: #ffaaa4;
+}
+
+.game-log .log-summon {
+  color: #b8d4ff;
+}
+
+.game-log .log-spell {
+  color: #d3b8ff;
+}
+
+.game-log .log-fatigue,
+.game-log .log-surrender {
+  color: #ffd2cf;
+}
+
+.game-log .log-shield {
+  color: #bce9ff;
 }
 
 /* ── Placas dos heróis ────────────────────────────────────────── */
@@ -1565,6 +1611,83 @@ input:focus {
   text-shadow: 0 0 30px #4d8dff33;
   pointer-events: none;
   z-index: -1;
+}
+
+.turn-coach {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1 1 220px;
+  max-width: 320px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid #ffffff18;
+  border-radius: var(--r-lg);
+  background: #08101ec4;
+  box-shadow: 0 6px 18px #0006, inset 0 1px 0 #ffffff0d;
+  backdrop-filter: blur(8px);
+}
+
+.turn-coach-icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffff10;
+}
+
+.turn-coach-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.turn-coach-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.16;
+}
+
+.turn-coach-copy strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.turn-coach-copy span {
+  color: var(--dim-strong);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-coach.play .turn-coach-icon {
+  color: #9fc3ff;
+}
+
+.turn-coach.attack .turn-coach-icon {
+  color: var(--gold-2);
+}
+
+.turn-coach.lethal {
+  border-color: #e3b34166;
+  box-shadow: 0 8px 22px #0007, 0 0 18px #e3b3411f, inset 0 1px 0 #ffffff12;
+}
+
+.turn-coach.lethal .turn-coach-icon {
+  color: var(--gold-2);
+  background: #e3b34118;
+}
+
+.turn-coach.end .turn-coach-icon {
+  color: var(--green);
+}
+
+.turn-coach.wait .turn-coach-icon {
+  color: var(--dim-strong);
 }
 
 .turn-pill {
@@ -2720,6 +2843,55 @@ input:focus {
   font-size: 32px;
   margin: 8px 0;
   letter-spacing: 2px;
+}
+
+.go-reason {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid #ffffff18;
+  border-radius: var(--r-md);
+  background: #0a0e1699;
+  text-align: left;
+}
+
+.go-reason span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.go-reason strong {
+  color: var(--dim-strong);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.go-reason-hp {
+  border-left: 3px solid var(--red);
+}
+
+.go-reason-fatigue {
+  border-left: 3px solid var(--purple);
+}
+
+.go-reason-surrender,
+.go-reason-timeout {
+  border-left: 3px solid var(--gold);
+}
+
+.go-lesson {
+  margin: 0 0 8px;
+  color: #c8d2e2;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
 }
 
 .game-over.won {
@@ -3996,11 +4168,15 @@ input:focus {
     box-shadow: 0 -18px 50px #000c;
     max-height: 62dvh;
     transform: translateY(105%);
+    visibility: hidden;
+    pointer-events: none;
     transition: transform .25s ease;
   }
 
   .game-side.open {
     transform: none;
+    visibility: visible;
+    pointer-events: auto;
   }
 
   .game-side .side-top {
@@ -4130,6 +4306,21 @@ input:focus {
     flex: 1;
     padding: 6px 10px;
     font-size: 12px;
+  }
+
+  .pace-action {
+    display: none !important;
+  }
+
+  .turn-coach {
+    order: 4;
+    flex-basis: 100%;
+    max-width: none;
+    min-height: 34px;
+  }
+
+  .turn-coach-copy span {
+    white-space: normal;
   }
 
   .btn.end-turn {
@@ -4465,6 +4656,11 @@ input:focus {
   /* modais cabem na tela e rolam (gutter já vem do padding fluido do .overlay) */
   .game-over {
     padding: 26px 18px;
+  }
+
+  .go-reason {
+    grid-template-columns: 1fr;
+    text-align: center;
   }
 }
 

@@ -35,6 +35,9 @@ type InspectCard = {
   source: 'hand' | 'creature';
 };
 
+type LogTone = 'turn' | 'damage' | 'summon' | 'spell' | 'fatigue' | 'shield' | 'surrender' | 'neutral';
+type CoachTone = 'wait' | 'end' | 'play' | 'attack' | 'lethal';
+
 /** Efeito flutuante transitório, ancorado a um elemento da arena.
  *  dmg/heal = vida; shield = dano absorvido pelo escudo; buff = empoderamento. */
 interface FloatFx {
@@ -93,6 +96,55 @@ function dupPositions(board: CreatureOnBoard[]): Map<string, number> {
 function creatureHint(def: { keywords?: readonly string[]; text: string }): string {
   const kw = (def.keywords ?? []).map((k) => `${keywordLabel(k)}: ${keywordDesc(k)}`).join(' · ');
   return kw ? `${kw}\n${def.text}` : def.text;
+}
+
+function logTone(text: string): LogTone {
+  const t = text.toLocaleLowerCase('pt-BR');
+  if (t.includes('turno')) return 'turn';
+  if (t.includes('fadiga') || t.includes('baralho')) return 'fatigue';
+  if (t.includes('desist')) return 'surrender';
+  if (t.includes('escudo')) return 'shield';
+  if (t.includes('dano') || t.includes('ataca') || t.includes('derrot')) return 'damage';
+  if (t.includes('invoc') || t.includes('entra')) return 'summon';
+  if (t.includes('magia') || t.includes('jogou') || t.includes('compra')) return 'spell';
+  return 'neutral';
+}
+
+function logIcon(tone: LogTone) {
+  switch (tone) {
+    case 'turn': return <IcoTimer />;
+    case 'damage': return <IcoAttack />;
+    case 'summon': return <IcoBanner />;
+    case 'spell': return <IcoSparkle />;
+    case 'fatigue': return <IcoDeath />;
+    case 'shield': return <IcoShield />;
+    case 'surrender': return <IcoSurrender />;
+    default: return <IcoEvents />;
+  }
+}
+
+function gameOverLesson(reason: string, won: boolean): string {
+  if (reason === 'fatigue') {
+    return won
+      ? 'Você venceu porque transformou o baralho inimigo em pressão. Quando o deck fica curto, forçar compras passa a ser dano real.'
+      : 'Fadiga cresce a cada compra sem cartas no baralho. Quando o deck fica curto, preserve vida e procure encerrar antes da próxima compra.';
+  }
+  if (reason === 'hp') {
+    return won
+      ? 'Boa leitura de dano: continue contando escudo, mesa e vida antes de comprometer a mão.'
+      : 'Revise os turnos em que a mesa ficou aberta. Criaturas em campo protegem o comandante e reduzem dano direto.';
+  }
+  if (reason === 'surrender') {
+    return won
+      ? 'O oponente reconheceu que a posição estava perdida. Use a revanche para testar outra linha de abertura.'
+      : 'A desistência encerra rápido, mas o histórico ainda registra a derrota. Use treino para testar mãos difíceis sem afetar MMR.';
+  }
+  if (reason === 'timeout') {
+    return won
+      ? 'Vitória por janela de reconexão. Em partidas longas, mantenha pressão para converter antes que o tempo decida.'
+      : 'A janela de reconexão protege quedas rápidas, mas abandonar por muito tempo ainda encerra a partida.';
+  }
+  return 'Use o histórico e a revanche para entender onde a partida virou.';
 }
 
 let fxId = 1;
@@ -1016,6 +1068,41 @@ export function GameView() {
   const aimRuneB = arrow ? arrowPoint(arrow, 0.72) : null;
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
   const enemyFatiguePressure = enemy.fatigue > 0 || (enemy.deckCount <= 3 && enemy.deckCount >= 0);
+  const turnCoach: { tone: CoachTone; title: string; body: string } = myTurn
+    ? noMovesLeft
+      ? {
+        tone: 'end',
+        title: 'Sem ações restantes',
+        body: 'Encerre o turno para manter o ritmo.',
+      }
+      : readyAttackerCount > 0 && !faceShielded
+        ? {
+          tone: 'lethal',
+          title: 'Alvo direto aberto',
+          body: 'O comandante inimigo está vulnerável.',
+        }
+        : readyAttackerCount > 0
+          ? {
+            tone: 'attack',
+            title: 'Ataque a mesa',
+            body: `${enemy.board.length} ${enemy.board.length === 1 ? 'criatura protege' : 'criaturas protegem'} o comandante.`,
+          }
+          : playableCardCount > 0
+            ? {
+              tone: 'play',
+              title: 'Use sua energia',
+              body: `${playableCardText}; priorize presença cedo.`,
+            }
+            : {
+              tone: 'wait',
+              title: 'Procure a próxima janela',
+              body: 'Sem ataques prontos. Avalie encerrar depois de revisar a mão.',
+            }
+    : {
+      tone: 'wait',
+      title: 'Planeje a resposta',
+      body: `${enemy.name} tem ${enemy.handCount} ${enemy.handCount === 1 ? 'carta' : 'cartas'} na mão.`,
+    };
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
@@ -1219,6 +1306,21 @@ export function GameView() {
               </span>
             )}
           </div>
+          <div className={`turn-coach ${turnCoach.tone}`} role="status" aria-live="polite">
+            <span className="turn-coach-icon">
+              {turnCoach.tone === 'attack' || turnCoach.tone === 'lethal'
+                ? <IcoAttack />
+                : turnCoach.tone === 'play'
+                  ? <IcoEnergy />
+                  : turnCoach.tone === 'end'
+                    ? <IcoCheck />
+                    : <IcoHint />}
+            </span>
+            <span className="turn-coach-copy">
+              <strong>{turnCoach.title}</strong>
+              <span>{turnCoach.body}</span>
+            </span>
+          </div>
           {myTurn && (
             <button
               className={`btn end-turn ${noMovesLeft ? 'pulse' : ''}`}
@@ -1362,7 +1464,15 @@ export function GameView() {
         <div className="panel log-panel">
           <h3><IcoEvents className="ic" /> Eventos</h3>
           <ul className="game-log" role="log" aria-live="polite" aria-label="Eventos da partida">
-            {game.log.slice(-14).reverse().map((l, i) => <li key={game.log.length - i}>{l.text}</li>)}
+            {game.log.slice(-14).reverse().map((l, i) => {
+              const tone = logTone(l.text);
+              return (
+                <li key={game.log.length - i} className={`log-${tone}`}>
+                  <span className="log-mark" aria-hidden>{logIcon(tone)}</span>
+                  <span>{l.text}</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
         <div className="panel side-chat">
@@ -1922,6 +2032,12 @@ function GameOverOverlay() {
       ? 'O baralho do oponente acabou e a fadiga consumiu a última vida.'
       : 'Seu baralho acabou e a fadiga consumiu sua última vida.',
   };
+  const reasonLabel: Record<string, string> = {
+    hp: 'Vida zerada',
+    surrender: 'Desistência',
+    timeout: 'Tempo / reconexão',
+    fatigue: 'Fadiga',
+  };
 
   return (
     <div className="overlay">
@@ -1943,6 +2059,11 @@ function GameOverOverlay() {
         <div className="go-emblem">{won ? <IcoVictory /> : <IcoDeath />}</div>
         <h2>{won ? 'Vitória!' : 'Derrota'}</h2>
         <p>{reasonText[result.reason] ?? 'A partida foi encerrada.'}</p>
+        <div className={`go-reason go-reason-${result.reason}`}>
+          <span>{reasonLabel[result.reason] ?? 'Fim da partida'}</span>
+          <strong>{won ? 'Resultado favorável' : 'Ponto de melhoria'}</strong>
+        </div>
+        <p className="go-lesson">{gameOverLesson(result.reason, won)}</p>
         <p className="dim">{result.turns} turnos · {Math.max(1, Math.round(result.durationMs / 60000))} min</p>
         {my && (
           <p className="mmr-change">
