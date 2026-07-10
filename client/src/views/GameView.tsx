@@ -37,6 +37,7 @@ type InspectCard = {
 
 type LogTone = 'turn' | 'damage' | 'summon' | 'spell' | 'fatigue' | 'shield' | 'surrender' | 'neutral';
 type CoachTone = 'wait' | 'end' | 'play' | 'attack' | 'lethal';
+type HandIntentTone = 'neutral' | 'good' | 'target' | 'support';
 
 /** Efeito flutuante transitório, ancorado a um elemento da arena.
  *  dmg/heal = vida; shield = dano absorvido pelo escudo; buff = empoderamento. */
@@ -145,6 +146,17 @@ function gameOverLesson(reason: string, won: boolean): string {
       : 'A janela de reconexão protege quedas rápidas, mas abandonar por muito tempo ainda encerra a partida.';
   }
   return 'Use o histórico e a revanche para entender onde a partida virou.';
+}
+
+function handIntent(defId: string, selected: boolean): { label: string; tone: HandIntentTone } {
+  const def = CARDS[defId];
+  if (!def) return { label: 'Usar', tone: 'neutral' };
+  if (selected) return { label: 'Mirando', tone: 'target' };
+  if (def.target === 'friendly-creature') return { label: 'Aliado', tone: 'support' };
+  if (def.target && def.target !== 'none') return { label: 'Mira', tone: 'target' };
+  if (def.type === 'creature') return { label: 'Invocar', tone: 'good' };
+  if (def.type === 'artifact') return { label: 'Equipar', tone: 'neutral' };
+  return { label: 'Usar', tone: 'neutral' };
 }
 
 let fxId = 1;
@@ -651,6 +663,10 @@ export function GameView() {
         : `${playableCardText}. ${readyAttackerText}.`,
     }
     : null;
+  const readyDamage = myTurn
+    ? me.board.filter((c) => c.canAttack).reduce((sum, c) => sum + c.attack + me.attackBonus, 0)
+    : 0;
+  const enemyBoardDamage = enemy.board.reduce((sum, c) => sum + c.attack + enemy.attackBonus, 0);
 
   // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
   // e magias (apenas efeitos especiais "pierce" atravessam).
@@ -1400,6 +1416,7 @@ export function GameView() {
             const isSelected = selection?.kind === 'hand' && selection.iid === c.iid;
             const affordable = CARDS[c.defId].cost <= me.energy;
             const lifting = lift?.iid === c.iid;
+            const intent = affordable && myTurn ? handIntent(c.defId, isSelected) : null;
             return (
               <CardView
                 key={c.iid}
@@ -1409,8 +1426,8 @@ export function GameView() {
                 selected={isSelected}
                 lifting={lifting}
                 className={myTurn && !affordable ? 'unaffordable' : undefined}
-                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : undefined}
-                statusTone="warn"
+                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : intent?.label}
+                statusTone={myTurn && !affordable ? 'warn' : intent?.tone}
                 onClick={() => clickHandCard(c.iid, c.defId)}
                 onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
                 onMouseDown={myTurn ? (e) => onTargetMouseDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
@@ -1442,7 +1459,7 @@ export function GameView() {
 
       <aside className={`game-side ${sidePane ? `open pane-${sidePane}` : ''}`}>
         <button className="btn small ghost drawer-close" onClick={() => setSidePane(null)}>
-          ▾ Fechar
+          ▾ Fechar {sidePane === 'log' ? 'Eventos' : sidePane === 'chat' ? 'Chat' : 'Painel'}
         </button>
         <div className="side-top">
           <span>
@@ -1460,6 +1477,41 @@ export function GameView() {
           >
             <IcoSurrender className="ic" /> Desistir
           </button>
+        </div>
+        <div className="panel match-brief" aria-label="Leitura rápida da partida">
+          <h3><IcoHint className="ic" /> Leitura da mesa</h3>
+          <div className="brief-grid">
+            <span title="Suas criaturas em campo">
+              <IcoBanner className="ic" />
+              <b>{me.board.length}</b>
+              sua mesa
+            </span>
+            <span title="Criaturas inimigas em campo">
+              <IcoWarning className="ic" />
+              <b>{enemy.board.length}</b>
+              inimiga
+            </span>
+            <span title="Dano disponível para atacar neste turno">
+              <IcoAttack className="ic" />
+              <b>{readyDamage}</b>
+              dano pronto
+            </span>
+            <span title="Força total da mesa inimiga">
+              <IcoDeath className="ic" />
+              <b>{enemyBoardDamage}</b>
+              ameaça
+            </span>
+            <span title="Cartas no seu baralho">
+              <IcoDeck className="ic" />
+              <b>{me.deckCount}</b>
+              seu deck
+            </span>
+            <span title="Cartas na mão inimiga">
+              <IcoHand className="ic" />
+              <b>{enemy.handCount}</b>
+              mão inimiga
+            </span>
+          </div>
         </div>
         <div className="panel log-panel">
           <h3><IcoEvents className="ic" /> Eventos</h3>

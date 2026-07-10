@@ -1197,6 +1197,52 @@ input:focus {
   justify-content: space-between;
 }
 
+.match-brief {
+  padding: 12px;
+}
+
+.match-brief h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.brief-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.brief-grid span {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #ffffff14;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, #111b2a9c, #080d16b8),
+    var(--noise);
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  box-shadow: inset 0 1px 0 #ffffff08;
+}
+
+.brief-grid .ic {
+  color: var(--dim-strong);
+}
+
+.brief-grid b {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
 /* barra de ações do jogo no celular (log/chat/regras/som/desistir) */
 .mobile-topbar {
   display: none;
@@ -2164,6 +2210,24 @@ input:focus {
   color: #ffb3ad;
   border-color: #f8514966;
   background: #2a0c0acc;
+}
+
+.card-status-good {
+  color: #bff2cf;
+  border-color: #3fb95066;
+  background: #0f2a1acc;
+}
+
+.card-status-target {
+  color: #ffe9a8;
+  border-color: #e3b34177;
+  background: #2b210acc;
+}
+
+.card-status-support {
+  color: #d8c4ff;
+  border-color: #b083f077;
+  background: #241637cc;
 }
 
 .card.unaffordable .card-cost {
@@ -4184,6 +4248,7 @@ input:focus {
   }
 
   /* ações já estão na topbar */
+  .game-side .match-brief,
   .game-side .log-panel,
   .game-side .side-chat {
     display: none;
