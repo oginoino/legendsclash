@@ -304,6 +304,17 @@ h3 {
 
 /* ── Toque: alvos confortáveis onde o dedo é o ponteiro ───────── */
 @media (pointer: coarse) {
+  .game-screen {
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .game-screen [role="button"],
+  .game-screen button,
+  .hand .card {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .btn {
     min-height: 44px;
   }
@@ -327,6 +338,42 @@ h3 {
     min-width: 40px;
     min-height: 40px;
     font-size: 16px;
+  }
+
+  .hand {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 44px;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .hand .card {
+    scroll-snap-align: center;
+  }
+
+  .creature-info {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .enemy-row.targetable,
+  .my-row.friendly-targetable {
+    padding-block: 14px;
+  }
+
+  .enemy-row.targetable .creature:not(.blocked),
+  .my-row.friendly-targetable .creature,
+  .creature.selected {
+    min-height: 88px;
+    box-shadow: 0 0 0 3px #0a0e16, 0 0 22px #e3b34155, 0 8px 20px #0009;
+  }
+
+  .enemy-row.targetable .creature:not(.blocked) {
+    border-color: #f06e66;
+  }
+
+  .my-row.friendly-targetable .creature {
+    border-color: #c3a2ff;
   }
 
   /* alvos de toque confortáveis nas escolhas do Codex e da Personalização */
@@ -2913,7 +2960,7 @@ input:focus {
   color: var(--gold);
 }
 
-.target-hint .cancel-pill {
+.target-hint .hint-cancel {
   pointer-events: auto;
   /* …exceto o próprio botão de cancelar */
   border-radius: 99px;
@@ -2935,6 +2982,98 @@ input:focus {
 
 .target-hint-text span {
   color: var(--dim-strong);
+}
+
+.touch-command {
+  display: none;
+}
+
+.touch-command-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  border-radius: 50%;
+  background: #07101dcc;
+  border: 1px solid #ffffff24;
+  color: var(--gold);
+  box-shadow: inset 0 1px 0 #ffffff12;
+}
+
+.touch-command-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.touch-command-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  line-height: 1.22;
+}
+
+.touch-command-text strong {
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.touch-command-text span {
+  color: var(--dim-strong);
+  font-size: 12px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.touch-command.attack {
+  border-color: #e3b34188;
+}
+
+.touch-command.spell {
+  border-color: #b083f08f;
+}
+
+.touch-command.support {
+  border-color: #3fb95088;
+}
+
+@media (hover: none),
+(pointer: coarse) {
+  .target-hint {
+    display: none;
+  }
+
+  .touch-command {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(min(var(--hand-min), 314px) + 18px + env(safe-area-inset-bottom));
+    z-index: 66;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px 8px 10px;
+    min-height: 58px;
+    background:
+      linear-gradient(180deg, #202c44, #111a2b),
+      var(--noise);
+    border: 1px solid var(--gold-soft);
+    border-radius: 16px;
+    box-shadow: 0 14px 38px #000e, inset 0 1px 0 #ffffff14;
+    pointer-events: auto;
+    animation: msg-in .16s ease;
+  }
+
+  .touch-command .cancel-pill {
+    flex: 0 0 auto;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
 }
 
 /* ── Fim de partida / overlays ────────────────────────────────── */
@@ -4781,6 +4920,15 @@ input:focus {
     width: calc(100% - 16px);
     justify-content: space-between;
   }
+
+  .touch-command {
+    bottom: calc(320px + env(safe-area-inset-bottom));
+    min-height: 54px;
+  }
+
+  .touch-command-text span {
+    -webkit-line-clamp: 1;
+  }
 }
 
 /* paisagem de celular: cada pixel de altura conta */
@@ -4816,6 +4964,17 @@ input:focus {
     font-size: 10px;
   }
 
+  .enemy-row.targetable .creature:not(.blocked),
+  .my-row.friendly-targetable .creature,
+  .creature.selected {
+    min-height: 70px;
+  }
+
+  .creature-info {
+    min-width: 28px;
+    min-height: 28px;
+  }
+
   .creature-name {
     font-size: 8.5px;
   }
@@ -4844,6 +5003,27 @@ input:focus {
 
   .target-hint {
     bottom: calc(154px + env(safe-area-inset-bottom));
+  }
+
+  .touch-command {
+    bottom: calc(166px + env(safe-area-inset-bottom));
+    min-height: 48px;
+    padding: 6px 7px;
+    gap: 7px;
+  }
+
+  .touch-command-icon {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+
+  .touch-command-text strong {
+    font-size: 12px;
+  }
+
+  .touch-command-text span {
+    display: none;
   }
 
   .card {
@@ -4886,6 +5066,10 @@ input:focus {
 
   .target-hint {
     bottom: calc(134px + env(safe-area-inset-bottom));
+  }
+
+  .touch-command {
+    bottom: calc(166px + env(safe-area-inset-bottom));
   }
 }
 

@@ -389,7 +389,7 @@ export function GameView() {
   // cancela a seleção com Esc ou clique com o botão direito
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setSelection(null); setTauntOpen(false); }
+      if (e.key === 'Escape') { clearAim(); setTauntOpen(false); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -734,6 +734,9 @@ export function GameView() {
     setSelection(null);
     setHover(null);
     setMouse(null);
+    setLift(null);
+    setHoverCost(0);
+    clearInspect('hand');
   }
 
   /** Dispara uma provocação no chat da partida (cadência no cliente p/ UX; o
@@ -762,7 +765,10 @@ export function GameView() {
   /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
   function performAttack(attacker: CreatureOnBoard, t: AimTarget): void {
     if (!myTurn || !attacker.canAttack) return;
-    if (t.kind === 'my-creature') return; // sem fogo amigo
+    if (t.kind === 'my-creature') {
+      sfx.error();
+      return; // sem fogo amigo
+    }
     if (t.kind === 'face') {
       if (faceShielded) {
         sfx.error();
@@ -781,7 +787,7 @@ export function GameView() {
     clearAim();
   }
 
-  /** Joga a carta da mão (com ou sem alvo); silencioso em alvo incompatível. */
+  /** Joga a carta da mão (com ou sem alvo), preservando a mira quando o alvo é inválido. */
   function performPlay(iid: string, defId: string, t: AimTarget | null): void {
     if (!myTurn) return;
     const def = CARDS[defId];
@@ -797,19 +803,29 @@ export function GameView() {
     } else if (!t) {
       return;
     } else if (wants === 'friendly-creature') {
-      if (t.kind !== 'my-creature') return;
+      if (t.kind !== 'my-creature') {
+        sfx.error();
+        return;
+      }
       send({ t: 'game:play', iid, target: { seat: game!.yourSeat, iid: t.c.iid } });
     } else if (t.kind === 'enemy-creature') {
-      if (wants !== 'enemy-creature' && wants !== 'enemy-any') return;
+      if (wants !== 'enemy-creature' && wants !== 'enemy-any') {
+        sfx.error();
+        return;
+      }
       send({ t: 'game:play', iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
     } else if (t.kind === 'face') {
-      if (wants !== 'enemy-any') return;
+      if (wants !== 'enemy-any') {
+        sfx.error();
+        return;
+      }
       if (faceShielded && !def.pierce) {
         sfx.error();
         return; // criaturas protegem o comandante até de magias
       }
       send({ t: 'game:play', iid, target: { seat: enemySeatIdx } });
     } else {
+      sfx.error();
       return;
     }
     clearInspect('hand');
@@ -836,8 +852,12 @@ export function GameView() {
 
   function clickMyCreature(c: CreatureOnBoard) {
     if (!myTurn) return;
-    if (selection?.kind === 'hand' && selectedHandDef?.target === 'friendly-creature') {
-      performPlay(selection.iid, selectedHandDef.id, { kind: 'my-creature', c });
+    if (selection?.kind === 'hand' && selectedHandDef) {
+      if (selectedHandDef.target === 'friendly-creature') {
+        performPlay(selection.iid, selectedHandDef.id, { kind: 'my-creature', c });
+      } else {
+        sfx.error();
+      }
       return;
     }
     if (c.canAttack) {
@@ -1147,9 +1167,9 @@ export function GameView() {
 
   return (
     <div
-      className="game-screen"
+      className={`game-screen ${selection ? 'is-aiming' : ''}`}
       onPointerMove={selection ? (e) => setMouse({ x: e.clientX, y: e.clientY }) : undefined}
-      onContextMenu={selection ? (e) => { e.preventDefault(); setSelection(null); } : undefined}
+      onContextMenu={selection ? (e) => { e.preventDefault(); clearAim(); } : undefined}
       onClickCapture={(e) => {
         if (suppressClickRef.current) {
           suppressClickRef.current = false;
@@ -1207,7 +1227,7 @@ export function GameView() {
         onClick={(e) => {
           // toque em área vazia da arena cancela a mira/provocação (equivalente do Esc)
           if (!(e.target as Element).closest('[data-anchor], button, .hand')) {
-            setSelection(null);
+            clearAim();
             setTauntOpen(false);
             clearInspect('creature');
           }
@@ -1542,7 +1562,22 @@ export function GameView() {
             <strong>{targetHint.title}</strong>
             <span>{targetHint.body}</span>
           </span>
-          <button className="btn small cancel-pill" onClick={clearAim}><IcoClose className="ic" /> Cancelar</button>
+          <button className="btn small hint-cancel" onClick={clearAim}><IcoClose className="ic" /> Cancelar</button>
+        </div>
+      )}
+
+      {targetHint && (
+        <div className={`touch-command ${targetHint.mode}`} role="status" aria-live="polite">
+          <span className="touch-command-icon">
+            {targetHint.mode === 'attack' ? <IcoAttack /> : targetHint.mode === 'support' ? <IcoBuff /> : <IcoSparkle />}
+          </span>
+          <span className="touch-command-text">
+            <strong>{targetHint.title}</strong>
+            <span>{targetHint.body}</span>
+          </span>
+          <button className="btn small cancel-pill" onClick={clearAim} aria-label="Cancelar mira">
+            <IcoClose className="ic" /> Cancelar
+          </button>
         </div>
       )}
 
