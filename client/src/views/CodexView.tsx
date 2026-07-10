@@ -23,9 +23,9 @@ const TYPE_LABEL: Record<CardType, string> = {
 
 const FACTION_ORDER = ['vanguarda', 'silvanos', 'eter', 'profundezas', 'mares'];
 
-export function CodexView({ onClose }: { onClose: () => void }) {
+export function CodexView({ onClose, initialFaction = null }: { onClose: () => void; initialFaction?: string | null }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [factionFilter, setFactionFilter] = useState<string | null>(null);
+  const [factionFilter, setFactionFilter] = useState<string | null>(initialFaction);
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
@@ -87,6 +87,19 @@ export function CodexView({ onClose }: { onClose: () => void }) {
 
             <div className="codex-intro">
               {WORLD.intro.map((p, i) => <p key={i}>{p}</p>)}
+            </div>
+
+            <div className="codex-storyline" aria-label="Linha da história de Aurélia">
+              {WORLD.storyBeats.map((beat, i) => (
+                <article key={beat.title} className="codex-storybeat">
+                  <span className="codex-storybeat-step">{i + 1}</span>
+                  <div>
+                    <em>{beat.kicker}</em>
+                    <strong>{beat.title}</strong>
+                    <p>{beat.text}</p>
+                  </div>
+                </article>
+              ))}
             </div>
 
             <h3 className="codex-section-title">As Cinco Tradições</h3>
