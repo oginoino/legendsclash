@@ -3152,7 +3152,7 @@ input:focus {
   .hand-focus-card .card {
     width: clamp(172px, 54vw, 220px);
     height: clamp(330px, 58dvh, 420px);
-    --card-art-h: clamp(142px, 24dvh, 184px);
+    --card-art-h: clamp(188px, 34dvh, 256px);
     margin: 0;
     opacity: 1;
     filter: brightness(1.08) saturate(1.06);
@@ -3163,6 +3163,23 @@ input:focus {
 
   .hand-focus-card .card-art.card-art-frame {
     height: var(--card-art-h);
+  }
+
+  .hand-focus-card .focus-preview-card .image-art.card-art-frame {
+    background:
+      radial-gradient(95% 80% at 50% 42%, #4d8dff20, transparent 70%),
+      linear-gradient(180deg, #25314a, #0c1322);
+  }
+
+  .hand-focus-card .focus-preview-card .card-art-img {
+    object-fit: contain;
+    object-position: center center;
+    transform: none;
+  }
+
+  .hand-focus-card .focus-preview-card.image-loaded .card-art-img,
+  .hand-focus-card .focus-preview-card .image-loaded .card-art-img {
+    transform: none;
   }
 
   .hand-focus-panel {
@@ -3198,7 +3215,7 @@ input:focus {
   .hand-focus-card .card {
     width: clamp(170px, 56vw, 212px);
     height: clamp(326px, 50dvh, 406px);
-    --card-art-h: clamp(138px, 20dvh, 176px);
+    --card-art-h: clamp(184px, 30dvh, 242px);
   }
 
   .hand-focus-panel {
@@ -3244,7 +3261,7 @@ input:focus {
   .hand-focus-card .card {
     width: 112px;
     height: 206px;
-    --card-art-h: 72px;
+    --card-art-h: 92px;
     padding: 6px 5px 8px;
   }
 
