@@ -591,7 +591,7 @@ input:focus {
 .home-screen {
   position: relative;
   isolation: isolate;
-  max-width: 1180px;
+  max-width: 1260px;
   margin: 0 auto;
   padding: var(--pad-container);
 }
@@ -684,9 +684,41 @@ input:focus {
   align-items: start;
 }
 
+.home-main-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 1080px) {
+  .home-main {
+    grid-template-columns: minmax(330px, .92fr) minmax(360px, 1fr) minmax(340px, .94fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .home-main-column {
+    gap: 18px;
+  }
+
+  .home-ranking-panel {
+    overflow: hidden;
+  }
+
+  .home-history-panel .history-list {
+    display: block;
+  }
+
+  .home-history-panel .history-row {
+    border-radius: 8px;
+    padding-inline: 8px;
+  }
+}
+
 .home-vista {
   position: relative;
-  min-height: clamp(140px, 18vw, 208px);
+  min-height: clamp(132px, 14vw, 184px);
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
@@ -806,7 +838,7 @@ input:focus {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 132px;
+  min-height: 118px;
 }
 
 .home-world-kicker {
@@ -912,6 +944,32 @@ input:focus {
   white-space: nowrap;
   font-size: 12px;
   font-weight: 900;
+}
+
+@media (min-width: 1080px) {
+  .home-vista {
+    min-height: 152px;
+    padding: 22px 28px;
+    background-position: center 38%;
+  }
+
+  .home-vista-copy {
+    max-width: 780px;
+  }
+
+  .home-vista-copy strong {
+    max-width: 28ch;
+    font-size: clamp(1.75rem, 2.25vw, 2.35rem);
+  }
+
+  .home-vista-copy span:last-child {
+    max-width: 74ch;
+  }
+
+  .home-world {
+    grid-template-columns: minmax(0, 1.35fr) minmax(380px, .8fr);
+    gap: 14px;
+  }
 }
 
 .play-panel {
