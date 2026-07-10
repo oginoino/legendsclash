@@ -16,6 +16,14 @@ async function noHorizontalScroll(p: Page): Promise<void> {
   expect(overflow, 'página não deve ter rolagem horizontal').toBeLessThanOrEqual(1);
 }
 
+async function handLeftEdgeVisible(p: Page, resetScroll = true): Promise<void> {
+  const hand = p.locator('.hand');
+  if (resetScroll) await hand.evaluate((el) => { el.scrollLeft = 0; });
+  const handBox = await hand.boundingBox();
+  const cardBox = await hand.locator('.card').first().boundingBox();
+  expect(cardBox?.x ?? -1, 'primeira carta não deve cortar à esquerda').toBeGreaterThanOrEqual((handBox?.x ?? 0) + 1);
+}
+
 test.describe('mobile: login, partida por toque e gaveta', () => {
   test('fluxo completo num viewport de celular', async ({ browser }) => {
     test.setTimeout(180_000);
@@ -45,6 +53,7 @@ test.describe('mobile: login, partida por toque e gaveta', () => {
     // chrome mobile: topbar visível, gaveta fechada, sem overflow
     await expect(phone.locator('.mobile-topbar')).toBeVisible();
     await noHorizontalScroll(phone);
+    await handLeftEdgeVisible(phone);
 
     // badge de não lidas: desktop manda mensagem com a gaveta fechada
     await desk.fill('.chat-input input', 'boa sorte!');
@@ -88,6 +97,7 @@ test.describe('mobile: login, partida por toque e gaveta', () => {
         await phone.screenshot({ path: shotPath('09-mobile-hand-focus.png') });
         await phone.locator('.hand-focus-tray .play-pill').tap();
         await expect(phone.locator('.my-row .creature')).toHaveCount(before + 1);
+        await handLeftEdgeVisible(phone, false);
       }
 
       // tap-tap: seleciona atacante → prévia estática + cancelar visíveis

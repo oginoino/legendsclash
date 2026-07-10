@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
 import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
@@ -165,6 +165,7 @@ let fxId = 1;
 const FX_TTL = 1100;
 const GHOST_TTL = 700;
 const REVEAL_TTL = 1700;
+const DAMAGE_NOTICE_TTL = 4200;
 /** Tempo que uma provocação fica como balão sobre o comandante. */
 const BUBBLE_TTL = 4500;
 /** Cadência mínima entre provocações (anti-spam local). */
@@ -177,6 +178,22 @@ interface Bubble {
   text: string;
   at: number;
 }
+
+interface DamageNoticeHit {
+  target: string;
+  amount?: number;
+  kind: 'hp' | 'shield' | 'creature' | 'defeat';
+}
+
+interface DamageNotice {
+  id: number;
+  owner: string;
+  source: string;
+  detail: string;
+  hits: DamageNoticeHit[];
+  at: number;
+}
+
 const SPELL_DMG: Record<string, number> = {
   s_faisca: 2, s_bola_de_fogo: 5, s_lanca_gelo: 3, s_julgamento: 3,
 };
@@ -198,6 +215,23 @@ function noTargetActionLabel(defId: string): string {
   if (def.type === 'creature') return 'Invocar';
   if (def.type === 'artifact') return 'Equipar';
   return 'Usar';
+}
+
+function isDamageLogLine(text: string): boolean {
+  return /\b(causou|sofreu|atingiu|atacou|revidou|excedente|sangrou|dano)\b/i.test(text);
+}
+
+function damageSourceFromLog(text: string | undefined): string {
+  if (!text) return 'Ação inimiga';
+  if (text.startsWith('Grito de Batalha')) return 'Grito de Batalha';
+  if (text.startsWith('Estertor')) return 'Estertor';
+  const [source] = text.split(/\s+(?:causou|atingiu|atacou|revidou|sofreu)\b/i);
+  return source?.replace(/^O\s+/, '').trim() || 'Ação inimiga';
+}
+
+function damageDetailFromLog(text: string | undefined): string {
+  if (!text) return 'O efeito inimigo afetou seu lado da mesa.';
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -304,6 +338,7 @@ export function GameView() {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [tauntOpen, setTauntOpen] = useState(false);
   const [banner, setBanner] = useState<{ text: string; at: number } | null>(null);
+  const [damageNotice, setDamageNotice] = useState<DamageNotice | null>(null);
   // ensino contextual one-shot (Provocar, fadiga) — uma vez por dispositivo
   const [teach, setTeach] = useState<{ id: string; text: string; at: number } | null>(null);
   // investida da atacante: empurrão na direção do inimigo no momento do envio
@@ -332,6 +367,7 @@ export function GameView() {
   const prevChatLenRef = useRef(0);
   const tauntCooldownRef = useRef(0);
   const inspectTimerRef = useRef<number | null>(null);
+  const handRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   // após um arrasto real, o clique sintético do mouse não deve disparar ações
   const suppressClickRef = useRef(false);
@@ -345,6 +381,7 @@ export function GameView() {
   } | null>(null);
 
   const game = s.game;
+  const handSignature = game?.hand.map((c) => c.iid).join('|') ?? '';
 
   function clearInspect(source?: InspectCard['source']) {
     if (inspectTimerRef.current) {
@@ -389,6 +426,7 @@ export function GameView() {
       setReveals((r) => (r.length && ts - r[0].at > REVEAL_TTL ? r.filter((x) => ts - x.at < REVEAL_TTL) : r));
       setBubbles((b) => (b.length && ts - b[0].at > BUBBLE_TTL ? b.filter((x) => ts - x.at < BUBBLE_TTL) : b));
       setBanner((b) => (b && ts - b.at > 1500 ? null : b));
+      setDamageNotice((d) => (d && ts - d.at > DAMAGE_NOTICE_TTL ? null : d));
       setTeach((t) => (t && ts - t.at > 7000 ? null : t));
     }, 250);
     return () => clearInterval(t);
@@ -488,6 +526,13 @@ export function GameView() {
     const ts = Date.now();
     const newFx: FloatFx[] = [];
     const newGhosts: Ghost[] = [];
+    const receivedHits: DamageNoticeHit[] = [];
+    const newLogs = game.log.slice(prev.log.length).map((l) => l.text);
+    const damageLine = [...newLogs].reverse().find(isDamageLogLine);
+    const newPlays = game.plays.slice(prev.plays.length);
+    const enemyPlays = newPlays.filter((p) => p.seat !== game.yourSeat);
+    const enemySeatIdxForNotice = game.seats.findIndex((_, i) => i !== game.yourSeat);
+    const enemyNameForNotice = enemySeatIdxForNotice >= 0 ? game.seats[enemySeatIdxForNotice].name : 'Adversário';
     let hadDamage = false;
     let hadHeal = false;
     let hadShield = false;
@@ -498,7 +543,9 @@ export function GameView() {
       const before = prev.seats[i];
       if (!before) return;
       if (seat.hp < before.hp) {
-        newFx.push({ id: fxId++, kind: 'dmg', value: before.hp - seat.hp, anchor: `face-${i}`, at: ts });
+        const amount = before.hp - seat.hp;
+        newFx.push({ id: fxId++, kind: 'dmg', value: amount, anchor: `face-${i}`, at: ts });
+        if (i === game.yourSeat) receivedHits.push({ target: 'seu comandante', amount, kind: 'hp' });
         hadDamage = true;
       } else if (seat.hp > before.hp) {
         newFx.push({ id: fxId++, kind: 'heal', value: seat.hp - before.hp, anchor: `face-${i}`, at: ts });
@@ -506,7 +553,9 @@ export function GameView() {
       }
       // escudo diminuindo = dano absorvido (antes da vida) — agora visível/audível
       if (seat.shield < before.shield) {
-        newFx.push({ id: fxId++, kind: 'shield', value: before.shield - seat.shield, anchor: `face-${i}`, at: ts });
+        const amount = before.shield - seat.shield;
+        newFx.push({ id: fxId++, kind: 'shield', value: amount, anchor: `face-${i}`, at: ts });
+        if (i === game.yourSeat) receivedHits.push({ target: 'seu escudo', amount, kind: 'shield' });
         hadShield = true;
       }
       const prevById = new Map(before.board.map((c) => [c.iid, c]));
@@ -514,7 +563,9 @@ export function GameView() {
         const pc = prevById.get(c.iid);
         if (!pc) continue;
         if (c.health < pc.health) {
-          newFx.push({ id: fxId++, kind: 'dmg', value: pc.health - c.health, anchor: `cr-${c.iid}`, at: ts });
+          const amount = pc.health - c.health;
+          newFx.push({ id: fxId++, kind: 'dmg', value: amount, anchor: `cr-${c.iid}`, at: ts });
+          if (i === game.yourSeat) receivedHits.push({ target: CARDS[c.defId].name, amount, kind: 'creature' });
           hadDamage = true;
         } else if (c.health > pc.health) {
           newFx.push({ id: fxId++, kind: 'heal', value: c.health - pc.health, anchor: `cr-${c.iid}`, at: ts });
@@ -529,6 +580,7 @@ export function GameView() {
       before.board.forEach((pc, slot) => {
         if (!seat.board.some((c) => c.iid === pc.iid)) {
           newGhosts.push({ id: fxId++, seatIdx: i, creature: pc, slot, at: ts });
+          if (i === game.yourSeat) receivedHits.push({ target: CARDS[pc.defId].name, kind: 'defeat' });
           hadDeath = true;
         }
       });
@@ -543,11 +595,27 @@ export function GameView() {
     if (sameTurn && myNow && myBefore && myNow.energy > myBefore.energy) sfx.energyUp();
 
     // revelação: cartas jogadas pelo oponente desde o último estado
-    const newPlays = game.plays.slice(prev.plays.length);
-    const enemyPlays = newPlays.filter((p) => p.seat !== game.yourSeat);
     if (enemyPlays.length) {
       setReveals((r) => [...r, ...enemyPlays.map((p) => ({ id: fxId++, cardId: p.cardId, at: ts }))]);
       sfx.reveal();
+    }
+
+    const fatigueDamage = /\b(fadiga|baralho acabou|sem carta)\b/i.test(damageLine ?? '');
+    const receivedFromOpponent =
+      receivedHits.length > 0 &&
+      !fatigueDamage &&
+      (enemyPlays.length > 0 || prev.turnSeat !== game.yourSeat || /^Estertor:/i.test(damageLine ?? ''));
+    if (receivedFromOpponent) {
+      const lastEnemyPlay = enemyPlays.at(-1);
+      const source = lastEnemyPlay ? CARDS[lastEnemyPlay.cardId]?.name ?? 'Carta inimiga' : damageSourceFromLog(damageLine);
+      setDamageNotice({
+        id: fxId++,
+        owner: enemyNameForNotice,
+        source,
+        detail: damageDetailFromLog(damageLine),
+        hits: receivedHits.slice(0, 4),
+        at: ts,
+      });
     }
 
     if (newFx.length) setFx((f) => [...f, ...newFx]);
@@ -653,6 +721,20 @@ export function GameView() {
       setHandFocus(null);
     }
   }, [game, handFocus, myTurn]);
+
+  useLayoutEffect(() => {
+    if (!handSignature) return;
+    const el = handRef.current;
+    if (!el) return;
+    const first = el.querySelector<HTMLElement>('.card:first-child');
+    if (!first) return;
+    const handRect = el.getBoundingClientRect();
+    const firstRect = first.getBoundingClientRect();
+    const minLeft = handRect.left + 10;
+    if (firstRect.left < minLeft) {
+      el.scrollLeft = Math.max(0, el.scrollLeft - (minLeft - firstRect.left));
+    }
+  }, [handSignature]);
 
   // tique-taque de urgência nos últimos 5 segundos do seu turno
   useEffect(() => {
@@ -1505,7 +1587,7 @@ export function GameView() {
           bubble={bubbleFor(game.yourSeat)}
         />
 
-        <div className="hand">
+        <div className="hand" ref={handRef}>
           {game.hand.map((c, i) => {
             const off = i - (game.hand.length - 1) / 2;
             const isSelected = selection?.kind === 'hand' && selection.iid === c.iid;
@@ -1857,8 +1939,9 @@ export function GameView() {
           >
             <CardView defId={inspect.defId} />
           </div>
-        )}
+      )}
 
+      {damageNotice && <DamageNoticePanel notice={damageNotice} />}
       {banner && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
       {teach && (
         <div className="teach-toast" key={teach.id} role="status" aria-live="polite">
@@ -1882,6 +1965,29 @@ export function GameView() {
         />
       )}
       {s.gameOver && <GameOverOverlay />}
+    </div>
+  );
+}
+
+function DamageNoticePanel({ notice }: { notice: DamageNotice }) {
+  return (
+    <div className="damage-notice" role="status" aria-live="assertive">
+      <span className="damage-notice-icon"><IcoWarning /></span>
+      <span className="damage-notice-copy">
+        <strong>Dano recebido de {notice.owner}</strong>
+        <span><b>{notice.source}</b>: {notice.detail}</span>
+      </span>
+      <span className="damage-notice-hits">
+        {notice.hits.map((hit, i) => (
+          <span key={`${hit.kind}-${hit.target}-${i}`} className={`damage-hit ${hit.kind}`}>
+            {hit.kind === 'shield'
+              ? <><IcoShield className="ic" /> {hit.target} absorveu {hit.amount}</>
+              : hit.kind === 'defeat'
+                ? <><IcoDeath className="ic" /> {hit.target} caiu</>
+                : <><IcoAttack className="ic" /> {hit.target} −{hit.amount}</>}
+          </span>
+        ))}
+      </span>
     </div>
   );
 }
