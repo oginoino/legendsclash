@@ -2657,7 +2657,7 @@ input:focus {
 
 .creature.ready {
   border-color: var(--green);
-  box-shadow: 0 0 14px #3fb95066, 0 6px 14px #00000077;
+  box-shadow: 0 0 0 1px #3fb95055, 0 0 20px #3fb95088, 0 6px 14px #00000077;
 }
 
 .creature.exhausted {
@@ -2671,13 +2671,23 @@ input:focus {
 .ready-dot {
   position: absolute;
   top: -5px;
-  right: -5px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--green);
+  left: 50%;
+  z-index: 8;
+  width: 28px;
+  height: 7px;
+  transform: translateX(-50%);
   border: 2px solid var(--bg);
-  animation: glow-pulse 1.4s infinite;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #238636, #65df78, #238636);
+  box-shadow: 0 0 12px #3fb950aa;
+  animation: ready-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ready-pulse {
+  50% {
+    box-shadow: 0 0 18px #3fb950ee;
+    filter: brightness(1.18);
+  }
 }
 
 .creature.selected {
@@ -3891,13 +3901,14 @@ input:focus {
     gap: 12px;
     padding: 12px;
     background:
-      radial-gradient(70% 60% at 50% 12%, #4d8dff24, transparent 58%),
-      linear-gradient(180deg, #07101de8, #070b14f4),
+      radial-gradient(70% 60% at 50% 12%, #4d8dff16, transparent 58%),
+      linear-gradient(180deg, #07101d5e, #070b1475),
       var(--noise);
-    border: 1px solid #ffffff22;
+    border: 1px solid #ffffff2b;
     border-radius: 16px;
-    box-shadow: 0 24px 70px #000f, inset 0 1px 0 #ffffff12;
-    backdrop-filter: blur(8px);
+    box-shadow: 0 18px 54px #0009, inset 0 1px 0 #ffffff16;
+    -webkit-backdrop-filter: blur(2px) saturate(.9);
+    backdrop-filter: blur(2px) saturate(.9);
     pointer-events: auto;
     animation: msg-in .16s ease;
   }
@@ -3905,9 +3916,20 @@ input:focus {
   .hand-focus-card {
     position: relative;
     z-index: 2;
+    isolation: isolate;
     display: grid;
     place-items: center;
     align-self: center;
+  }
+
+  .hand-focus-card::before {
+    content: '';
+    position: absolute;
+    inset: -30px;
+    z-index: -1;
+    border-radius: 45%;
+    background: radial-gradient(closest-side, #050912b8, #05091242 58%, transparent 78%);
+    pointer-events: none;
   }
 
   .hand-focus-card .card {
@@ -4364,10 +4386,30 @@ input:focus {
   border-color: #8fa3c0;
 }
 
+/* Prontidão e seleção são estados de ação e vencem a moldura defensiva. */
+.creature.taunt.ready {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px #3fb95066, 0 0 22px #3fb95099, 0 6px 14px #00000077;
+}
+
+.creature.taunt.selected,
+.creature.taunt.ready.selected {
+  border-color: var(--gold);
+}
+
+.enemy-row.targetable .creature.taunt:not(.blocked) {
+  border-color: #f85149aa;
+}
+
+.creature.taunt.buff-target {
+  border-color: var(--purple);
+}
+
 .taunt-badge {
   position: absolute;
   top: -9px;
   left: -9px;
+  z-index: 7;
   background: radial-gradient(circle at 35% 30%, #c8d6ea, #5d7191);
   border: 2px solid var(--bg);
   border-radius: 50%;
@@ -4376,6 +4418,13 @@ input:focus {
   font-size: 12px;
   display: grid;
   place-items: center;
+  color: #f2f7ff;
+  box-shadow: 0 0 0 1px #8fa3c055, 0 4px 10px #000a;
+}
+
+.creature.taunt.ready .taunt-badge {
+  border-color: #0a0e16;
+  box-shadow: 0 0 0 2px #3fb95077, 0 0 14px #3fb95088, 0 4px 10px #000a;
 }
 
 /* Escudo Arcano (ward) ativo: brilho arcano no canto oposto ao Provocar */
