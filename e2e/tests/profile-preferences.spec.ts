@@ -23,6 +23,22 @@ test('perfil centraliza progressão e preferências reativas no desktop', async 
 
   await page.getByRole('tab', { name: 'Preferências' }).click();
   await expect(page.getByRole('heading', { name: 'Áudio' })).toBeVisible();
+  await expect(page.getByText(/Maré de Éter · haueu/)).toBeVisible();
+
+  const soundtrack = page.locator('audio[data-lc-music="mare-de-eter"]');
+  await expect(soundtrack).toHaveCount(1);
+  await expect(soundtrack).toHaveAttribute('src', '/assets/audio/mare-de-eter-v1.mp3');
+  expect(await soundtrack.evaluate((audio: HTMLAudioElement) => audio.loop)).toBe(true);
+  await expect.poll(() => soundtrack.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(false);
+  await expect.poll(() => soundtrack.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
+
+  const audioRange = await page.request.get('/assets/audio/mare-de-eter-v1.mp3', {
+    headers: { Range: 'bytes=0-1023' },
+  });
+  expect(audioRange.status()).toBe(206);
+  expect(audioRange.headers()['content-type']).toContain('audio/mpeg');
+  expect(audioRange.headers()['content-range']).toMatch(/^bytes 0-1023\/\d+$/);
+  expect((await audioRange.body()).byteLength).toBe(1024);
 
   const music = page.getByRole('slider', { name: 'Volume de música' });
   await music.fill('0.4');

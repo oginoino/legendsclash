@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { createReadStream, existsSync } from 'node:fs';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -44,6 +44,7 @@ const MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
+  '.mp3': 'audio/mpeg',
 };
 
 function cacheControl(filePath: string): string {
@@ -53,6 +54,9 @@ function cacheControl(filePath: string): string {
   if (/\/assets\/[^/]+-[A-Za-z0-9_-]+\.(css|js)$/.test(rel)) {
     return 'public, max-age=31536000, immutable';
   }
+  if (rel.startsWith('/assets/audio/') && /\.(mp3|m4a|ogg)$/i.test(rel)) {
+    return 'public, max-age=31536000, immutable';
+  }
   if (rel.startsWith('/assets/cards/') && /\.(png|webp|jpg|jpeg|svg)$/i.test(rel)) {
     return 'public, max-age=604800, stale-while-revalidate=86400';
   }
@@ -60,6 +64,23 @@ function cacheControl(filePath: string): string {
     return 'public, max-age=604800';
   }
   return 'no-cache';
+}
+
+function parseByteRange(header: string, size: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    return { start: Math.max(0, size - suffixLength), end: size - 1 };
+  }
+
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd)
+    || start < 0 || start >= size || requestedEnd < start) return null;
+  return { start, end: Math.min(requestedEnd, size - 1) };
 }
 
 const store = await Store.create();
@@ -111,11 +132,42 @@ const server = createServer(async (req, res) => {
       if (!filePath.startsWith(CLIENT_DIST) || !existsSync(filePath) || extname(filePath) === '') {
         filePath = join(CLIENT_DIST, 'index.html');
       }
+      const extension = extname(filePath);
+      if (extension === '.mp3') {
+        const info = await stat(filePath);
+        const headers = {
+          'content-type': MIME[extension],
+          'cache-control': cacheControl(filePath),
+          'accept-ranges': 'bytes',
+        };
+        const range = req.headers.range;
+        if (range) {
+          const parsed = parseByteRange(range, info.size);
+          if (!parsed) {
+            res.writeHead(416, { ...headers, 'content-range': `bytes */${info.size}` });
+            return res.end();
+          }
+          const length = parsed.end - parsed.start + 1;
+          res.writeHead(206, {
+            ...headers,
+            'content-range': `bytes ${parsed.start}-${parsed.end}/${info.size}`,
+            'content-length': length,
+          });
+          if (req.method === 'HEAD') return res.end();
+          createReadStream(filePath, parsed).pipe(res);
+          return;
+        }
+        res.writeHead(200, { ...headers, 'content-length': info.size });
+        if (req.method === 'HEAD') return res.end();
+        createReadStream(filePath).pipe(res);
+        return;
+      }
       const content = await readFile(filePath);
       res.writeHead(200, {
-        'content-type': MIME[extname(filePath)] ?? 'application/octet-stream',
+        'content-type': MIME[extension] ?? 'application/octet-stream',
         'cache-control': cacheControl(filePath),
       });
+      if (req.method === 'HEAD') return res.end();
       return res.end(content);
     }
 
