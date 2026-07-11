@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CARDS, cardOfDay } from '@legendsclash/shared';
-import { logout, openAccountPrompt, pickFaction, send, useAppState } from '../store';
+import { openAccountPrompt, pickFaction, send, useAppState } from '../store';
 import { Avatar, InlineAvatar, Sigil, profileCoverVars } from '../cosmetics';
 import {
   IcoStar,
@@ -148,7 +148,6 @@ export function HomeView() {
           {p.guest && (
             <button className="btn primary" onClick={openAccountPrompt}>Criar conta</button>
           )}
-          <button className="btn ghost" onClick={logout}>Sair</button>
         </div>
       </header>
 

@@ -207,13 +207,9 @@ export class App {
 
     const match = this.matches.get(userId);
     if (match && !match.finished) {
-      if (this.practiceMatches.has(match.id)) {
-        // treino: sem janela de reconexão — o bot não espera ninguém
-        this.practiceMatches.delete(match.id);
-        this.matches.delete(userId);
-        match.dispose();
-        return;
-      }
+      // Refresh, troca de rede e suspensão do navegador são indistinguíveis
+      // aqui. Treino e ranqueada usam a mesma janela para eliminar a corrida
+      // entre o socket antigo fechar e o novo `hello` autenticar.
       match.handleDisconnect(userId);
       return; // permanece na partida durante a janela de reconexão
     }

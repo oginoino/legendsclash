@@ -6,9 +6,11 @@ test('perfil centraliza progressão e preferências reativas no desktop', async 
     viewport: { width: 1366, height: 900 },
   });
 
+  await expect(page.getByRole('button', { name: 'Sair', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Perfil', exact: true }).click();
   await expect(page).toHaveURL(/#profile$/);
   await expect(page.locator('.profile-page')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sair', exact: true })).toBeVisible();
   await expect(page.locator('.profile-page-hero')).toContainText('Aurelia');
   await expect(page.getByRole('heading', { name: 'Sua jornada nas ligas' })).toBeVisible();
   await page.waitForTimeout(250);

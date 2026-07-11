@@ -81,6 +81,16 @@ export async function guestAs(
   return page;
 }
 
+/** Encerra a sessão pelo fluxo centralizado da página de perfil. */
+export async function logoutFromProfile(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Perfil', exact: true }).click();
+  await page.getByRole('button', { name: 'Sair', exact: true }).click();
+  const dialog = page.locator('.alert-modal');
+  await expect(dialog).toContainText('Sair desta conta?');
+  await dialog.getByRole('button', { name: 'Sair agora' }).click();
+  await expect(page.locator('.login-card')).toBeVisible();
+}
+
 /**
  * Fase de mulligan (troca da mão inicial): confirma a mão como está e segue
  * para o tabuleiro. Toda partida começa nesta fase.

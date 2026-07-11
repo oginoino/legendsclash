@@ -423,6 +423,26 @@ describe('app · modo treino (vs CPU, sem MMR)', () => {
     expect(over).toBeDefined();
     expect(Object.keys(over!.result.mmr)).toHaveLength(0); // mmr vazio = treino
   });
+
+  it('refresh fecha o socket, mas o mesmo treino volta pela sessão', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const u = store.createGuest('Solo', '🦊');
+    const token = store.createSession(u.id);
+    const first = connect();
+    first.msg({ t: 'hello', token });
+    first.msg({ t: 'practice:start' });
+    const before = first.byType('game:state').at(-1)!.view!;
+
+    first.close();
+    const reloaded = connect();
+    reloaded.msg({ t: 'hello', token });
+
+    const restored = reloaded.byType('game:state').at(-1)!.view;
+    expect(restored).not.toBeNull();
+    expect(restored!.matchId).toBe(before.matchId);
+    expect(restored!.seats[restored!.yourSeat].connected).toBe(true);
+  });
 });
 
 describe('app · variedade de conteúdo (Fase 6)', () => {

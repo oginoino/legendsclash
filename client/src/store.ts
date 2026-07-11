@@ -51,6 +51,21 @@ export interface AppState {
   cosmeticsEnabled: boolean;
   /** Facção escolhida pelo jogador (''=neutro). */
   faction: string;
+  /** Esta aba recarregou durante uma partida e aguarda a verdade do servidor. */
+  recoveringGame: boolean;
+}
+
+const ACTIVE_MATCH_KEY = 'lc_active_match';
+
+function activeMatchTicket(): string | null {
+  try { return sessionStorage.getItem(ACTIVE_MATCH_KEY); } catch { return null; }
+}
+
+function rememberActiveMatch(matchId: string | null): void {
+  try {
+    if (matchId) sessionStorage.setItem(ACTIVE_MATCH_KEY, matchId);
+    else sessionStorage.removeItem(ACTIVE_MATCH_KEY);
+  } catch { /* armazenamento opcional */ }
 }
 
 /**
@@ -65,8 +80,10 @@ function readResetToken(): string | null {
   return token;
 }
 
+const initialToken = localStorage.getItem('lc_token');
+
 let state: AppState = {
-  token: localStorage.getItem('lc_token'),
+  token: initialToken,
   profile: null,
   connected: false,
   inQueue: false,
@@ -90,6 +107,7 @@ let state: AppState = {
   factionsEnabled: false,
   cosmeticsEnabled: false,
   faction: localStorage.getItem('lc_faction') ?? '',
+  recoveringGame: !!initialToken && activeMatchTicket() != null,
 };
 
 const listeners = new Set<() => void>();
@@ -240,15 +258,18 @@ function handleServerMsg(msg: ServerMsg): void {
         // verdade do servidor: não há partida. Destrava a batalha fantasma
         // que sobra quando o servidor reinicia no meio do jogo — exceto se a
         // tela de resultado está aberta (o jogador fecha quando quiser).
+        rememberActiveMatch(null);
         if (state.game && !state.gameOver) {
-          setState({ game: null, chat: [] });
+          setState({ game: null, chat: [], recoveringGame: false });
           showToast('A partida anterior foi encerrada no servidor.');
-        }
+        } else setState({ recoveringGame: false });
         break;
       }
       const entering = !state.game || state.game.matchId !== msg.view.matchId;
+      rememberActiveMatch(msg.view.status === 'finished' ? null : msg.view.matchId);
       setState({
         game: msg.view,
+        recoveringGame: false,
         inQueue: false,
         room: null,
         ...(entering ? { chat: [], gameOver: null, rematch: null } : {}),
@@ -256,7 +277,8 @@ function handleServerMsg(msg: ServerMsg): void {
       break;
     }
     case 'game:over':
-      setState({ gameOver: msg.result });
+      rememberActiveMatch(null);
+      setState({ gameOver: msg.result, recoveringGame: false });
       send({ t: 'leaderboard:get' });
       send({ t: 'history:get' });
       break;
@@ -468,12 +490,13 @@ export function logout(): void {
     }).catch(() => {});
   }
   localStorage.removeItem('lc_token');
+  rememberActiveMatch(null);
   const socket = ws;
   ws = null; // impede reconexão automática
   setState({
     token: null, profile: null, connected: false, room: null,
     game: null, gameOver: null, chat: [], inQueue: false,
-    history: [], accountPrompt: false, replaced: false,
+    history: [], accountPrompt: false, replaced: false, recoveringGame: false,
   });
   socket?.close();
 }

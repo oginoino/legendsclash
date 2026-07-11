@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { E2E_PASSWORD, avatarButton, guestAs, loginAs, shotPath, uniqueEmail } from './helpers.js';
+import { E2E_PASSWORD, avatarButton, guestAs, loginAs, logoutFromProfile, shotPath, uniqueEmail } from './helpers.js';
 
 test.describe('entrada: convidado e conta', () => {
   test('convidado: nome + avatar → home, com convites para criar conta', async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe('entrada: convidado e conta', () => {
     await expect(page.locator('.league-progress')).toBeVisible();
 
     // sair e errar a senha → mensagem clara, sem vazar se a conta existe
-    await page.click('button:has-text("Sair")');
+    await logoutFromProfile(page);
     await page.click('button:has-text("Entrar ou criar conta")');
     await page.fill('input[type=email]', email);
     await page.fill('input[type=password]', 'senha-errada-123');
@@ -83,7 +83,7 @@ test.describe('entrada: convidado e conta', () => {
     await expect(page.locator('.home-main')).toBeVisible();
 
     // sai e pede a redefinição
-    await page.click('button:has-text("Sair")');
+    await logoutFromProfile(page);
     await page.click('button:has-text("Entrar ou criar conta")');
     await page.click('button:has-text("Esqueci minha senha")');
     await page.fill('input[type=email]', email);
@@ -102,7 +102,7 @@ test.describe('entrada: convidado e conta', () => {
     await expect(page.locator('.profile-chip')).toContainText('Esquecida');
 
     // a senha antiga não vale mais; a nova entra
-    await page.click('button:has-text("Sair")');
+    await logoutFromProfile(page);
     await page.click('button:has-text("Entrar ou criar conta")');
     await page.fill('input[type=email]', email);
     await page.fill('input[type=password]', E2E_PASSWORD);

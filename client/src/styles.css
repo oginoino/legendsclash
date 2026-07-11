@@ -162,6 +162,99 @@ h3 {
   min-height: 100dvh;
 }
 
+/* Restauração de partida após refresh: estado dedicado evita o flash da home
+   enquanto o servidor devolve a visão autoritativa da mesma batalha. */
+.match-recovery-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto auto auto auto auto;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+  background:
+    linear-gradient(180deg, #07101dcf, #070b12f5),
+    url('/assets/illustrations/aether-arena.webp') center / cover no-repeat;
+}
+
+.match-recovery-sigil {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  border: 1px solid #e3b34199;
+  border-radius: 50%;
+  background: radial-gradient(circle, #e3b34120, #07101de8 70%);
+  box-shadow: 0 0 34px #e3b34135, inset 0 0 24px #4d8dff24;
+}
+
+.match-recovery-sigil span {
+  width: 32px;
+  height: 32px;
+  border: 2px solid transparent;
+  border-top-color: var(--gold-2);
+  border-right-color: #4d8dff;
+  border-radius: 50%;
+  animation: spin .9s linear infinite;
+}
+
+.match-recovery-kicker {
+  color: var(--gold-2);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.match-recovery-screen h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.match-recovery-screen p {
+  max-width: 36ch;
+  margin: 0;
+  color: var(--dim-strong);
+  font-size: 14px;
+}
+
+.match-recovery-progress {
+  width: min(260px, 72vw);
+  height: 5px;
+  overflow: hidden;
+  margin-top: 10px;
+  border-radius: 99px;
+  background: #ffffff16;
+}
+
+.match-recovery-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d8dff, var(--gold-2));
+  box-shadow: 0 0 12px #e3b34166;
+  animation: recovery-progress 1.15s ease-in-out infinite alternate;
+}
+
+@keyframes recovery-progress {
+  to { transform: translateX(138%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-recovery-sigil span,
+  .match-recovery-progress span {
+    animation: none;
+  }
+
+  .match-recovery-progress span {
+    width: 100%;
+  }
+}
+
 .logo {
   font-family: var(--font-display);
   font-size: var(--fs-display);
@@ -631,8 +724,8 @@ input:focus {
   margin-bottom: 20px;
 }
 
-/* wrap: o trio de ações (Personalizar/Criar conta/Sair) cai p/ outra linha
-   em telas estreitas em vez de transbordar a viewport */
+/* wrap: as ações de perfil/conta caem p/ outra linha em telas estreitas em
+   vez de transbordar a viewport */
 .profile-chip {
   position: relative;
   overflow: hidden;
@@ -8913,12 +9006,18 @@ html[data-motion='reduced'] .creature.impact-source::before,
 html[data-motion='reduced'] .login-screen::before,
 html[data-motion='reduced'] .login-screen::after,
 html[data-motion='reduced'] .spinner,
+html[data-motion='reduced'] .match-recovery-sigil span,
+html[data-motion='reduced'] .match-recovery-progress span,
 html[data-motion='reduced'] .lc-frame--arcane::after {
   animation: none !important;
 }
 
 html[data-motion='reduced'] .confetti {
   display: none;
+}
+
+html[data-motion='reduced'] .match-recovery-progress span {
+  width: 100%;
 }
 
 html[data-motion='reduced'] .profile-page *,
