@@ -71,6 +71,7 @@ describe('engine · snapshot da partida', () => {
     expect(after0.hand).toEqual(before0.hand);
     expect(restored.viewFor('p1').hand).toEqual(before1.hand);
     expect(after0.plays).toEqual(before0.plays);
+    expect(after0.actions).toEqual(before0.actions);
     for (const i of [0, 1]) {
       const a = after0.seats[i];
       const b = before0.seats[i];
@@ -86,6 +87,16 @@ describe('engine · snapshot da partida', () => {
     restored.handleReconnect('p1');
     restored.endTurn('p0');
     expect(restored.viewFor('p0').turnSeat).toBe(1);
+  });
+
+  it('restaura snapshot anterior ao histórico estruturado de ações', () => {
+    const { m } = makeMatch();
+    track(m).start();
+    const snap = viaJson(m.toSnapshot());
+    delete snap.actions;
+    delete snap.actionSeq;
+    const restored = track(Match.restore(snap, () => {}, () => {}));
+    expect(restored.viewFor('p0').actions).toEqual([]);
   });
 
   it('a visão restaurada não vaza a mão do oponente', () => {

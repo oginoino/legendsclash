@@ -4,7 +4,7 @@ import {
   RECONNECT_GRACE_MS, STARTING_HAND, STARTING_HP, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
-  CardDef, CardInHand, CreatureOnBoard, GameLogEntry, GameView,
+  CardDef, CardInHand, CombatAction, CreatureOnBoard, GameLogEntry, GameView,
   MatchEndReason, MatchMvp, MatchStats, SeatView, Target,
 } from '@legendsclash/shared';
 
@@ -118,6 +118,9 @@ export interface MatchSnapshot {
   seats: SeatSnapshot[];
   log: GameLogEntry[];
   plays: Array<{ seat: number; cardId: string; at: number }>;
+  /** Opcional para restaurar snapshots anteriores a este contrato. */
+  actions?: CombatAction[];
+  actionSeq?: number;
 }
 
 export interface EngineResult {
@@ -203,6 +206,8 @@ export class Match {
   private readonly startedAt: number;
   private log: GameLogEntry[] = [];
   private plays: Array<{ seat: number; cardId: string; at: number }> = [];
+  private actions: CombatAction[] = [];
+  private actionSeq = 0;
 
   /**
    * onUpdate: reenvia visões; onFinish: Elo/histórico/notificação.
@@ -230,6 +235,9 @@ export class Match {
       this.turnNumber = restored.turnNumber;
       this.log = [...restored.log];
       this.plays = [...restored.plays];
+      this.actions = [...(restored.actions ?? [])];
+      this.actionSeq = restored.actionSeq
+        ?? Math.max(0, ...this.actions.map((action) => action.seq));
       observeSnapshotIids(restored);
     }
     this.seats = players.map((player, i) => {
@@ -545,6 +553,13 @@ export class Match {
     seat.hand.splice(handIdx, 1);
     // jogada concluída é informação pública — alimenta a revelação no cliente
     this.plays.push({ seat: idx, cardId: def.id, at: Date.now() });
+    this.recordAction({
+      seat: idx,
+      kind: 'card',
+      sourceDefId: def.id,
+      sourceIid: card.iid,
+      target: target ? { ...target } : undefined,
+    });
     this.checkEnd();
     this.onUpdate();
   }
@@ -774,6 +789,13 @@ export class Match {
     }
 
     attacker.attacked = true;
+    this.recordAction({
+      seat: idx,
+      kind: 'attack',
+      sourceDefId: attacker.defId,
+      sourceIid: attacker.iid,
+      target: { ...target },
+    });
     this.checkEnd();
     this.onUpdate();
   }
@@ -877,6 +899,8 @@ export class Match {
       })),
       log: this.log.slice(-100),
       plays: this.plays.slice(-12),
+      actions: this.actions.slice(-24),
+      actionSeq: this.actionSeq,
     };
   }
 
@@ -1339,6 +1363,7 @@ export class Match {
       status: this.status,
       log: this.log.slice(-30),
       plays: this.plays.slice(-12),
+      actions: this.actions.slice(-24),
     };
   }
 
@@ -1356,6 +1381,11 @@ export class Match {
 
   private addLog(text: string): void {
     this.log.push({ at: Date.now(), text });
+  }
+
+  private recordAction(action: Omit<CombatAction, 'seq' | 'at'>): void {
+    this.actions.push({ ...action, seq: ++this.actionSeq, at: Date.now() });
+    if (this.actions.length > 48) this.actions.splice(0, this.actions.length - 48);
   }
 
   /** Encerramento administrativo (ex.: desligamento do servidor). */
