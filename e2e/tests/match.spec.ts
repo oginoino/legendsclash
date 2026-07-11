@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   greedyTurn,
+  guestAs,
   loginAs,
   passMulligan,
   passTutorial,
@@ -129,6 +130,36 @@ test.describe('resiliência: reconexão no meio da partida', () => {
 
     await host.context().close();
     await guest.context().close();
+  });
+
+  test('recarregar durante treino retoma a mesma partida contra a IA', async ({ browser }) => {
+    const player = await guestAs(browser, 'Tenaz', '🦅');
+    await player.getByRole('button', { name: /Treino/ }).click();
+    await passMulligan(player);
+    await passTutorial(player);
+    await expect(player.locator('.game-board')).toBeVisible({ timeout: 10_000 });
+    const matchTicket = await player.evaluate(() => sessionStorage.getItem('lc_active_match'));
+    expect(matchTicket).toBeTruthy();
+
+    // Rede lenta após o refresh: a página deve assumir que está restaurando a
+    // partida, sem piscar a home, até o estado autoritativo chegar.
+    await player.routeWebSocket(/\/ws$/, (socket) => {
+      const server = socket.connectToServer();
+      server.onMessage((message) => {
+        setTimeout(() => socket.send(message), 2800);
+      });
+    });
+    await player.reload();
+
+    await expect(player.locator('.match-recovery-screen')).toBeVisible({ timeout: 10_000 });
+    await player.screenshot({ path: shotPath('16-retomando-partida.png') });
+    await expect(player.locator('.game-board')).toBeVisible({ timeout: 10_000 });
+    await expect(player.locator('.hero-plate.enemy')).toContainText('Treinador IA');
+    await expect.poll(() => player.evaluate(() => sessionStorage.getItem('lc_active_match'))).toBe(matchTicket);
+    await surrender(player);
+    await expect(player.locator('.game-over')).toContainText('Derrota');
+    await expect.poll(() => player.evaluate(() => sessionStorage.getItem('lc_active_match'))).toBeNull();
+    await player.context().close();
   });
 });
 

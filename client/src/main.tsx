@@ -18,8 +18,10 @@ function updateBootProgress(progress: VisualAssetProgress): void {
 }
 
 async function boot(): Promise<void> {
-  await primeVisualAssets({ onProgress: updateBootProgress });
+  // A reconexão de uma partida não pode esperar fontes e imagens. O estado
+  // autoritativo chega em paralelo enquanto o loader prepara a apresentação.
   connect(); // retoma a sessão se houver token salvo
+  await primeVisualAssets({ onProgress: updateBootProgress });
 
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

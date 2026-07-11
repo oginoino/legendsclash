@@ -543,6 +543,18 @@ export function GameView() {
     };
   }, [game?.matchId, game?.status, s.connected, tutorialVisible]);
 
+  // Segunda barreira contra refresh acidental. O servidor mantém a partida
+  // viva, mas navegadores compatíveis ainda pedem confirmação antes de sair.
+  useEffect(() => {
+    if (!game || game.status === 'finished' || s.gameOver) return;
+    const protectActiveMatch = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protectActiveMatch);
+    return () => window.removeEventListener('beforeunload', protectActiveMatch);
+  }, [game?.matchId, game?.status, s.gameOver?.matchId]);
+
   useEffect(() => () => {
     if (inspectTimerRef.current) window.clearTimeout(inspectTimerRef.current);
   }, []);
