@@ -8,13 +8,17 @@
 
 export type Bus = 'sfx' | 'music';
 
+export const DEFAULT_VOLUMES: Record<Bus, number> = {
+  sfx: 0.85,
+  music: 0.22,
+};
+
 let ctx: AudioContext | null = null;
 let sfxBus: GainNode | null = null;
 let musicBus: GainNode | null = null;
 let limiter: DynamicsCompressorNode | null = null;
 
-const DEFAULT_SFX_VOL = 0.85;
-const DEFAULT_MUSIC_VOL = 0.22;
+const volumeListeners = new Set<() => void>();
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
@@ -35,8 +39,8 @@ function loadVol(key: string, dflt: number): number {
 const legacyOff = (() => {
   try { return localStorage.getItem('lc_sound') === 'off'; } catch { return false; }
 })();
-let sfxVol = loadVol('lc_vol_sfx', legacyOff ? 0 : DEFAULT_SFX_VOL);
-let musicVol = loadVol('lc_vol_music', legacyOff ? 0 : DEFAULT_MUSIC_VOL);
+let sfxVol = loadVol('lc_vol_sfx', legacyOff ? 0 : DEFAULT_VOLUMES.sfx);
+let musicVol = loadVol('lc_vol_music', legacyOff ? 0 : DEFAULT_VOLUMES.music);
 
 /** Garante o contexto + os dois barramentos (lazy: só no 1º som/gesto). */
 function ensure(): AudioContext | null {
@@ -277,6 +281,11 @@ export function getVolume(bus: Bus): number {
   return bus === 'sfx' ? sfxVol : musicVol;
 }
 
+export function subscribeVolume(listener: () => void): () => void {
+  volumeListeners.add(listener);
+  return () => volumeListeners.delete(listener);
+}
+
 export function setVolume(bus: Bus, v: number): void {
   const vol = clamp01(v);
   if (bus === 'sfx') {
@@ -290,6 +299,12 @@ export function setVolume(bus: Bus, v: number): void {
     if (musicBus) musicBus.gain.value = vol;
     if (vol > 0) startMusic(); else stopMusic();
   }
+  for (const listener of volumeListeners) listener();
+}
+
+export function resetVolumes(): void {
+  setVolume('sfx', DEFAULT_VOLUMES.sfx);
+  setVolume('music', DEFAULT_VOLUMES.music);
 }
 
 // ─── Compatibilidade: API antiga de liga/desliga (mapeada no SFX) ──
@@ -300,6 +315,6 @@ export function soundOn(): boolean {
 
 export function toggleSound(): boolean {
   const on = sfxVol > 0;
-  setVolume('sfx', on ? 0 : DEFAULT_SFX_VOL);
+  setVolume('sfx', on ? 0 : DEFAULT_VOLUMES.sfx);
   return !on;
 }

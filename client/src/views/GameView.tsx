@@ -20,6 +20,7 @@ import { CodexView } from './CodexView';
 import { SoundControl } from '../components/SoundControl';
 import { sfx } from '../sounds';
 import { preloadCardImages } from '../preload';
+import { triggerHaptic, usePreferences } from '../preferences';
 
 type Selection =
   | { kind: 'hand'; iid: string }
@@ -408,6 +409,7 @@ type AimTarget =
 
 export function GameView() {
   const s = useAppState();
+  const preferences = usePreferences();
   const [selection, setSelection] = useState<Selection>(null);
   const [hover, setHover] = useState<HoverTarget>(null);
   const [hoverCost, setHoverCost] = useState(0);
@@ -865,7 +867,7 @@ export function GameView() {
 
   // ensino contextual one-shot: explica Provocar e fadiga na 1ª vez que surgem
   useEffect(() => {
-    if (!game || game.yourSeat < 0 || game.status !== 'active') return;
+    if (!preferences.battleHints || !game || game.yourSeat < 0 || game.status !== 'active') return;
     const seen = (k: string) => { try { return localStorage.getItem(k) === '1'; } catch { return true; } };
     const mark = (k: string) => { try { localStorage.setItem(k, '1'); } catch { /* ignore */ } };
     const enemyIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
@@ -882,7 +884,7 @@ export function GameView() {
       setTeach({ id: 'fatigue', text: 'Fadiga: seu baralho esgotou — cada compra agora tira vida. Feche a partida logo.', at: Date.now() });
       mark('lc_taught_fatigue');
     }
-  }, [game]);
+  }, [game, preferences.battleHints]);
 
   // gaveta de chat aberta = mensagens consideradas lidas (badge zera)
   useEffect(() => {
@@ -1351,7 +1353,7 @@ export function GameView() {
   function setDragLockFeedback(drag: DragState, target: AimTarget | null, valid: boolean): void {
     const next = valid && target ? targetKey(target) : null;
     if (drag.pointerType === 'touch' && next && next !== drag.lockedTarget) {
-      try { navigator.vibrate?.(8); } catch { /* vibração é melhoria progressiva */ }
+      triggerHaptic();
     }
     drag.lockedTarget = next;
   }
@@ -1499,7 +1501,7 @@ export function GameView() {
         const ready = hasRoom && isPlayDropReady(drag, x, y);
         const nextLock = ready ? 'play-zone' : null;
         if (drag.pointerType === 'touch' && nextLock && drag.lockedTarget !== nextLock) {
-          try { navigator.vibrate?.(8); } catch { /* vibração é melhoria progressiva */ }
+          triggerHaptic();
         }
         drag.lockedTarget = nextLock;
         setDragCard((card) => card ? {
