@@ -28,6 +28,8 @@ export interface MatchPlayer {
   frame: string;
   accentStyle: string;
   mmr: number;
+  /** Só a primeira partida pode solicitar a pausa de onboarding. */
+  tutorialEligible?: boolean;
 }
 
 export interface CardInstance {
@@ -112,6 +114,9 @@ export interface MatchSnapshot {
   turnSeat: number;
   turnNumber: number;
   turnSeconds: number;
+  /** Opcionais para restaurar snapshots anteriores a pausa de onboarding. */
+  turnTimeLeftMs?: number;
+  tutorialOpenPlayerIds?: string[];
   useMulligan: boolean;
   botIds: string[];
   content: MatchContent;
@@ -199,6 +204,9 @@ export class Match {
   private turnNumber = 0;
   private turnEndsAt = 0;
   private turnTimer: NodeJS.Timeout | null = null;
+  private turnTimeLeftMs = 0;
+  private turnPaused = false;
+  private tutorialOpenPlayerIds = new Set<string>();
   private mulliganTimer: NodeJS.Timeout | null = null;
   private botTimer: NodeJS.Timeout | null = null;
   private status: 'mulligan' | 'active' | 'finished' = 'active';
@@ -233,6 +241,8 @@ export class Match {
       this.status = restored.status;
       this.turnSeat = restored.turnSeat;
       this.turnNumber = restored.turnNumber;
+      this.turnTimeLeftMs = restored.turnTimeLeftMs ?? this.turnSeconds * 1000;
+      this.tutorialOpenPlayerIds = new Set(restored.tutorialOpenPlayerIds ?? []);
       this.log = [...restored.log];
       this.plays = [...restored.plays];
       this.actions = [...(restored.actions ?? [])];
@@ -398,20 +408,67 @@ export class Match {
     }
   }
 
-  private armTurnTimer(): void {
+  private armTurnTimer(ms = this.turnSeconds * 1000): void {
     this.clearTurnTimer();
-    this.turnEndsAt = Date.now() + this.turnSeconds * 1000;
+    this.turnTimeLeftMs = Math.max(0, ms);
+    if (this.tutorialOpenPlayerIds.size > 0) {
+      this.turnPaused = true;
+      this.turnEndsAt = 0;
+      return;
+    }
+    this.turnPaused = false;
+    this.turnEndsAt = Date.now() + this.turnTimeLeftMs;
     this.turnTimer = setTimeout(() => {
       if (this.status !== 'active') return;
+      this.turnTimeLeftMs = 0;
       this.addLog(`${this.seats[this.turnSeat].player.name} ficou sem tempo — turno encerrado`);
       this.advanceTurn();
       this.onUpdate();
-    }, this.turnSeconds * 1000);
+    }, this.turnTimeLeftMs);
   }
 
   private clearTurnTimer(): void {
     if (this.turnTimer) clearTimeout(this.turnTimer);
     this.turnTimer = null;
+  }
+
+  private currentTurnTimeLeftMs(): number {
+    return this.turnPaused
+      ? this.turnTimeLeftMs
+      : Math.max(0, this.turnEndsAt - Date.now());
+  }
+
+  private syncTutorialPause(): void {
+    if (this.tutorialOpenPlayerIds.size > 0 && !this.turnPaused) {
+      this.turnTimeLeftMs = Math.max(0, this.turnEndsAt - Date.now());
+      this.clearTurnTimer();
+      this.turnPaused = true;
+      this.turnEndsAt = 0;
+    } else if (this.tutorialOpenPlayerIds.size === 0 && this.turnPaused) {
+      this.armTurnTimer(this.turnTimeLeftMs);
+    }
+  }
+
+  /**
+   * Congela o primeiro turno enquanto um jogador elegivel ainda le o tutorial.
+   * O Set torna heartbeats/reconexoes idempotentes e a pausa so existe no
+   * onboarding real, evitando que clientes usem a mensagem em partidas futuras.
+   */
+  setTutorialOpen(playerId: string, open: boolean): void {
+    const idx = this.seatOf(playerId);
+    if (idx < 0 || this.status !== 'active') return;
+    const player = this.seats[idx].player;
+    if (open && (this.turnNumber !== 1 || player.tutorialEligible !== true)) return;
+
+    const changed = open
+      ? !this.tutorialOpenPlayerIds.has(playerId)
+      : this.tutorialOpenPlayerIds.has(playerId);
+    if (!changed) return;
+    if (open) this.tutorialOpenPlayerIds.add(playerId);
+    else this.tutorialOpenPlayerIds.delete(playerId);
+
+    this.syncTutorialPause();
+    this.onUpdate();
   }
 
   /** Fila circular: o próximo assento ativo, qualquer que seja N. */
@@ -453,6 +510,7 @@ export class Match {
     const idx = this.seatOf(playerId);
     if (idx < 0) throw new GameError('Você não está nesta partida.');
     if (idx !== this.turnSeat) throw new GameError('Não é o seu turno.');
+    if (this.turnPaused) throw new GameError('A partida está pausada durante o tutorial inicial.');
     return { seat: this.seats[idx], idx };
   }
 
@@ -825,6 +883,8 @@ export class Match {
     const idx = this.seatOf(playerId);
     if (idx < 0 || this.status === 'finished') return;
     const seat = this.seats[idx];
+    // Uma aba fechada nunca pode manter o onboarding dos demais congelado.
+    if (this.tutorialOpenPlayerIds.delete(playerId)) this.syncTutorialPause();
     this.addLog(`${seat.player.name} desconectou — ${RECONNECT_GRACE_MS / 60000} min para reconectar`);
     this.armReconnectTimer(seat, RECONNECT_GRACE_MS);
     this.onUpdate();
@@ -870,6 +930,8 @@ export class Match {
       turnSeat: this.turnSeat,
       turnNumber: this.turnNumber,
       turnSeconds: this.turnSeconds,
+      turnTimeLeftMs: this.currentTurnTimeLeftMs(),
+      tutorialOpenPlayerIds: [...this.tutorialOpenPlayerIds],
       useMulligan: this.useMulligan,
       botIds: [...this.botIds],
       content: {
@@ -936,7 +998,7 @@ export class Match {
     if (m.status === 'mulligan') {
       m.armMulliganTimer();
     } else if (m.status === 'active') {
-      m.armTurnTimer();
+      m.armTurnTimer(snap.turnTimeLeftMs ?? snap.turnSeconds * 1000);
       const current = m.seats[m.turnSeat];
       if (current && m.botIds.includes(current.player.id)) m.scheduleBotTurn(current.player.id);
     }
@@ -1358,6 +1420,8 @@ export class Match {
       turnSeat: this.turnSeat,
       turnNumber: this.turnNumber,
       turnEndsAt: this.turnEndsAt,
+      turnPaused: this.turnPaused,
+      turnTimeLeftMs: this.currentTurnTimeLeftMs(),
       seats,
       hand,
       status: this.status,

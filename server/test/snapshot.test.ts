@@ -22,6 +22,7 @@ function players(n: number): MatchPlayer[] {
     frame: 'none',
     accentStyle: 'solid',
     mmr: 1000,
+    tutorialEligible: true,
   }));
 }
 
@@ -95,8 +96,36 @@ describe('engine · snapshot da partida', () => {
     const snap = viaJson(m.toSnapshot());
     delete snap.actions;
     delete snap.actionSeq;
+    delete snap.turnTimeLeftMs;
+    delete snap.tutorialOpenPlayerIds;
     const restored = track(Match.restore(snap, () => {}, () => {}));
     expect(restored.viewFor('p0').actions).toEqual([]);
+  });
+
+  it('preserva pausa e tempo restante do tutorial durante restart', () => {
+    vi.useFakeTimers();
+    const { m } = makeMatch(60);
+    track(m).start();
+    vi.advanceTimersByTime(7_000);
+    m.setTutorialOpen('p0', true);
+    const snap = viaJson(m.toSnapshot());
+
+    const restored = track(Match.restore(snap, () => {}, () => {}));
+    expect(restored.viewFor('p0')).toMatchObject({
+      turnSeat: 0,
+      turnPaused: true,
+      turnTimeLeftMs: 53_000,
+    });
+    vi.advanceTimersByTime(90_000);
+    expect(restored.viewFor('p0').turnSeat).toBe(0);
+
+    restored.handleReconnect('p0');
+    restored.handleReconnect('p1');
+    restored.setTutorialOpen('p0', false);
+    vi.advanceTimersByTime(52_999);
+    expect(restored.viewFor('p0').turnSeat).toBe(0);
+    vi.advanceTimersByTime(2);
+    expect(restored.viewFor('p0').turnSeat).toBe(1);
   });
 
   it('a visão restaurada não vaza a mão do oponente', () => {

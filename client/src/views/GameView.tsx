@@ -6,7 +6,7 @@ import { Avatar, CosmeticIcon, TauntIcon, accentVars } from '../cosmetics';
 import {
   IcoAddFriend, IcoAttack, IcoBanner, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
   IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHealth, IcoHint, IcoLethal, IcoMedal,
-  IcoOverflow, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap, IcoWard,
+  IcoOverflow, IcoPause, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap, IcoWard,
   IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
 } from '../icons';
 import { CardArt } from '../components/CardArt';
@@ -211,6 +211,11 @@ const SPELL_DMG: Record<string, number> = {
 
 /** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
+
+function formatTurnClock(seconds: number): string {
+  const safe = Math.max(0, seconds);
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+}
 /** Inspeção no hover só com mouse real — no toque o mouseover sintético do
  *  tap deixaria o overlay preso na tela (não há mouseleave correspondente). */
 const CAN_HOVER = typeof window !== 'undefined'
@@ -400,9 +405,10 @@ export function GameView() {
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
-  // tutorial da 1ª partida: uma vez por dispositivo (flag em localStorage)
-  const [showTutorial, setShowTutorial] = useState(() => {
-    try { return localStorage.getItem('lc_tutorial_done') !== '1'; } catch { return false; }
+  // Tutorial pertence ao jogador, nao ao dispositivo compartilhado.
+  const tutorialStorageKey = `lc_tutorial_done:${s.profile?.id ?? 'unknown'}`;
+  const [tutorialDismissed, setTutorialDismissed] = useState(() => {
+    try { return localStorage.getItem(tutorialStorageKey) === '1'; } catch { return false; }
   });
   // carta sem alvo sendo "levantada" pelo gesto de arrasto (solta ≥48px acima = joga)
   const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
@@ -435,7 +441,14 @@ export function GameView() {
   } | null>(null);
 
   const game = s.game;
+  const firstMatch = !!s.profile && s.profile.wins + s.profile.losses === 0;
+  const tutorialVisible = firstMatch && !tutorialDismissed && !s.gameOver;
   const handSignature = game?.hand.map((c) => c.iid).join('|') ?? '';
+
+  function finishTutorial() {
+    try { localStorage.setItem(tutorialStorageKey, '1'); } catch { /* armazenamento opcional */ }
+    setTutorialDismissed(true);
+  }
 
   function clearInspect(source?: InspectCard['source']) {
     if (inspectTimerRef.current) {
@@ -490,6 +503,19 @@ export function GameView() {
     if (!visibleImageKey) return;
     preloadCardImages(visibleImageKey.split('|'), { priority: 'high', decode: true });
   }, [visibleImageKey]);
+
+  useEffect(() => {
+    if (!tutorialVisible || !game || game.status !== 'active' || !s.connected) return;
+    const announceOpen = () => send({ t: 'game:tutorial', open: true });
+    announceOpen();
+    // Reafirma o estado apos suspensoes longas de aba/rede movel. O servidor
+    // trata mensagens repetidas sem broadcast adicional.
+    const heartbeat = window.setInterval(announceOpen, 15_000);
+    return () => {
+      window.clearInterval(heartbeat);
+      send({ t: 'game:tutorial', open: false });
+    };
+  }, [game?.matchId, game?.status, s.connected, tutorialVisible]);
 
   useEffect(() => () => {
     if (inspectTimerRef.current) window.clearTimeout(inspectTimerRef.current);
@@ -810,8 +836,11 @@ export function GameView() {
     [game],
   );
 
-  const myTurn = !!game && !!me && game.turnSeat === game.yourSeat && game.status === 'active';
-  const secondsLeft = game ? Math.max(0, Math.ceil((game.turnEndsAt - now) / 1000)) : 0;
+  const turnOwnerIsMe = !!game && !!me && game.turnSeat === game.yourSeat && game.status === 'active';
+  const myTurn = turnOwnerIsMe && !game?.turnPaused;
+  const secondsLeft = game
+    ? Math.max(0, Math.ceil((game.turnPaused ? game.turnTimeLeftMs : game.turnEndsAt - now) / 1000))
+    : 0;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -858,7 +887,7 @@ export function GameView() {
   const enemy = game.seats[enemySeatIdx];
   const timerPct = Math.min(100, (secondsLeft / TURN_SECONDS) * 100);
   // últimos 10s do seu turno: cue de ícone (timer) reduced-motion-safe + aviso a11y
-  const timeUrgent = myTurn && secondsLeft <= 10 && secondsLeft > 0;
+  const timeUrgent = myTurn && !game.turnPaused && secondsLeft <= 10 && secondsLeft > 0;
 
   const selectedHandDef = selection?.kind === 'hand'
     ? CARDS[game.hand.find((c) => c.iid === selection.iid)?.defId ?? '']
@@ -1552,21 +1581,46 @@ export function GameView() {
         </div>
 
         <div className="board-divider no-divider-line">
-          <div className={myTurn ? 'turn-pill mine' : 'turn-pill'}>
-            <span className={timeUrgent ? 'time-urgent' : ''} role="timer">
-              {game.status !== 'active'
-                ? 'Partida encerrada'
-                : myTurn
-                  ? <>{timeUrgent && <IcoTimer className="ic" />} Seu turno · {secondsLeft}s</>
-                  : `Turno de ${game.seats[game.turnSeat].name} · ${secondsLeft}s`}
+          <div
+            className={`turn-pill ${turnOwnerIsMe ? 'mine' : ''} ${game.turnPaused ? 'paused' : ''} ${timeUrgent ? 'urgent' : ''}`}
+            style={{ '--timer-angle': `${timerPct * 3.6}deg` } as React.CSSProperties}
+            aria-label={game.turnPaused
+              ? `Cronômetro pausado em ${formatTurnClock(secondsLeft)} durante o tutorial inicial`
+              : `${turnOwnerIsMe ? 'Seu turno' : `Turno de ${game.seats[game.turnSeat].name}`}. ${formatTurnClock(secondsLeft)} restantes`}
+          >
+            <span className="turn-clock" aria-hidden="true">
+              {game.turnPaused ? <IcoPause className="ic" /> : <IcoTimer className="ic" />}
+            </span>
+            <span className="turn-time-copy">
+              <span className="turn-time-eyebrow">
+                <span className="turn-label-full">
+                  {game.status !== 'active'
+                    ? 'Partida encerrada'
+                    : game.turnPaused
+                      ? 'Tutorial inicial'
+                      : turnOwnerIsMe
+                        ? 'Seu turno'
+                        : `Turno de ${game.seats[game.turnSeat].name}`}
+                </span>
+                <span className="turn-label-compact">
+                  {game.status !== 'active' ? 'Fim' : game.turnPaused ? 'Pausa' : turnOwnerIsMe ? 'Seu turno' : 'Oponente'}
+                </span>
+              </span>
+              <strong className={timeUrgent ? 'time-urgent' : ''} role="timer">
+                {game.status !== 'active'
+                  ? 'Encerrada'
+                  : game.turnPaused
+                    ? 'Pausado'
+                    : formatTurnClock(secondsLeft)}
+              </strong>
             </span>
             {/* aviso único para leitor de tela ao entrar nos últimos 10s (sem repetir a cada segundo) */}
             <span className="sr-only" role="status" aria-live="assertive">
-              {timeUrgent ? 'Tempo do seu turno acabando' : ''}
+              {game.turnPaused ? 'Cronômetro pausado durante o tutorial inicial' : timeUrgent ? 'Tempo do seu turno acabando' : ''}
             </span>
-            <span className="timer-track">
+            <span className="timer-track" aria-hidden="true">
               <span
-                className={`timer-fill ${secondsLeft <= 10 ? 'urgent' : ''}`}
+                className={`timer-fill ${timeUrgent ? 'urgent' : ''} ${game.turnPaused ? 'paused' : ''}`}
                 style={{ width: `${timerPct}%` }}
               />
             </span>
@@ -2059,7 +2113,7 @@ export function GameView() {
       )}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
-      {showTutorial && !s.gameOver && <Tutorial onClose={() => setShowTutorial(false)} />}
+      {tutorialVisible && <Tutorial paused={game.turnPaused} onClose={finishTutorial} />}
       {confirmSurrenderOpen && (
         <ConfirmDialog
           tone="danger"

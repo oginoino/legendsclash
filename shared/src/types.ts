@@ -153,6 +153,10 @@ export interface GameView {
   turnSeat: number;
   turnNumber: number;
   turnEndsAt: number; // epoch ms — temporizador autoritativo do servidor
+  /** O turno está congelado enquanto o tutorial inicial está aberto. */
+  turnPaused: boolean;
+  /** Tempo autoritativo preservado; não diminui durante a pausa. */
+  turnTimeLeftMs: number;
   seats: SeatView[];
   hand: CardInHand[];
   /** 'mulligan' = fase de troca da mão inicial, antes do turno 1. */

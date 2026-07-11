@@ -24,6 +24,7 @@ export type ClientMsg =
   | { t: 'chat:unmute'; playerId: string }
   | { t: 'chat:report'; playerId: string; reason: string }
   | { t: 'game:mulligan'; iids: string[] } // cartas a devolver ao baralho na troca inicial
+  | { t: 'game:tutorial'; open: boolean } // pausa autoritativa do onboarding da 1a partida
   | { t: 'game:play'; iid: string; target?: Target }
   | { t: 'game:attack'; attackerIid: string; target: Target }
   | { t: 'game:endTurn' }
