@@ -127,7 +127,9 @@ export class App {
       case 'game:attack': return this.withMatch(user, (m) => m.attack(user.id, msg.attackerIid, msg.target));
       case 'game:endTurn': return this.withMatch(user, (m) => m.endTurn(user.id));
       case 'game:surrender': return this.withMatch(user, (m) => m.surrender(user.id));
-      case 'leaderboard:get': return this.sendLeaderboard(user);
+      case 'leaderboard:get':
+        void this.sendLeaderboard(user);
+        return;
       case 'history:get':
         // convidado vê o histórico da sessão (em memória); conta, o persistido
         return this.sendTo(user.id, { t: 'history', entries: user.history });
@@ -795,18 +797,17 @@ export class App {
 
   // ─── Ranking ────────────────────────────────────────────────────
 
-  private sendLeaderboard(user: UserRecord): void {
+  private async sendLeaderboard(user: UserRecord): Promise<void> {
     const toEntry = (u: UserRecord): LeaderboardEntry => ({
       id: u.id, name: displayName(u), avatar: u.avatar, photo: u.photo, mmr: u.mmr,
-      league: leagueOf(u.mmr), wins: u.wins, losses: u.losses,
+      league: u.league ?? leagueOf(u.mmr), wins: u.wins, losses: u.losses,
     });
-    const entries = this.store.leaderboard().map(toEntry);
-    const rv = this.store.rankView(user.id); // posição + vizinhos (alvo de subida)
+    const ranking = await this.store.rankingSnapshot(user.id);
     this.sendTo(user.id, {
       t: 'leaderboard',
-      entries,
-      myRank: rv?.rank,
-      around: rv?.around.map(toEntry),
+      entries: ranking.entries.map(toEntry),
+      myRank: ranking.myRank,
+      around: ranking.around?.map(toEntry),
     });
   }
 

@@ -189,8 +189,10 @@ interface DamageNotice {
   id: number;
   owner: string;
   source: string;
+  summary: string;
   detail: string;
   hits: DamageNoticeHit[];
+  severity: 'normal' | 'heavy' | 'lethal';
   at: number;
 }
 
@@ -608,12 +610,34 @@ export function GameView() {
     if (receivedFromOpponent) {
       const lastEnemyPlay = enemyPlays.at(-1);
       const source = lastEnemyPlay ? CARDS[lastEnemyPlay.cardId]?.name ?? 'Carta inimiga' : damageSourceFromLog(damageLine);
+      const hpDamage = receivedHits
+        .filter((hit) => hit.kind === 'hp')
+        .reduce((sum, hit) => sum + (hit.amount ?? 0), 0);
+      const shieldDamage = receivedHits
+        .filter((hit) => hit.kind === 'shield')
+        .reduce((sum, hit) => sum + (hit.amount ?? 0), 0);
+      const defeats = receivedHits.filter((hit) => hit.kind === 'defeat').length;
+      const myAfter = game.seats[game.yourSeat];
+      const severity: DamageNotice['severity'] = myAfter.hp <= 0
+        ? 'lethal'
+        : hpDamage >= 5 || defeats > 0 || myAfter.hp <= 10
+          ? 'heavy'
+          : 'normal';
+      const summary = hpDamage > 0
+        ? `${hpDamage} de dano no seu comandante`
+        : shieldDamage > 0
+          ? `${shieldDamage} absorvido pelo seu escudo`
+          : defeats > 0
+            ? `${defeats} criatura${defeats > 1 ? 's' : ''} abatida${defeats > 1 ? 's' : ''}`
+            : 'Seu lado sofreu pressão';
       setDamageNotice({
         id: fxId++,
         owner: enemyNameForNotice,
         source,
+        summary,
         detail: damageDetailFromLog(damageLine),
         hits: receivedHits.slice(0, 4),
+        severity,
         at: ts,
       });
     }
@@ -1971,11 +1995,12 @@ export function GameView() {
 
 function DamageNoticePanel({ notice }: { notice: DamageNotice }) {
   return (
-    <div className="damage-notice" role="status" aria-live="assertive">
+    <div className={`damage-notice ${notice.severity}`} role="status" aria-live="assertive">
       <span className="damage-notice-icon"><IcoWarning /></span>
       <span className="damage-notice-copy">
-        <strong>Dano recebido de {notice.owner}</strong>
-        <span><b>{notice.source}</b>: {notice.detail}</span>
+        <strong>{notice.summary}</strong>
+        <span className="damage-notice-source"><b>Origem</b> {notice.owner} · {notice.source}</span>
+        <span className="damage-notice-detail">{notice.detail}</span>
       </span>
       <span className="damage-notice-hits">
         {notice.hits.map((hit, i) => (
@@ -2048,7 +2073,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   const title = commanderTitle(seat.commander);
   const deckRisk = seat.fatigue > 0 || seat.deckCount <= 3;
   return (
-    <div className={`hero-plate ${isEnemy ? 'enemy' : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
+    <div className={`hero-plate ${isEnemy ? 'enemy' : ''} ${hit ? 'hit-received' : ''} ${shielded ? 'shield-absorbed' : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
       {bubble && (
         <div className={`taunt-bubble ${isEnemy ? 'down' : 'up'}`} key={bubble.id}>{bubble.text}</div>
       )}

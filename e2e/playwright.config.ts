@@ -29,13 +29,13 @@ export default defineConfig({
     command: 'npm start',
     cwd: resolve(__dirname, '..'),
     url: 'http://localhost:8787/api/health',
-    // Atenção: com reuseExistingServer, um servidor já aberto na :8787 é
-    // reaproveitado — garanta que ele também rode com LC_LOCAL=1.
-    reuseExistingServer: true,
+    // Nunca reaproveite um servidor já aberto: se ele tiver sido iniciado sem
+    // LC_LOCAL=1, os testes podem criar usuários reais no Supabase.
+    reuseExistingServer: false,
     timeout: 30_000,
     // Modo local forçado: snapshot JSON + contas (e-mail+senha) em memória.
     // Os testes nunca tocam o Supabase de produção, mesmo com o .env da
     // raiz preenchido.
-    env: { ...(process.env as Record<string, string>), LC_LOCAL: '1' },
+    env: { ...(process.env as Record<string, string>), LC_LOCAL: '1', LEGENDSCLASH_E2E: '1' },
   },
 });

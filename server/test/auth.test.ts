@@ -410,4 +410,29 @@ describe('auth · sessões', () => {
     expect(again.isNew).toBe(false);
     expect(again.user.id).toBe(user.id);
   });
+
+  it('modo E2E força persistência local mesmo com Supabase configurado', async () => {
+    const prev = {
+      local: process.env.LC_LOCAL,
+      e2e: process.env.LEGENDSCLASH_E2E,
+      url: process.env.SUPABASE_URL,
+      key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    };
+    delete process.env.LC_LOCAL;
+    process.env.LEGENDSCLASH_E2E = '1';
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'fake-service-role-key';
+    try {
+      const store = await Store.create(tmpDbPath());
+      const { user, isNew } = store.findOrCreatePlayerByAuth('e2e@exemplo.com', null);
+      expect(isNew).toBe(true);
+      expect(user.email).toBe('e2e@exemplo.com');
+      expect(store.leaderboard()).toEqual([]);
+    } finally {
+      if (prev.local === undefined) delete process.env.LC_LOCAL; else process.env.LC_LOCAL = prev.local;
+      if (prev.e2e === undefined) delete process.env.LEGENDSCLASH_E2E; else process.env.LEGENDSCLASH_E2E = prev.e2e;
+      if (prev.url === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = prev.url;
+      if (prev.key === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = prev.key;
+    }
+  });
 });

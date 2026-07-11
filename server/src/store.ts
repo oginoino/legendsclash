@@ -72,6 +72,8 @@ export interface UserRecord {
    */
   guest: boolean;
   mmr: number;
+  /** Liga persistida no Supabase; no modo local pode ser derivada do MMR. */
+  league?: League;
   wins: number;
   losses: number;
   muted: string[];
@@ -120,6 +122,8 @@ interface DbShape {
 
 interface Persistence {
   load(): Promise<DbShape>;
+  /** Leitura fresca do ranking quando o backend suporta consulta persistida. */
+  loadRanking?(userId: string, limit: number, span: number): Promise<RankingSnapshot>;
   /** Write-through assíncrono: erros são logados, nunca derrubam a partida. */
   saveUser(user: UserRecord): void;
   saveMatch(userId: string, entry: MatchHistoryEntry): void;
@@ -132,6 +136,12 @@ interface Persistence {
    * Storage; no modo local devolve a própria data-URL (sem storage externo).
    */
   uploadAvatar(userId: string, bytes: Buffer, contentType: string): Promise<string>;
+}
+
+interface RankingSnapshot {
+  entries: UserRecord[];
+  myRank?: number;
+  around?: UserRecord[];
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -164,6 +174,7 @@ class JsonPersistence implements Persistence {
       u.accentStyle ??= DEFAULT_ACCENT_STYLE;
       u.profileCover ??= DEFAULT_PROFILE_COVER;
       u.guest = false; // só contas persistem; convidados vivem em memória
+      u.league ??= leagueOf(u.mmr) as League;
       u.streak ??= 0;
       u.lastPlayDay ??= 0;
       u.friends ??= [];
@@ -202,6 +213,12 @@ class JsonPersistence implements Persistence {
 // ─── PostgreSQL no Supabase ──────────────────────────────────────
 
 const HISTORY_LIMIT = 50;
+
+function coerceLeague(value: unknown, mmr: number): League {
+  return value === 'Bronze' || value === 'Prata' || value === 'Ouro'
+    ? value
+    : leagueOf(mmr) as League;
+}
 
 class SupabasePersistence implements Persistence {
   private client: SupabaseClient;
@@ -260,7 +277,43 @@ class SupabasePersistence implements Persistence {
       byPlayer.set(row.player_id, list);
     }
 
-    const users: UserRecord[] = (players ?? []).map((p) => ({
+    const users: UserRecord[] = (players ?? []).map((p) => this.userFromPlayerRow(p, byPlayer.get(p.id) ?? []));
+
+    const sessionRecords: SessionRecord[] = (sessions ?? []).map((s) => ({
+      tokenHash: s.token_hash,
+      playerId: s.player_id,
+      createdAt: new Date(s.created_at).getTime(),
+      expiresAt: new Date(s.expires_at).getTime(),
+      lastSeenAt: new Date(s.last_seen_at).getTime(),
+    }));
+
+    console.log(`[store] Supabase conectado: ${users.length} jogadores, ${sessionRecords.length} sessões ativas`);
+    // denúncias e eventos são write-only para o servidor do jogo (análise por SQL)
+    return { users, reports: [], sessions: sessionRecords, events: [] };
+  }
+
+  async loadRanking(userId: string, limit: number, span: number): Promise<RankingSnapshot> {
+    const { data, error } = await this.client
+      .from('players')
+      .select('*')
+      .or('wins.gt.0,losses.gt.0')
+      .order('mmr', { ascending: false })
+      .order('wins', { ascending: false })
+      .order('losses', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(`[store] falha ao carregar ranking: ${error.message}`);
+
+    const ranked = (data ?? []).map((p) => this.userFromPlayerRow(p));
+    const idx = ranked.findIndex((u) => u.id === userId);
+    return {
+      entries: ranked.slice(0, limit),
+      myRank: idx >= 0 ? idx + 1 : undefined,
+      around: idx >= 0 ? ranked.slice(Math.max(0, idx - span), idx + span + 1) : undefined,
+    };
+  }
+
+  private userFromPlayerRow(p: Record<string, any>, history: MatchHistoryEntry[] = []): UserRecord {
+    return {
       id: p.id,
       email: p.email,
       name: p.name,
@@ -274,27 +327,16 @@ class SupabasePersistence implements Persistence {
       authUserId: p.auth_user_id ?? null,
       guest: false,
       mmr: p.mmr,
+      league: coerceLeague(p.league, p.mmr),
       wins: p.wins,
       losses: p.losses,
       muted: p.muted ?? [],
       friends: p.friends ?? [],
-      history: byPlayer.get(p.id) ?? [],
+      history,
       createdAt: new Date(p.created_at).getTime(),
       streak: p.streak ?? 0,
       lastPlayDay: p.last_play_day ?? 0,
-    }));
-
-    const sessionRecords: SessionRecord[] = (sessions ?? []).map((s) => ({
-      tokenHash: s.token_hash,
-      playerId: s.player_id,
-      createdAt: new Date(s.created_at).getTime(),
-      expiresAt: new Date(s.expires_at).getTime(),
-      lastSeenAt: new Date(s.last_seen_at).getTime(),
-    }));
-
-    console.log(`[store] Supabase conectado: ${users.length} jogadores, ${sessionRecords.length} sessões ativas`);
-    // denúncias e eventos são write-only para o servidor do jogo (análise por SQL)
-    return { users, reports: [], sessions: sessionRecords, events: [] };
+    };
   }
 
   saveUser(user: UserRecord): void {
@@ -440,7 +482,8 @@ export class Store {
   static async create(jsonPath?: string): Promise<Store> {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const useSupabase = !!(url && key) && process.env.LC_LOCAL !== '1';
+    const forceLocal = process.env.LC_LOCAL === '1' || process.env.LEGENDSCLASH_E2E === '1';
+    const useSupabase = !!(url && key) && !forceLocal;
     const persistence = useSupabase
       ? new SupabasePersistence(url!, key!)
       : new JsonPersistence(jsonPath);
@@ -555,6 +598,7 @@ export class Store {
       authUserId,
       guest: false,
       mmr: BASE_MMR,
+      league: leagueOf(BASE_MMR) as League,
       wins: 0,
       losses: 0,
       muted: [],
@@ -591,6 +635,7 @@ export class Store {
       authUserId: null,
       guest: true,
       mmr: BASE_MMR,
+      league: leagueOf(BASE_MMR) as League,
       wins: 0,
       losses: 0,
       muted: [],
@@ -690,6 +735,7 @@ export class Store {
     target.accentStyle = guest.accentStyle;
     target.profileCover = guest.profileCover;
     target.mmr = guest.mmr;
+    target.league = guest.league ?? leagueOf(guest.mmr) as League;
     target.wins = guest.wins;
     target.losses = guest.losses;
     target.muted = [...guest.muted];
@@ -735,6 +781,7 @@ export class Store {
     for (const u of users) {
       if (!u.guest || this.byId.has(u.id) || !reachable.has(u.id)) continue;
       u.profileCover ??= DEFAULT_PROFILE_COVER;
+      u.league ??= leagueOf(u.mmr) as League;
       this.byId.set(u.id, u);
       restored++;
     }
@@ -780,6 +827,7 @@ export class Store {
     const u = this.byId.get(userId);
     if (!u) return;
     u.mmr = newMmr;
+    u.league = leagueOf(newMmr) as League;
     if (won) u.wins++; else u.losses++;
     u.history.unshift(entry);
     u.history = u.history.slice(0, 50);
@@ -827,6 +875,28 @@ export class Store {
     return { rank: idx + 1, around: ranked.slice(Math.max(0, idx - span), idx + span + 1) };
   }
 
+  /**
+   * Ranking para o cliente. Em produção, quando a persistência suporta consulta
+   * fresca, lê diretamente do Supabase para refletir MMR/liga persistidos mesmo
+   * após deploys, múltiplos processos ou ajustes administrativos. Se a leitura
+   * falhar, cai no cache em memória para não quebrar a UX.
+   */
+  async rankingSnapshot(userId: string, limit = 20, span = 3): Promise<RankingSnapshot> {
+    if (this.persistence.loadRanking) {
+      try {
+        return await this.persistence.loadRanking(userId, limit, span);
+      } catch (err) {
+        console.error('[store] ranking persistido indisponível; usando cache:', err);
+      }
+    }
+    const rv = this.rankView(userId, span);
+    return {
+      entries: this.leaderboard(limit),
+      myRank: rv?.rank,
+      around: rv?.around,
+    };
+  }
+
   profileOf(u: UserRecord): Profile {
     return {
       id: u.id,
@@ -841,7 +911,7 @@ export class Store {
       profileCover: u.profileCover,
       guest: u.guest,
       mmr: u.mmr,
-      league: leagueOf(u.mmr) as League,
+      league: u.league ?? leagueOf(u.mmr) as League,
       wins: u.wins,
       losses: u.losses,
       streak: u.streak,
@@ -864,7 +934,7 @@ export class Store {
       frame: u.frame,
       accentStyle: u.accentStyle,
       profileCover: u.profileCover,
-      league: leagueOf(u.mmr) as League,
+      league: u.league ?? leagueOf(u.mmr) as League,
       mmr: u.mmr,
       wins: u.wins,
       losses: u.losses,

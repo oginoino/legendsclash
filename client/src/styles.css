@@ -1608,15 +1608,16 @@ input:focus {
   top: calc(68px + env(safe-area-inset-top));
   left: 50%;
   z-index: 76;
-  width: min(560px, calc(100vw - 24px));
+  width: min(620px, calc(100vw - 24px));
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px 10px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 11px 13px;
   transform: translateX(-50%);
   background:
     radial-gradient(80% 140% at 12% 0%, #f8514926, transparent 58%),
+    linear-gradient(90deg, #f851491f, transparent 42%),
     linear-gradient(180deg, #202a3ff5, #0c121ef5),
     var(--noise);
   border: 1px solid #f8514977;
@@ -1626,9 +1627,19 @@ input:focus {
   animation: damage-notice-in .18s ease;
 }
 
+.damage-notice.heavy {
+  border-color: #ffb02e99;
+  box-shadow: 0 20px 54px #000e, 0 0 34px #ffb02e2f, inset 0 1px 0 #ffffff18;
+}
+
+.damage-notice.lethal {
+  border-color: #ff3b30cc;
+  box-shadow: 0 22px 62px #000f, 0 0 42px #ff3b3066, inset 0 1px 0 #ffffff20;
+}
+
 .damage-notice-icon {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -1646,13 +1657,13 @@ input:focus {
 .damage-notice-copy {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 3px;
   line-height: 1.2;
 }
 
 .damage-notice-copy strong {
   color: #ffe0dc;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .damage-notice-copy span {
@@ -1663,8 +1674,18 @@ input:focus {
   white-space: nowrap;
 }
 
+.damage-notice-source {
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.damage-notice-detail {
+  color: #d9e2f1;
+}
+
 .damage-notice-copy b {
-  color: var(--text);
+  margin-right: 4px;
+  color: var(--gold);
 }
 
 .damage-notice-hits {
@@ -1686,6 +1707,12 @@ input:focus {
   color: #ffd2cf;
   font-size: 11px;
   font-weight: 800;
+}
+
+.damage-hit.hp {
+  color: #ffd2cf;
+  border-color: #f8514970;
+  background: #2b0d0dcc;
 }
 
 .damage-hit.shield {
@@ -1721,6 +1748,17 @@ input:focus {
   border-radius: 16px;
   padding: 8px 16px;
   box-shadow: 0 6px 18px #00000055, inset 0 1px 0 #ffffff0e;
+}
+
+.hero-plate.hit-received {
+  border-color: #f8514999;
+  box-shadow: 0 8px 24px #0009, 0 0 28px #f8514938, inset 0 1px 0 #ffffff12;
+  animation: hero-impact .42s ease;
+}
+
+.hero-plate.shield-absorbed {
+  border-color: #6fd3e699;
+  box-shadow: 0 8px 24px #0009, 0 0 24px #6fd3e62e, inset 0 1px 0 #ffffff12;
 }
 
 /* anel da cor de destaque do comandante (some durante a mira p/ não competir) */
@@ -1825,6 +1863,20 @@ input:focus {
 
   80% {
     transform: translateX(3px);
+  }
+}
+
+@keyframes hero-impact {
+  20% {
+    transform: translateX(-3px);
+  }
+
+  45% {
+    transform: translateX(3px);
+  }
+
+  70% {
+    transform: translateX(-1px);
   }
 }
 
