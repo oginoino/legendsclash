@@ -1,9 +1,9 @@
 /**
- * Efeitos sonoros sintetizados via WebAudio — zero assets, latência mínima.
- * Dois barramentos de volume independentes e persistidos — SFX e música — para
- * o jogador dosar cada um; som nunca pode atrapalhar a partida (princípio de
- * game feel: feedback, não ruído). A música respeita preferência salva; para
- * novos jogadores começa baixa, mas audível, após o primeiro gesto.
+ * Efeitos sonoros sintetizados via WebAudio para latência mínima e uma trilha
+ * ambiente reproduzida por HTMLAudio. Dois barramentos de volume independentes
+ * e persistidos — SFX e música — permitem dosar cada camada; som nunca pode
+ * atrapalhar a partida. A música respeita a preferência salva e começa apenas
+ * depois do primeiro gesto, conforme a política de autoplay do navegador.
  */
 
 export type Bus = 'sfx' | 'music';
@@ -12,6 +12,12 @@ export const DEFAULT_VOLUMES: Record<Bus, number> = {
   sfx: 0.85,
   music: 0.22,
 };
+
+export const MUSIC_TRACK = {
+  title: 'Maré de Éter',
+  artist: 'haueu',
+  url: '/assets/audio/mare-de-eter-v1.mp3',
+} as const;
 
 let ctx: AudioContext | null = null;
 let sfxBus: GainNode | null = null;
@@ -188,90 +194,173 @@ export const sfx = {
 };
 
 // ─── Trilha ambiente ────────────────────────────────────────────
-// Cada nota é um oscilador "fire-and-forget" com stop próprio — não há
-// oscilador persistente para vazar; parar = só limpar o intervalo.
-let musicTimer: ReturnType<typeof setInterval> | null = null;
-let musicStep = 0;
-// progressão modal sombria: Am → F → Dm → E, com respiros de Éter no agudo.
-const MUSIC_PROG: Array<[root: number, third: number, fifth: number, accent: number]> = [
-  [110, 261.63, 329.63, 880],
-  [87.31, 220, 261.63, 698.46],
-  [73.42, 146.83, 220, 587.33],
-  [82.41, 164.81, 246.94, 659.25],
-];
+// O elemento nativo preserva buffering e decodificação eficientes no mobile.
+// Quando possível, sua saída passa pelo mesmo limiter dos SFX; navegadores sem
+// WebAudio continuam tocando pelo volume nativo do elemento.
+let musicElement: HTMLAudioElement | null = null;
+let musicSource: MediaElementAudioSourceNode | null = null;
+let musicRouted = false;
+let musicPauseTimer: number | null = null;
+let musicStarting = false;
+let musicGestureArmed = false;
+let resumeAfterVisibility = false;
 
-function musicVoice(
-  freq: number,
-  dur: number,
-  type: OscillatorType,
-  vol: number,
-  delay = 0,
-): void {
-  const c = ensure();
-  if (!c || !musicBus) return;
-  const t = c.currentTime + delay;
-  const o = c.createOscillator();
-  const g = c.createGain();
-  o.type = type;
-  o.frequency.value = freq;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol, t + Math.min(0.55, dur * 0.3));
-  g.gain.linearRampToValueAtTime(0.0001, t + dur);
-  o.connect(g);
-  g.connect(musicBus);
-  o.start(t);
-  o.stop(t + dur + 0.04);
-}
-
-function musicPulse(delay = 0): void {
-  const c = ensure();
-  if (!c || !musicBus) return;
-  const t = c.currentTime + delay;
-  const o = c.createOscillator();
-  const g = c.createGain();
-  o.type = 'sine';
-  o.frequency.setValueAtTime(92, t);
-  o.frequency.exponentialRampToValueAtTime(48, t + 0.24);
-  g.gain.setValueAtTime(0.026, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-  o.connect(g);
-  g.connect(musicBus);
-  o.start(t);
-  o.stop(t + 0.3);
-}
-
-function musicTick(): void {
-  const c = ensure();
-  if (!c || !musicBus || musicVol <= 0) return;
-  const [root, third, fifth, accent] = MUSIC_PROG[musicStep % MUSIC_PROG.length];
-  musicStep++;
-  musicVoice(root, 2.4, 'sine', 0.035);
-  musicVoice(third, 2.1, 'triangle', 0.021, 0.04);
-  musicVoice(fifth, 2.0, 'sine', 0.018, 0.08);
-  if (musicStep % 2 === 0) musicVoice(accent, 1.2, 'triangle', 0.012, 0.16);
-  if (musicStep % 4 === 0) musicPulse(0.05);
-}
-
-function startMusic(): void {
-  if (musicTimer != null) return;
-  ensure();
-  musicTick();
-  musicTimer = setInterval(musicTick, 1900);
-}
-
-function stopMusic(): void {
-  if (musicTimer != null) {
-    clearInterval(musicTimer);
-    musicTimer = null;
+function ensureMusicElement(): HTMLAudioElement | null {
+  if (musicElement) return musicElement;
+  try {
+    const audio = new Audio();
+    audio.preload = 'none';
+    audio.src = MUSIC_TRACK.url;
+    audio.loop = true;
+    audio.hidden = true;
+    audio.dataset.lcMusic = 'mare-de-eter';
+    audio.setAttribute('aria-hidden', 'true');
+    audio.setAttribute('playsinline', '');
+    if (document.body) document.body.appendChild(audio);
+    musicElement = audio;
+    return audio;
+  } catch {
+    return null;
   }
 }
 
-// Retoma a trilha se o jogador já tinha música ligada de uma sessão anterior.
-if (musicVol > 0) {
-  // espera o 1º gesto do usuário (política de autoplay) para destravar o áudio
+function routeMusicToBus(audio: HTMLAudioElement): boolean {
+  if (musicRouted) return true;
+  const c = ensure();
+  if (!c || !musicBus) return false;
   try {
-    const kick = () => { startMusic(); window.removeEventListener('pointerdown', kick); };
-    window.addEventListener('pointerdown', kick, { once: true });
+    musicSource ??= c.createMediaElementSource(audio);
+    musicSource.connect(musicBus);
+    musicRouted = true;
+    audio.volume = 1;
+    return true;
+  } catch {
+    audio.volume = musicVol;
+    return false;
+  }
+}
+
+function rampMusicVolume(target: number, seconds: number): void {
+  if (!ctx || !musicBus) return;
+  const now = ctx.currentTime;
+  musicBus.gain.cancelScheduledValues(now);
+  musicBus.gain.setValueAtTime(musicBus.gain.value, now);
+  musicBus.gain.linearRampToValueAtTime(clamp01(target), now + seconds);
+}
+
+function handleMusicGesture(): void {
+  musicGestureArmed = false;
+  window.removeEventListener('pointerdown', handleMusicGesture);
+  window.removeEventListener('keydown', handleMusicGesture);
+  startMusic();
+}
+
+function armMusicStartGesture(): void {
+  if (musicGestureArmed || musicVol <= 0) return;
+  musicGestureArmed = true;
+  window.addEventListener('pointerdown', handleMusicGesture, { once: true });
+  window.addEventListener('keydown', handleMusicGesture, { once: true });
+}
+
+function startMusic(): void {
+  if (musicVol <= 0) return;
+  const audio = ensureMusicElement();
+  if (!audio) return;
+  if (musicPauseTimer != null) {
+    window.clearTimeout(musicPauseTimer);
+    musicPauseTimer = null;
+  }
+
+  audio.preload = 'auto';
+  const wasPaused = audio.paused;
+  if (routeMusicToBus(audio)) {
+    if (wasPaused && ctx && musicBus) {
+      const now = ctx.currentTime;
+      musicBus.gain.cancelScheduledValues(now);
+      musicBus.gain.setValueAtTime(0, now);
+    }
+    rampMusicVolume(musicVol, wasPaused ? 0.65 : 0.12);
+  } else {
+    audio.volume = musicVol;
+  }
+  musicStarting = true;
+  void audio.play().then(() => {
+    musicStarting = false;
+  }).catch(() => {
+    musicStarting = false;
+    // Safari pode negar uma tentativa durante a retomada da aba; o gesto
+    // seguinte fica armado sem exigir que o jogador altere o volume.
+    armMusicStartGesture();
+  });
+}
+
+function stopMusic(): void {
+  const audio = musicElement;
+  if (!audio) return;
+  musicStarting = false;
+  if (audio.paused) {
+    audio.pause(); // também aborta um play() ainda pendente
+    return;
+  }
+  if (musicPauseTimer != null) window.clearTimeout(musicPauseTimer);
+
+  if (musicRouted && ctx && musicBus) {
+    rampMusicVolume(0, 0.24);
+    musicPauseTimer = window.setTimeout(() => {
+      audio.pause();
+      musicPauseTimer = null;
+    }, 260);
+  } else {
+    audio.pause();
+  }
+}
+
+function preloadMusicWhenIdle(): void {
+  if (musicVol <= 0) return;
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+  }).connection;
+  const constrained = connection?.saveData
+    || connection?.effectiveType === 'slow-2g'
+    || connection?.effectiveType === '2g';
+  const audio = ensureMusicElement();
+  if (!audio) return;
+  audio.preload = constrained ? 'metadata' : 'auto';
+  if (musicStarting || !audio.paused || audio.readyState >= 3) return;
+  audio.load();
+}
+
+// Prepara a faixa fora do caminho crítico. Em conexões móveis normais o arquivo
+// começa a aquecer após o load; economia de dados e 2G recebem só os metadados.
+if (musicVol > 0) {
+  try {
+    const schedulePreload = () => {
+      const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      };
+      if (idleWindow.requestIdleCallback) {
+        idleWindow.requestIdleCallback(preloadMusicWhenIdle, { timeout: 2500 });
+      } else {
+        window.setTimeout(preloadMusicWhenIdle, 1200);
+      }
+    };
+    if (document.readyState === 'complete') schedulePreload();
+    else window.addEventListener('load', schedulePreload, { once: true });
+
+    armMusicStartGesture();
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        resumeAfterVisibility = !!musicElement
+          && (!musicElement.paused || musicStarting)
+          && musicVol > 0;
+        musicStarting = false;
+        if (musicElement) musicElement.pause();
+      } else if (resumeAfterVisibility) {
+        resumeAfterVisibility = false;
+        startMusic();
+      }
+    });
   } catch { /* SSR/teste: sem window */ }
 }
 
@@ -296,7 +385,6 @@ export function setVolume(bus: Bus, v: number): void {
   } else {
     musicVol = vol;
     try { localStorage.setItem('lc_vol_music', String(vol)); } catch { /* ignore */ }
-    if (musicBus) musicBus.gain.value = vol;
     if (vol > 0) startMusic(); else stopMusic();
   }
   for (const listener of volumeListeners) listener();

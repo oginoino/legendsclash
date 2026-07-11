@@ -10,7 +10,7 @@ import {
   IcoStreak,
 } from '../icons';
 import {
-  DEFAULT_VOLUMES, getVolume, resetVolumes, setVolume, sfx, subscribeVolume,
+  DEFAULT_VOLUMES, getVolume, MUSIC_TRACK, resetVolumes, setVolume, sfx, subscribeVolume,
 } from '../sounds';
 import {
   resetLearningProgress, resetPreferences, triggerHaptic, updatePreferences, usePreferences,
@@ -333,7 +333,7 @@ export function ProfileView({ onClose }: { onClose: () => void }) {
                 <AudioRow
                   bus="music"
                   label="Música"
-                  description="Trilha ambiente durante menus e Embates."
+                  description={`${MUSIC_TRACK.title} · ${MUSIC_TRACK.artist}, em loop nos menus e Embates.`}
                   value={musicVolume}
                   onChange={(value) => changeVolume('music', value)}
                   onToggleMute={() => toggleMute('music')}
