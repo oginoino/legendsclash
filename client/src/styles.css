@@ -2918,6 +2918,19 @@ input:focus {
   display: none;
 }
 
+/* Depois que a intenção vertical foi confirmada, a arena assume o gesto até
+   pointerup/pointercancel. Antes disso a mão continua com pan-x nativo. */
+.game-screen.dragging-hand-card {
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.game-screen.dragging-hand-card .hand,
+.game-screen.dragging-hand-card .hand .card {
+  touch-action: none;
+}
+
 /* carta não-jogável: só esmaece (sinal de "inativa"). Sem dessaturar — o
    filtro de grupo lavava a ilustração e quebrava a consistência com a arte
    da mesa/codex (que nunca dessaturam). O realce azul + brilho da .playable
@@ -3395,6 +3408,12 @@ input:focus {
   box-shadow: 0 7px 18px #000c, 0 0 18px #e3b34155;
 }
 
+.drag-card-layer.magnetized .drag-card-label {
+  border-color: #fff0ae;
+  background: #151006f5;
+  box-shadow: 0 7px 18px #000c, 0 0 0 2px #e3b34133, 0 0 24px #e3b34177;
+}
+
 .drop-target-marker {
   position: absolute;
   top: -13px;
@@ -3444,6 +3463,52 @@ input:focus {
   50% {
     filter: brightness(1.2);
     transform: translateX(-50%) scale(1.08);
+  }
+}
+
+@media (pointer: coarse) {
+  .my-row .creature {
+    touch-action: none;
+  }
+
+  /* A prévia fica acima do dedo e um pouco menor que a carta de leitura. Isso
+     preserva a visão do alvo e mantém o ponto de soltura desobstruído. */
+  .drag-card-layer.input-touch {
+    width: clamp(118px, 31vw, 128px);
+    height: clamp(246px, 65vw, 268px);
+  }
+
+  .drag-card-layer.input-touch.place-above {
+    transform: translate(-50%, calc(-100% - 18px)) rotate(-1deg);
+  }
+
+  .drag-card-layer.input-touch.place-below {
+    transform: translate(-50%, 34px) rotate(1deg);
+  }
+
+  .drop-target-marker {
+    top: -16px;
+    width: 30px;
+    height: 30px;
+  }
+
+  .drop-target-marker::after {
+    content: '';
+    position: absolute;
+    inset: -9px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    opacity: .18;
+  }
+
+  .drop-target-marker svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .creature.drop-hovered,
+  .portrait.drop-hovered {
+    box-shadow: 0 0 0 4px #080d16, 0 0 34px #e3b341dd, 0 8px 20px #0009 !important;
   }
 }
 

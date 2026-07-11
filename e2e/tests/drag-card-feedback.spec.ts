@@ -81,13 +81,13 @@ test('carta arrastada fica acima da arena e revela destinos validos', async ({ b
 
     for (let i = 0; i < await candidates.count() && !targeted; i++) {
       const card = candidates.nth(i);
+      await card.scrollIntoViewIfNeeded();
       const from = await card.boundingBox();
-      const board = await current.locator('.game-board').boundingBox();
-      if (!from || !board) continue;
+      if (!from) continue;
 
       await current.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
       await current.mouse.down();
-      await current.mouse.move(board.x + board.width / 2, board.y + board.height / 2, { steps: 10 });
+      await current.mouse.move(from.x + from.width / 2, Math.max(60, from.y - 80), { steps: 10 });
       await expect(current.locator('.drag-card-layer')).toBeVisible();
 
       const marker = current.locator('.drop-target-marker').first();

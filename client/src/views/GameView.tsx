@@ -209,8 +209,16 @@ const SPELL_DMG: Record<string, number> = {
   s_faisca: 2, s_bola_de_fogo: 5, s_lanca_gelo: 3, s_julgamento: 3,
 };
 
-/** Movimento mínimo (px) para um toque virar arrasto em vez de clique. */
+/** Movimento mínimo (px) para mouse virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
+/** O dedo oscila mais que o mouse: uma margem maior preserva o tap intencional. */
+const TOUCH_DRAG_THRESHOLD_PX = 14;
+/** Deslocamento vertical mínimo para assumir que o dedo quer sair da mão. */
+const TOUCH_VERTICAL_INTENT_PX = 10;
+/** Margem ao redor de um alvo para compensar a área escondida sob o dedo. */
+const TOUCH_TARGET_MAGNET_PX = 32;
+/** Tolerância fora da borda visual da mesa ao soltar uma criatura. */
+const TOUCH_DROP_SLOP_PX = 24;
 
 function formatTurnClock(seconds: number): string {
   const safe = Math.max(0, seconds);
@@ -224,6 +232,7 @@ const CAN_HOVER = typeof window !== 'undefined'
 const TOUCH_CONFIRM_QUERY = '(hover: none), (pointer: coarse)';
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
+const TOUCH_PLAY_LIFT_PX = 56;
 
 function noTargetActionLabel(defId: string): string {
   const def = CARDS[defId];
@@ -362,9 +371,9 @@ function arrowPoint(a: { x1: number; y1: number; x2: number; y2: number }, t: nu
 
 /**
  * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
- * `pending` ainda pode virar clique; `target` mira com a seta; `lift` levanta
- * uma carta sem alvo para jogá-la; `dead` consome o gesto sem ação (feedback
- * de erro já dado).
+ * `pending` ainda pode virar clique; `pan` pertence à rolagem da mão;
+ * `target` mira com a seta; `lift` levanta uma carta sem alvo para jogá-la;
+ * `dead` consome o gesto sem ação (feedback de erro já dado).
  */
 interface DragState {
   pointerId: number;
@@ -374,7 +383,9 @@ interface DragState {
   defId: string;
   startX: number;
   startY: number;
-  mode: 'pending' | 'target' | 'lift' | 'dead';
+  mode: 'pending' | 'pan' | 'target' | 'lift' | 'dead';
+  captureEl?: HTMLElement | null;
+  lockedTarget?: string | null;
 }
 
 interface DragCardVisual {
@@ -385,6 +396,8 @@ interface DragCardVisual {
   mode: 'target' | 'play';
   valid: boolean;
   label: string;
+  pointerType: string;
+  magnetized: boolean;
 }
 
 /** Alvo sob o cursor/dedo, resolvido pelos data-anchor já presentes no DOM. */
@@ -439,6 +452,7 @@ export function GameView() {
   const inspectTimerRef = useRef<number | null>(null);
   const handRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const cancelDragRef = useRef<() => void>(() => undefined);
   // após um arrasto real, o clique sintético do mouse não deve disparar ações
   const suppressClickRef = useRef(false);
   // entrega aos listeners de window (registrados uma vez) o fechamento mais
@@ -533,7 +547,11 @@ export function GameView() {
   // cancela a seleção com Esc ou clique com o botão direito
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { clearAim(); setTauntOpen(false); }
+      if (e.key === 'Escape') {
+        cancelDragRef.current();
+        clearAim();
+        setTauntOpen(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -543,30 +561,77 @@ export function GameView() {
   // (no toque o pointer é capturado pelo elemento de origem; na window os
   // eventos chegam igual e o alvo real vem de elementFromPoint).
   useEffect(() => {
+    const releaseCapture = (drag: DragState) => {
+      if (drag.pointerId < 0 || !drag.captureEl) return;
+      try {
+        if (drag.captureEl.hasPointerCapture(drag.pointerId)) {
+          drag.captureEl.releasePointerCapture(drag.pointerId);
+        }
+      } catch { /* o navegador pode liberar a captura antes do pointercancel */ }
+    };
+    const suppressSyntheticClick = () => {
+      suppressClickRef.current = true;
+      setTimeout(() => { suppressClickRef.current = false; }, 400);
+    };
+    const cancelActiveDrag = () => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      dragRef.current = null;
+      releaseCapture(drag);
+      dragApiRef.current?.cancel(drag);
+    };
+    cancelDragRef.current = cancelActiveDrag;
+
     const moveDrag = (drag: DragState, x: number, y: number) => {
       if (!dragApiRef.current) return;
       if (drag.mode === 'pending') {
-        if (Math.hypot(x - drag.startX, y - drag.startY) < DRAG_THRESHOLD_PX) return;
+        const dx = x - drag.startX;
+        const dy = y - drag.startY;
+        const threshold = drag.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD_PX : DRAG_THRESHOLD_PX;
+        if (Math.hypot(dx, dy) < threshold) return;
+
+        if (drag.pointerType === 'touch') {
+          const horizontalIntent = Math.abs(dx) > Math.abs(dy) + 6;
+          const upwardIntent = -dy >= TOUCH_VERTICAL_INTENT_PX;
+          if (horizontalIntent || !upwardIntent) {
+            drag.mode = 'pan';
+            return;
+          }
+        }
+
         dragApiRef.current.begin(drag);
+        const activeMode = drag.mode as DragState['mode'];
+        if ((activeMode === 'target' || activeMode === 'lift') && drag.pointerId >= 0 && drag.captureEl) {
+          try { drag.captureEl.setPointerCapture(drag.pointerId); } catch { /* captura é melhoria progressiva */ }
+        }
       }
+      if (drag.mode === 'pan' || drag.mode === 'dead') return;
       dragApiRef.current.move(drag, x, y);
     };
     const finishDrag = (drag: DragState, x: number, y: number) => {
       if (!dragApiRef.current) return;
       dragRef.current = null;
+      releaseCapture(drag);
       if (drag.mode === 'pending') {
         if (drag.pointerType === 'touch') setMouse(null);
         return; // foi um toque/clique: a ação nativa decide
       }
-      // o mouse sintetiza um click após o arrasto — não pode virar ação
-      suppressClickRef.current = true;
-      setTimeout(() => { suppressClickRef.current = false; }, 400);
+      // Navegadores podem sintetizar click após arrasto/pan: nunca o converte
+      // numa segunda ação ou abertura involuntária da carta.
+      suppressSyntheticClick();
+      if (drag.mode === 'pan' || drag.mode === 'dead') {
+        dragApiRef.current.cancel(drag);
+        return;
+      }
       dragApiRef.current.finish(drag, x, y);
     };
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
       moveDrag(drag, e.clientX, e.clientY);
+      if (drag.pointerType === 'touch' && (drag.mode === 'target' || drag.mode === 'lift')) {
+        e.preventDefault();
+      }
     };
     const onUp = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -580,30 +645,39 @@ export function GameView() {
     const onCancel = (e: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
-      dragRef.current = null;
-      dragApiRef.current.cancel(drag);
+      cancelActiveDrag();
     };
     const onMouseMove = (e: MouseEvent) => {
       const drag = dragRef.current;
-      if (!drag || drag.pointerType !== 'mouse') return;
+      // Fallback apenas para navegadores sem Pointer Events. Num mouse moderno,
+      // pointermove e mousemove chegam juntos e processar ambos gera jitter.
+      if (!drag || drag.pointerId !== -1) return;
       moveDrag(drag, e.clientX, e.clientY);
     };
     const onMouseUp = (e: MouseEvent) => {
       const drag = dragRef.current;
-      if (!drag || drag.pointerType !== 'mouse') return;
+      if (!drag || drag.pointerId !== -1) return;
       finishDrag(drag, e.clientX, e.clientY);
     };
-    window.addEventListener('pointermove', onMove);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') cancelActiveDrag();
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('blur', cancelActiveDrag);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', cancelActiveDrag);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelDragRef.current = () => undefined;
     };
   }, []);
 
@@ -1187,9 +1261,7 @@ export function GameView() {
 
   // ── Arrasto para mirar/jogar (mouse e toque via Pointer Events) ──
 
-  /** Resolve o alvo sob o ponteiro pelos data-anchor já presentes no DOM. */
-  function resolveTargetAt(x: number, y: number): AimTarget | null {
-    const anchor = document.elementFromPoint(x, y)?.closest('[data-anchor]')?.getAttribute('data-anchor');
+  function targetFromAnchor(anchor: string | null | undefined): AimTarget | null {
     if (!anchor || !game || !me) return null;
     if (anchor === `face-${enemySeatIdx}`) return { kind: 'face' };
     if (anchor.startsWith('cr-')) {
@@ -1200,6 +1272,12 @@ export function GameView() {
       if (mc) return { kind: 'my-creature', c: mc };
     }
     return null;
+  }
+
+  /** Resolve o alvo exato sob o ponteiro pelos data-anchor presentes no DOM. */
+  function resolveTargetAt(x: number, y: number): AimTarget | null {
+    const anchor = document.elementFromPoint(x, y)?.closest('[data-anchor]')?.getAttribute('data-anchor');
+    return targetFromAnchor(anchor);
   }
 
   function aimTargetToHover(t: AimTarget | null): HoverTarget {
@@ -1225,6 +1303,76 @@ export function GameView() {
     return target.kind === 'enemy-creature';
   }
 
+  function targetAnchor(target: AimTarget): string {
+    return target.kind === 'face' ? `face-${enemySeatIdx}` : `cr-${target.c.iid}`;
+  }
+
+  function targetKey(target: AimTarget): string {
+    return target.kind === 'face' ? 'face' : `${target.kind}-${target.c.iid}`;
+  }
+
+  function distanceFromRect(x: number, y: number, rect: DOMRect): number {
+    const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+    const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+    return Math.hypot(dx, dy);
+  }
+
+  /**
+   * O dedo cobre parte do alvo. Quando não há um elemento exatamente sob ele,
+   * aproxima para o destino válido mais próximo, sem atravessar um alvo inválido.
+   */
+  function resolveDragTargetAt(drag: DragState, x: number, y: number): { target: AimTarget | null; magnetized: boolean } {
+    const exact = resolveTargetAt(x, y);
+    if (exact || drag.pointerType !== 'touch') return { target: exact, magnetized: false };
+
+    const candidates: AimTarget[] = [
+      { kind: 'face' },
+      ...enemy.board.map((c) => ({ kind: 'enemy-creature' as const, c })),
+      ...me!.board.map((c) => ({ kind: 'my-creature' as const, c })),
+    ];
+    let nearest: AimTarget | null = null;
+    let nearestDistance = TOUCH_TARGET_MAGNET_PX + 1;
+    for (const candidate of candidates) {
+      if (!validTargetForDrag(drag, candidate)) continue;
+      const element = document.querySelector<HTMLElement>(`[data-anchor="${targetAnchor(candidate)}"]`);
+      if (!element) continue;
+      const distance = distanceFromRect(x, y, element.getBoundingClientRect());
+      if (distance < nearestDistance) {
+        nearest = candidate;
+        nearestDistance = distance;
+      }
+    }
+    return {
+      target: nearestDistance <= TOUCH_TARGET_MAGNET_PX ? nearest : null,
+      magnetized: !!nearest && nearestDistance <= TOUCH_TARGET_MAGNET_PX,
+    };
+  }
+
+  function setDragLockFeedback(drag: DragState, target: AimTarget | null, valid: boolean): void {
+    const next = valid && target ? targetKey(target) : null;
+    if (drag.pointerType === 'touch' && next && next !== drag.lockedTarget) {
+      try { navigator.vibrate?.(8); } catch { /* vibração é melhoria progressiva */ }
+    }
+    drag.lockedTarget = next;
+  }
+
+  function isPlayDropReady(drag: DragState, x: number, y: number): boolean {
+    const def = CARDS[drag.defId];
+    if (!def) return false;
+    const lift = drag.startY - y;
+    const requiredLift = drag.pointerType === 'touch' ? TOUCH_PLAY_LIFT_PX : PLAY_LIFT_PX;
+    if (lift < requiredLift) return false;
+    if (def.type !== 'creature' || drag.pointerType !== 'touch') return true;
+
+    const row = document.querySelector<HTMLElement>('.my-row');
+    if (!row) return false;
+    const rect = row.getBoundingClientRect();
+    return x >= rect.left - TOUCH_DROP_SLOP_PX
+      && x <= rect.right + TOUCH_DROP_SLOP_PX
+      && y >= rect.top - TOUCH_DROP_SLOP_PX
+      && y <= rect.bottom + TOUCH_DROP_SLOP_PX;
+  }
+
   function targetLabel(target: AimTarget | null, valid: boolean, defId: string): string {
     const def = CARDS[defId];
     if (valid && target) {
@@ -1237,6 +1385,7 @@ export function GameView() {
   }
 
   function playDropLabel(defId: string, ready: boolean): string {
+    if (!ready && CARDS[defId]?.type === 'creature') return 'Leve até sua mesa';
     const action = noTargetActionLabel(defId).toLocaleLowerCase('pt-BR');
     return ready ? `Solte para ${action}` : `Arraste para ${action}`;
   }
@@ -1245,6 +1394,7 @@ export function GameView() {
   function onTargetPointerDown(e: React.PointerEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
     if (!myTurn || !e.isPrimary || e.button !== 0) return;
     if ((e.target as Element).closest('.creature-info')) return;
+    if (dragRef.current) cancelDragRef.current();
     dragRef.current = {
       pointerId: e.pointerId,
       pointerType: e.pointerType,
@@ -1252,6 +1402,7 @@ export function GameView() {
       startX: e.clientX,
       startY: e.clientY,
       mode: 'pending',
+      captureEl: e.currentTarget as HTMLElement,
     };
   }
 
@@ -1308,6 +1459,8 @@ export function GameView() {
           mode: 'target',
           valid: false,
           label: targetLabel(null, false, drag.defId),
+          pointerType: drag.pointerType,
+          magnetized: false,
         });
       } else {
         setSelection(null);
@@ -1320,13 +1473,16 @@ export function GameView() {
           mode: 'play',
           valid: false,
           label: playDropLabel(drag.defId, false),
+          pointerType: drag.pointerType,
+          magnetized: false,
         });
       }
     },
     move(drag, x, y) {
       if (drag.mode === 'target') {
-        const target = resolveTargetAt(x, y);
+        const { target, magnetized } = resolveDragTargetAt(drag, x, y);
         const valid = validTargetForDrag(drag, target);
+        setDragLockFeedback(drag, target, valid);
         setMouse({ x, y });
         setHover(aimTargetToHover(target));
         setDragCard((card) => card ? {
@@ -1335,11 +1491,17 @@ export function GameView() {
           y,
           valid,
           label: targetLabel(target, valid, drag.defId),
+          magnetized,
         } : card);
       } else if (drag.mode === 'lift') {
         const def = CARDS[drag.defId];
         const hasRoom = def.type !== 'creature' || me!.board.length < MAX_BOARD;
-        const ready = hasRoom && drag.startY - y >= PLAY_LIFT_PX;
+        const ready = hasRoom && isPlayDropReady(drag, x, y);
+        const nextLock = ready ? 'play-zone' : null;
+        if (drag.pointerType === 'touch' && nextLock && drag.lockedTarget !== nextLock) {
+          try { navigator.vibrate?.(8); } catch { /* vibração é melhoria progressiva */ }
+        }
+        drag.lockedTarget = nextLock;
         setDragCard((card) => card ? {
           ...card,
           x,
@@ -1352,7 +1514,7 @@ export function GameView() {
     finish(drag, x, y) {
       setDragCard(null);
       if (drag.mode === 'target') {
-        const t = resolveTargetAt(x, y);
+        const { target: t } = resolveDragTargetAt(drag, x, y);
         const valid = validTargetForDrag(drag, t);
         if (drag.kind === 'creature') {
           const attacker = me?.board.find((c) => c.iid === drag.iid);
@@ -1370,7 +1532,7 @@ export function GameView() {
       } else if (drag.mode === 'lift') {
         const def = CARDS[drag.defId];
         const hasRoom = def.type !== 'creature' || me!.board.length < MAX_BOARD;
-        if (hasRoom && drag.startY - y >= PLAY_LIFT_PX) performPlay(drag.iid, drag.defId, null);
+        if (hasRoom && isPlayDropReady(drag, x, y)) performPlay(drag.iid, drag.defId, null);
         else clearInspect('hand');
       }
     },
@@ -1378,6 +1540,8 @@ export function GameView() {
       // navegador tomou o gesto (rolagem da mão, gesto de sistema): limpa tudo
       if (drag.mode === 'target') clearAim();
       setDragCard(null);
+      setMouse(null);
+      setHover(null);
     },
   };
 
@@ -1984,11 +2148,16 @@ export function GameView() {
           className={[
             'drag-card-layer',
             `drag-${dragCard.mode}`,
+            `input-${dragCard.pointerType}`,
             dragCard.valid ? 'valid' : '',
+            dragCard.magnetized ? 'magnetized' : '',
             CARDS[dragCard.defId]?.target === 'friendly-creature' ? 'support' : '',
             dragCard.y < 240 ? 'place-below' : 'place-above',
           ].filter(Boolean).join(' ')}
-          style={{ left: dragCard.x, top: dragCard.y }}
+          style={{
+            left: `clamp(74px, ${dragCard.x}px, calc(100vw - 74px))`,
+            top: dragCard.y,
+          }}
           aria-hidden="true"
         >
           <CardView
