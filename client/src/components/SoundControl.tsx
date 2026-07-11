@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getVolume, setVolume, type Bus } from '../sounds';
+import { getVolume, setVolume, subscribeVolume, type Bus } from '../sounds';
 import { IcoMuted, IcoSound, IcoMusic } from '../icons';
 
 /**
@@ -12,6 +12,11 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
   const [sfxVol, setSfx] = useState(() => getVolume('sfx'));
   const [musicVol, setMusic] = useState(() => getVolume('music'));
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => subscribeVolume(() => {
+    setSfx(getVolume('sfx'));
+    setMusic(getVolume('music'));
+  }), []);
 
   useEffect(() => {
     if (!open) return;
@@ -50,7 +55,7 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
           <label className="volume-row">
             <span><IcoSound className="ic" /> Efeitos</span>
             <input
-              type="range" min={0} max={1} step={0.05} value={sfxVol}
+              type="range" min={0} max={1} step={0.01} value={sfxVol}
               onChange={(e) => change('sfx', Number(e.target.value))}
               aria-label="Volume dos efeitos"
             />
@@ -58,7 +63,7 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
           <label className="volume-row">
             <span><IcoMusic className="ic" /> Música</span>
             <input
-              type="range" min={0} max={1} step={0.05} value={musicVol}
+              type="range" min={0} max={1} step={0.01} value={musicVol}
               onChange={(e) => change('music', Number(e.target.value))}
               aria-label="Volume da música"
             />

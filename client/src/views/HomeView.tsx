@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CARDS, cardOfDay } from '@legendsclash/shared';
 import { logout, openAccountPrompt, pickFaction, send, useAppState } from '../store';
 import { Avatar, InlineAvatar, Sigil, profileCoverVars } from '../cosmetics';
 import {
-  IcoSparkle,
   IcoStar,
   IcoStreak,
   IcoCheck,
@@ -17,12 +16,13 @@ import {
   IcoHourglass,
   IcoRealm,
   IcoShield,
+  IcoProfile,
 } from '../icons';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { CardArt } from '../components/CardArt';
-import { ProfileModal } from '../components/ProfileModal';
 import { RulesModal } from '../components/RulesModal';
 import { CodexView } from './CodexView';
+import { ProfileView } from './ProfileView';
 import { CARD_LORE, FACTIONS, WORLD } from '../lore';
 
 /** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
@@ -82,13 +82,33 @@ export function HomeView() {
   const s = useAppState();
   const [joinCode, setJoinCode] = useState('');
   const [showRules, setShowRules] = useState(false);
-  const [showCustomize, setShowCustomize] = useState(false);
+  const [showProfile, setShowProfile] = useState(() => location.hash === '#profile');
   const [showCodex, setShowCodex] = useState(false);
   const [codexInitialFaction, setCodexInitialFaction] = useState<string | null>(null);
   const [openMatch, setOpenMatch] = useState<string | null>(null);
   const p = s.profile;
 
+  useEffect(() => {
+    const syncProfileRoute = () => setShowProfile(location.hash === '#profile');
+    window.addEventListener('popstate', syncProfileRoute);
+    return () => window.removeEventListener('popstate', syncProfileRoute);
+  }, []);
+
+  const openProfile = () => {
+    if (location.hash !== '#profile') history.pushState({ lcView: 'profile' }, '', '#profile');
+    setShowProfile(true);
+  };
+
+  const closeProfile = () => {
+    if (location.hash === '#profile' && history.state?.lcView === 'profile') history.back();
+    else {
+      history.replaceState(null, '', `${location.pathname}${location.search}`);
+      setShowProfile(false);
+    }
+  };
+
   if (!p) return <div className="centered">Carregando perfil…</div>;
+  if (showProfile) return <ProfileView onClose={closeProfile} />;
 
   const progress = leagueProgress(p.mmr);
   const dailyCardId = cardOfDay(Date.now());
@@ -124,7 +144,7 @@ export function HomeView() {
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
             </div>
           </div>
-          <button className="btn ghost" onClick={() => setShowCustomize(true)}><IcoSparkle className="ic" /> Personalizar</button>
+          <button className="btn ghost" onClick={openProfile}><IcoProfile className="ic" /> Perfil</button>
           {p.guest && (
             <button className="btn primary" onClick={openAccountPrompt}>Criar conta</button>
           )}
@@ -410,7 +430,6 @@ export function HomeView() {
         </div>
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
-      {showCustomize && <ProfileModal onClose={() => setShowCustomize(false)} />}
       {showCodex && <CodexView initialFaction={codexInitialFaction} onClose={() => setShowCodex(false)} />}
     </div>
   );

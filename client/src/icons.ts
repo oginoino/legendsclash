@@ -17,6 +17,8 @@ import {
   GiPadlock, GiRoundStar, GiSunbeams, GiStarSwirl, GiWolfHead, GiCrystalBall, GiDragonHead,
   GiShakingHands, GiBrokenHeart, GiSunglasses, GiCrenelCrown, GiThumbUp, GiWaveCrest,
   GiMagicShield, GiPauseButton,
+  GiAchievement, GiCharacter, GiMagicSwirl, GiReturnArrow, GiSettingsKnobs,
+  GiVibratingSmartphone,
 } from 'react-icons/gi';
 
 export {
@@ -42,6 +44,13 @@ export {
   GiLightBulb as IcoHint,
   GiAlarmClock as IcoTimer,
   GiPauseButton as IcoPause,
+  GiReturnArrow as IcoBack,
+  GiCharacter as IcoProfile,
+  GiSettingsKnobs as IcoPreferences,
+  GiVibratingSmartphone as IcoHaptics,
+  GiMagicSwirl as IcoMotion,
+  GiAchievement as IcoAchievement,
+  GiCycle as IcoReset,
   GiSandsOfTime as IcoHourglass,
   GiSparkles as IcoSparkle, // personalizar / conquista desbloqueada
   GiCheckeredFlag as IcoFinish,
