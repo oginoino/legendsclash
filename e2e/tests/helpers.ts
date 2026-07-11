@@ -90,7 +90,7 @@ export async function passMulligan(p: Page): Promise<void> {
 }
 
 /**
- * Tutorial da 1ª partida (mostrado uma vez por dispositivo): pula se presente.
+ * Tutorial da 1ª partida (mostrado uma vez por jogador): pula se presente.
  * Contextos de teste nascem sem a flag em localStorage, então aparece no 1º jogo.
  */
 export async function passTutorial(p: Page): Promise<void> {

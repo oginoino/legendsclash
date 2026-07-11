@@ -8,7 +8,7 @@ import {
 function players(n: number): MatchPlayer[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `p${i}`, name: `Jogador ${i}`, avatar: 'shield', commander: 'shield', accent: '#e3b341',
-    photo: null, frame: 'none', accentStyle: 'solid', mmr: 1000,
+    photo: null, frame: 'none', accentStyle: 'solid', mmr: 1000, tutorialEligible: true,
   }));
 }
 
@@ -682,6 +682,53 @@ describe('condições de vitória (slide "Conceito e condições de vitória")',
     expect(m.viewFor('p0').turnSeat).toBe(0);
     vi.advanceTimersByTime(11_000);
     expect(m.viewFor('p0').turnSeat).toBe(1);
+  });
+
+  it('tutorial inicial congela o tempo e retoma do mesmo ponto', () => {
+    vi.useFakeTimers();
+    const { m } = makeMatch(2, 10);
+    track(m).start();
+    vi.advanceTimersByTime(2_000);
+
+    // Qualquer tutorial inicial aberto segura o relogio para os dois lados.
+    m.setTutorialOpen('p1', true);
+    m.setTutorialOpen('p0', true);
+    const paused = m.viewFor('p0');
+    expect(paused.turnPaused).toBe(true);
+    expect(paused.turnTimeLeftMs).toBe(8_000);
+    expect(() => m.endTurn('p0')).toThrow('A partida está pausada durante o tutorial inicial.');
+
+    vi.advanceTimersByTime(20_000);
+    expect(m.viewFor('p0')).toMatchObject({ turnSeat: 0, turnPaused: true, turnTimeLeftMs: 8_000 });
+
+    // Fechar apenas um tutorial nao basta; o ultimo libera os 8s preservados.
+    m.setTutorialOpen('p1', false);
+    expect(m.viewFor('p0').turnPaused).toBe(true);
+    m.setTutorialOpen('p0', false);
+    expect(m.viewFor('p0').turnPaused).toBe(false);
+    vi.advanceTimersByTime(7_999);
+    expect(m.viewFor('p0').turnSeat).toBe(0);
+    vi.advanceTimersByTime(2);
+    expect(m.viewFor('p0').turnSeat).toBe(1);
+  });
+
+  it('desconexao libera uma pausa de tutorial abandonada', () => {
+    vi.useFakeTimers();
+    const { m } = makeMatch(2, 10);
+    track(m).start();
+    m.setTutorialOpen('p1', true);
+    expect(m.viewFor('p0').turnPaused).toBe(true);
+    m.handleDisconnect('p1');
+    expect(m.viewFor('p0').turnPaused).toBe(false);
+  });
+
+  it('jogador veterano nao pode pausar o turno pelo protocolo de tutorial', () => {
+    vi.useFakeTimers();
+    const { m } = makeMatch(2, 10);
+    track(m).start();
+    m.seats[0].player.tutorialEligible = false;
+    m.setTutorialOpen('p0', true);
+    expect(m.viewFor('p0').turnPaused).toBe(false);
   });
 
   it('teto de turnos encerra por morte súbita; a maior vida vence', () => {

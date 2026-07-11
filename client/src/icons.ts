@@ -16,7 +16,7 @@ import {
   GiTrophy, GiRibbonMedal, GiTargetArrows, GiPodiumWinner, GiPodiumSecond, GiPodiumThird, GiFlame,
   GiPadlock, GiRoundStar, GiSunbeams, GiStarSwirl, GiWolfHead, GiCrystalBall, GiDragonHead,
   GiShakingHands, GiBrokenHeart, GiSunglasses, GiCrenelCrown, GiThumbUp, GiWaveCrest,
-  GiMagicShield,
+  GiMagicShield, GiPauseButton,
 } from 'react-icons/gi';
 
 export {
@@ -41,6 +41,7 @@ export {
   GiHazardSign as IcoWarning,
   GiLightBulb as IcoHint,
   GiAlarmClock as IcoTimer,
+  GiPauseButton as IcoPause,
   GiSandsOfTime as IcoHourglass,
   GiSparkles as IcoSparkle, // personalizar / conquista desbloqueada
   GiCheckeredFlag as IcoFinish,

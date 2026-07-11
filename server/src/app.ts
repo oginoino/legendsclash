@@ -123,6 +123,12 @@ export class App {
       case 'chat:unmute': return this.chatMute(user, msg.playerId, false);
       case 'chat:report': return this.chatReport(user, msg.playerId, msg.reason);
       case 'game:mulligan': return this.withMatch(user, (m) => m.mulligan(user.id, msg.iids));
+      case 'game:tutorial': {
+        // Sinal de UI idempotente: ao desmontar/reconectar a partida pode ja ter acabado.
+        const match = this.matches.get(user.id);
+        if (match && !match.finished) match.setTutorialOpen(user.id, msg.open === true);
+        return;
+      }
       case 'game:play': return this.withMatch(user, (m) => m.playCard(user.id, msg.iid, msg.target));
       case 'game:attack': return this.withMatch(user, (m) => m.attack(user.id, msg.attackerIid, msg.target));
       case 'game:endTurn': return this.withMatch(user, (m) => m.endTurn(user.id));
@@ -360,6 +366,7 @@ export class App {
       id: u.id, name: displayName(u), avatar: u.avatar,
       commander: u.commander, accent: u.accent,
       photo: u.photo, frame: u.frame, accentStyle: u.accentStyle, mmr: u.mmr,
+      tutorialEligible: u.wins + u.losses === 0,
     }));
     // Sorteia a ordem dos assentos: sem isso, o seat 0 (que joga primeiro) seria
     // sempre o de menor MMR do par, porque o matchmaking ordena a fila por MMR —
@@ -453,6 +460,7 @@ export class App {
       id: user.id, name: displayName(user), avatar: user.avatar,
       commander: user.commander, accent: user.accent,
       photo: user.photo, frame: user.frame, accentStyle: user.accentStyle, mmr: user.mmr,
+      tutorialEligible: user.wins + user.losses === 0,
     };
     // humano no assento 0 (age primeiro) — aprendizado mais gentil
     let match: Match;
