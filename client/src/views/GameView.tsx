@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
+import { CARDS, MAX_BOARD, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
 import type { CombatAction, CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
 import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
 import { Avatar, CosmeticIcon, TauntIcon, accentVars } from '../cosmetics';
@@ -7,7 +7,7 @@ import {
   IcoAddFriend, IcoAttack, IcoBanner, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
   IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHealth, IcoHint, IcoLethal, IcoMedal,
   IcoOverflow, IcoPause, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap, IcoWard,
-  IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
+  IcoTarget, IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
 } from '../icons';
 import { CardArt } from '../components/CardArt';
 import { CardView } from '../components/CardView';
@@ -377,6 +377,16 @@ interface DragState {
   mode: 'pending' | 'target' | 'lift' | 'dead';
 }
 
+interface DragCardVisual {
+  iid: string;
+  defId: string;
+  x: number;
+  y: number;
+  mode: 'target' | 'play';
+  valid: boolean;
+  label: string;
+}
+
 /** Alvo sob o cursor/dedo, resolvido pelos data-anchor já presentes no DOM. */
 type AimTarget =
   | { kind: 'face' }
@@ -410,8 +420,8 @@ export function GameView() {
   const [tutorialDismissed, setTutorialDismissed] = useState(() => {
     try { return localStorage.getItem(tutorialStorageKey) === '1'; } catch { return false; }
   });
-  // carta sem alvo sendo "levantada" pelo gesto de arrasto (solta ≥48px acima = joga)
-  const [lift, setLift] = useState<{ iid: string; dy: number } | null>(null);
+  // Copia elevada da carta arrastada. Fica fora do overflow da mao e acima da arena.
+  const [dragCard, setDragCard] = useState<DragCardVisual | null>(null);
   // inspeção no hover (desktop): carta ampliada flutuando acima da mão —
   // a mão é um scroll container, então escalar a carta no lugar seria cortado
   const [inspect, setInspect] = useState<InspectCard | null>(null);
@@ -985,7 +995,7 @@ export function GameView() {
     setSelection(null);
     setHover(null);
     setMouse(null);
-    setLift(null);
+    setDragCard(null);
     setHoverCost(0);
     setHandFocus(null);
     clearInspect('hand');
@@ -996,7 +1006,7 @@ export function GameView() {
     setSelection(null);
     setHover(null);
     setMouse(null);
-    setLift(null);
+    setDragCard(null);
     clearInspect('hand');
     setHandFocus({ iid, defId });
     setHoverCost(CARDS[defId]?.cost ?? 0);
@@ -1198,6 +1208,39 @@ export function GameView() {
     return { kind: 'creature', iid: t.c.iid };
   }
 
+  function validTargetForDrag(drag: DragState, target: AimTarget | null): boolean {
+    if (!target) return false;
+    if (drag.kind === 'creature') {
+      if (target.kind === 'my-creature') return false;
+      if (target.kind === 'face') return !faceShielded;
+      return enemyTaunts.length === 0 || CARDS[target.c.defId].keywords?.includes('taunt') === true;
+    }
+
+    const def = CARDS[drag.defId];
+    const wants = def?.target ?? 'none';
+    if (wants === 'friendly-creature') return target.kind === 'my-creature';
+    if (wants === 'enemy-creature') return target.kind === 'enemy-creature';
+    if (wants !== 'enemy-any' || target.kind === 'my-creature') return false;
+    if (target.kind === 'face') return !faceShielded || !!def.pierce;
+    return target.kind === 'enemy-creature';
+  }
+
+  function targetLabel(target: AimTarget | null, valid: boolean, defId: string): string {
+    const def = CARDS[defId];
+    if (valid && target) {
+      if (target.kind === 'face') return 'Solte no comandante';
+      return `Solte em ${CARDS[target.c.defId].name}`;
+    }
+    if (def?.target === 'friendly-creature') return 'Escolha uma criatura aliada';
+    if (def?.target === 'enemy-creature') return 'Escolha uma criatura inimiga';
+    return 'Escolha criatura ou comandante';
+  }
+
+  function playDropLabel(defId: string, ready: boolean): string {
+    const action = noTargetActionLabel(defId).toLocaleLowerCase('pt-BR');
+    return ready ? `Solte para ${action}` : `Arraste para ${action}`;
+  }
+
   /** Início de gesto numa carta da mão ou criatura própria. */
   function onTargetPointerDown(e: React.PointerEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
     if (!myTurn || !e.isPrimary || e.button !== 0) return;
@@ -1257,27 +1300,65 @@ export function GameView() {
         sfx.click();
         setSelection({ kind: 'hand', iid: drag.iid });
         drag.mode = 'target';
+        setDragCard({
+          iid: drag.iid,
+          defId: drag.defId,
+          x: drag.startX,
+          y: drag.startY,
+          mode: 'target',
+          valid: false,
+          label: targetLabel(null, false, drag.defId),
+        });
       } else {
         setSelection(null);
         drag.mode = 'lift';
+        setDragCard({
+          iid: drag.iid,
+          defId: drag.defId,
+          x: drag.startX,
+          y: drag.startY,
+          mode: 'play',
+          valid: false,
+          label: playDropLabel(drag.defId, false),
+        });
       }
     },
     move(drag, x, y) {
       if (drag.mode === 'target') {
+        const target = resolveTargetAt(x, y);
+        const valid = validTargetForDrag(drag, target);
         setMouse({ x, y });
-        setHover(aimTargetToHover(resolveTargetAt(x, y)));
+        setHover(aimTargetToHover(target));
+        setDragCard((card) => card ? {
+          ...card,
+          x,
+          y,
+          valid,
+          label: targetLabel(target, valid, drag.defId),
+        } : card);
       } else if (drag.mode === 'lift') {
-        setLift({ iid: drag.iid, dy: Math.min(0, y - drag.startY) });
+        const def = CARDS[drag.defId];
+        const hasRoom = def.type !== 'creature' || me!.board.length < MAX_BOARD;
+        const ready = hasRoom && drag.startY - y >= PLAY_LIFT_PX;
+        setDragCard((card) => card ? {
+          ...card,
+          x,
+          y,
+          valid: ready,
+          label: hasRoom ? playDropLabel(drag.defId, ready) : 'Sua mesa está cheia',
+        } : card);
       }
     },
     finish(drag, x, y) {
+      setDragCard(null);
       if (drag.mode === 'target') {
         const t = resolveTargetAt(x, y);
+        const valid = validTargetForDrag(drag, t);
         if (drag.kind === 'creature') {
           const attacker = me?.board.find((c) => c.iid === drag.iid);
-          if (attacker && t) performAttack(attacker, t);
+          if (attacker && t && valid) performAttack(attacker, t);
           else clearAim(); // soltou no vazio: cancela a mira
-        } else if (t) {
+        } else if (t && valid) {
           performPlay(drag.iid, drag.defId, t);
         } else {
           clearAim();
@@ -1287,22 +1368,27 @@ export function GameView() {
         setMouse(null);
         setHover(null);
       } else if (drag.mode === 'lift') {
-        if (drag.startY - y >= PLAY_LIFT_PX) performPlay(drag.iid, drag.defId, null);
+        const def = CARDS[drag.defId];
+        const hasRoom = def.type !== 'creature' || me!.board.length < MAX_BOARD;
+        if (hasRoom && drag.startY - y >= PLAY_LIFT_PX) performPlay(drag.iid, drag.defId, null);
         else clearInspect('hand');
-        setLift(null);
       }
     },
     cancel(drag) {
       // navegador tomou o gesto (rolagem da mão, gesto de sistema): limpa tudo
       if (drag.mode === 'target') clearAim();
-      setLift(null);
+      setDragCard(null);
     },
   };
 
-  const targetingEnemy =
-    selection?.kind === 'attacker' ||
-    (selection?.kind === 'hand' && selectedHandDef?.target !== 'friendly-creature');
   const targetingFriendly = selection?.kind === 'hand' && selectedHandDef?.target === 'friendly-creature';
+  const targetingEnemyCreature = selection?.kind === 'attacker' || (
+    selection?.kind === 'hand'
+    && (selectedHandDef?.target === 'enemy-creature' || selectedHandDef?.target === 'enemy-any')
+  );
+  const targetingFace = selection?.kind === 'attacker'
+    || (selection?.kind === 'hand' && selectedHandDef?.target === 'enemy-any');
+  const targetingEnemy = targetingEnemyCreature || targetingFace;
 
   const fxFor = (anchor: string) => fx.filter((f) => f.anchor === anchor);
   const ghostsFor = (seatIdx: number) => ghosts.filter((g) => g.seatIdx === seatIdx);
@@ -1317,12 +1403,15 @@ export function GameView() {
     if (!hover) return false;
     if (targetingFriendly) return hover.kind === 'creature' && me.board.some((c) => c.iid === hover.iid);
     if (!targetingEnemy) return false;
-    if (hover.kind === 'face') return !faceShielded || !!selectedHandDef?.pierce;
+    if (hover.kind === 'face') return targetingFace && (!faceShielded || !!selectedHandDef?.pierce);
+    if (!targetingEnemyCreature) return false;
     const ec = enemy.board.find((c) => c.iid === hover.iid);
     if (!ec) return false;
     if (mustHitTaunt && !CARDS[ec.defId].keywords?.includes('taunt')) return false;
     return true;
   })();
+  const draggingHandTarget = dragCard?.mode === 'target';
+  const draggingCreaturePlay = dragCard?.mode === 'play' && CARDS[dragCard.defId]?.type === 'creature';
 
   // ── Seta de mira ────────────────────────────────────────────────
   // A ponta segue o ponteiro; sobre um alvo válido ela "trava" no centro
@@ -1426,7 +1515,7 @@ export function GameView() {
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
-  const staticFacePreview = targetingEnemy && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
+  const staticFacePreview = targetingFace && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
   const targetHint = selection?.kind === 'attacker'
     ? {
       mode: 'attack',
@@ -1460,7 +1549,7 @@ export function GameView() {
 
   return (
     <div
-      className={`game-screen ${selection ? 'is-aiming' : ''} ${handFocus ? 'has-hand-focus' : ''}`}
+      className={`game-screen ${selection ? 'is-aiming' : ''} ${dragCard ? 'dragging-hand-card' : ''} ${handFocus ? 'has-hand-focus' : ''}`}
       onPointerMove={selection ? (e) => setMouse({ x: e.clientX, y: e.clientY }) : undefined}
       onContextMenu={selection ? (e) => { e.preventDefault(); clearAim(); } : undefined}
       onClickCapture={(e) => {
@@ -1531,8 +1620,10 @@ export function GameView() {
           seatIdx={enemySeatIdx}
           isEnemy
           onFaceClick={clickEnemyFace}
-          targetable={!!targetingEnemy && (!faceShielded || !!selectedHandDef?.pierce)}
-          blocked={!!targetingEnemy && faceShielded && !selectedHandDef?.pierce}
+          targetable={!!targetingFace && (!faceShielded || !!selectedHandDef?.pierce)}
+          blocked={!!targetingFace && faceShielded && !selectedHandDef?.pierce}
+          dropTarget={!!draggingHandTarget && !!targetingFace && (!faceShielded || !!selectedHandDef?.pierce)}
+          dropHovered={!!draggingHandTarget && hoverValid && hover?.kind === 'face'}
           lethal={faceLethal || !!staticFacePreview?.lethal}
           preview={hover?.kind === 'face' ? preview : staticFacePreview}
           previewDim={hover?.kind !== 'face' && !!staticFacePreview}
@@ -1541,13 +1632,16 @@ export function GameView() {
           bubble={bubbleFor(enemySeatIdx)}
         />
 
-        <div className={`board-row enemy-row ${targetingEnemy ? 'targetable' : ''}`}>
+        <div className={`board-row enemy-row ${targetingEnemyCreature ? 'targetable' : ''} ${draggingHandTarget && targetingEnemyCreature ? 'drop-destinations enemy' : ''}`}>
+          {draggingHandTarget && targetingEnemyCreature && enemy.board.length > 0 && (
+            <span className="drop-zone-label enemy"><IcoTarget className="ic" /> Destinos possíveis</span>
+          )}
           {enemy.board.map((c, i) => {
             const isTaunt = CARDS[c.defId].keywords?.includes('taunt');
             const blocked = !!mustHitTaunt && !isTaunt;
             const hovered = hover?.kind === 'creature' && hover.iid === c.iid;
             // chip estático em cada alvo válido enquanto algo está selecionado
-            const staticPv = !hovered && targetingEnemy && !blocked
+            const staticPv = !hovered && targetingEnemyCreature && !blocked
               ? previewFor({ kind: 'creature', iid: c.iid })
               : null;
             return (
@@ -1557,6 +1651,9 @@ export function GameView() {
                 bonus={enemy.attackBonus}
                 sourceActive={damageNotice?.sourceIid === c.iid && now - damageNotice.at < DAMAGE_SOURCE_TTL}
                 blocked={blocked}
+                dropTarget={!!draggingHandTarget && !!targetingEnemyCreature && !blocked}
+                dropHovered={!!draggingHandTarget && hoverValid && hovered}
+                dropTone="enemy"
                 posIndex={enemyPos.get(c.iid)}
                 preview={hovered ? preview : staticPv}
                 previewDim={!hovered && !!staticPv}
@@ -1707,7 +1804,13 @@ export function GameView() {
           </div>
         </div>
 
-        <div className={`board-row my-row ${targetingFriendly ? 'friendly-targetable' : ''}`}>
+        <div className={`board-row my-row ${targetingFriendly ? 'friendly-targetable' : ''} ${draggingHandTarget && targetingFriendly ? 'drop-destinations support' : ''} ${draggingCreaturePlay ? `card-drop-zone ${dragCard?.valid ? 'ready' : ''}` : ''}`}>
+          {draggingHandTarget && targetingFriendly && me.board.length > 0 && (
+            <span className="drop-zone-label support"><IcoTarget className="ic" /> Criaturas aliadas</span>
+          )}
+          {draggingCreaturePlay && (
+            <span className="drop-zone-label play"><IcoCheck className="ic" /> {me.board.length >= MAX_BOARD ? 'Mesa cheia' : 'Solte para invocar'}</span>
+          )}
           {me.board.map((c, i) => (
             <Creature
               key={c.iid}
@@ -1716,6 +1819,9 @@ export function GameView() {
               mine
               selected={selection?.kind === 'attacker' && selection.iid === c.iid}
               buffTarget={targetingFriendly}
+              dropTarget={!!draggingHandTarget && !!targetingFriendly}
+              dropHovered={!!draggingHandTarget && hoverValid && hover?.kind === 'creature' && hover.iid === c.iid}
+              dropTone="support"
               lunging={attackFx?.iid === c.iid && now - attackFx.at < 500}
               warn={cantAttackWarn?.iid === c.iid && now - cantAttackWarn.at < 600}
               posIndex={myPos.get(c.iid)}
@@ -1756,7 +1862,7 @@ export function GameView() {
             const isSelected = selection?.kind === 'hand' && selection.iid === c.iid;
             const isFocused = handFocus?.iid === c.iid;
             const affordable = CARDS[c.defId].cost <= me.energy;
-            const lifting = lift?.iid === c.iid;
+            const dragging = dragCard?.iid === c.iid;
             const intent = affordable && myTurn ? handIntent(c.defId, isSelected) : null;
             return (
               <CardView
@@ -1765,8 +1871,11 @@ export function GameView() {
                 anchorId={`hand-${c.iid}`}
                 playable={myTurn && affordable}
                 selected={isSelected || isFocused}
-                lifting={lifting}
-                className={myTurn && !affordable ? 'unaffordable' : undefined}
+                lifting={dragging}
+                className={[
+                  myTurn && !affordable ? 'unaffordable' : '',
+                  dragging ? 'drag-origin' : '',
+                ].filter(Boolean).join(' ') || undefined}
                 statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : isFocused ? 'Pronta' : intent?.label}
                 statusTone={myTurn && !affordable ? 'warn' : isFocused ? 'good' : intent?.tone}
                 onClick={() => clickHandCard(c.iid, c.defId)}
@@ -1785,11 +1894,7 @@ export function GameView() {
                   });
                 }}
                 onMouseLeave={() => { setHoverCost(0); clearInspect('hand'); }}
-                style={lifting ? {
-                  // a carta segue o dedo na vertical; soltar bem acima joga
-                  transform: `translateY(${lift!.dy}px) scale(1.12)`,
-                  zIndex: 13,
-                } : isSelected ? undefined : {
+                style={isSelected && !dragging ? undefined : {
                   transform: `rotate(${off * 2.5}deg) translateY(${Math.abs(off) * 5}px)`,
                 }}
               />
@@ -1873,6 +1978,36 @@ export function GameView() {
           <Chat />
         </div>
       </aside>
+
+      {dragCard && (
+        <div
+          className={[
+            'drag-card-layer',
+            `drag-${dragCard.mode}`,
+            dragCard.valid ? 'valid' : '',
+            CARDS[dragCard.defId]?.target === 'friendly-creature' ? 'support' : '',
+            dragCard.y < 240 ? 'place-below' : 'place-above',
+          ].filter(Boolean).join(' ')}
+          style={{ left: dragCard.x, top: dragCard.y }}
+          aria-hidden="true"
+        >
+          <CardView
+            defId={dragCard.defId}
+            as="div"
+            className="drag-card-preview"
+            imageLoading="eager"
+            imagePriority="high"
+          />
+          <span className="drag-card-label">
+            {dragCard.mode === 'play'
+              ? <IcoCheck className="ic" />
+              : CARDS[dragCard.defId]?.target === 'friendly-creature'
+                ? <IcoBuff className="ic" />
+                : <IcoTarget className="ic" />}
+            <strong>{dragCard.label}</strong>
+          </span>
+        </div>
+      )}
 
       {targetHint && (
         <div className={`target-hint ${targetHint.mode}`}>
@@ -2085,7 +2220,7 @@ export function GameView() {
 
       {inspect
         && (!selection || inspect.source === 'creature')
-        && !lift
+        && !dragCard
         && game.status === 'active'
         && (inspect.source === 'creature' || game.hand.some((c) => c.iid === inspect.iid)) && (
           <div
@@ -2228,13 +2363,15 @@ function PreviewChip({ p, self, dim }: { p: CombatPreview; self?: boolean; dim?:
   );
 }
 
-function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx, bubble, impact }: {
+function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, dropTarget, dropHovered, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx, bubble, impact }: {
   seat: SeatView;
   seatIdx: number;
   isEnemy?: boolean;
   onFaceClick?: () => void;
   targetable?: boolean;
   blocked?: boolean;
+  dropTarget?: boolean;
+  dropHovered?: boolean;
   lethal?: boolean;
   preview?: CombatPreview | null;
   previewDim?: boolean;
@@ -2259,6 +2396,8 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
           'portrait',
           targetable ? 'targetable' : '',
           blocked ? 'blocked' : '',
+          dropTarget ? 'drop-target' : '',
+          dropHovered ? 'drop-hovered' : '',
           lethal ? 'lethal' : '',
           hit ? 'hit' : '',
           shielded ? 'shielded' : '',
@@ -2270,6 +2409,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         onMouseLeave={onHover ? () => onHover(false) : undefined}
         title={blocked ? 'Protegido por Provocar' : undefined}
       >
+        {dropTarget && <span className={`drop-target-marker ${dropHovered ? 'active' : ''}`} aria-hidden="true"><IcoTarget /></span>}
         <Avatar
           className="portrait-avatar"
           iconId={seat.commander || seat.avatar}
@@ -2322,13 +2462,16 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, sourceActive, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onMouseDown, onInspect, style }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, dropTarget, dropHovered, dropTone, warn, posIndex, lunging, sourceActive, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onMouseDown, onInspect, style }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
   selected?: boolean;
   buffTarget?: boolean;
   blocked?: boolean;
+  dropTarget?: boolean;
+  dropHovered?: boolean;
+  dropTone?: 'enemy' | 'support';
   warn?: boolean;
   /** Número da posição quando há cópias iguais na mesa (senão indefinido). */
   posIndex?: number;
@@ -2362,6 +2505,8 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     mine && !c.canAttack ? 'exhausted' : '',
     buffTarget && mine ? 'buff-target' : '',
     blocked ? 'blocked' : '',
+    dropTarget ? `drop-target drop-${dropTone ?? 'enemy'}` : '',
+    dropHovered ? 'drop-hovered' : '',
     warn ? 'cant-attack' : '',
     lunging ? 'lunging' : '',
     sourceActive ? 'impact-source' : '',
@@ -2399,6 +2544,11 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
     >
+      {dropTarget && (
+        <span className={`drop-target-marker ${dropHovered ? 'active' : ''}`} aria-hidden="true">
+          {dropTone === 'support' ? <IcoBuff /> : <IcoTarget />}
+        </span>
+      )}
       <button
         type="button"
         className="creature-info"

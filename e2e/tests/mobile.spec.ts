@@ -149,6 +149,10 @@ test.describe('gestos: arrastar para mirar (pointer events)', () => {
     test.setTimeout(180_000);
     const a = await loginAs(browser, 'Arrasta', '🏹');
     const b = await loginAs(browser, 'Alvo', '🌙');
+    await Promise.all([
+      a.setViewportSize({ width: 1280, height: 1100 }),
+      b.setViewportSize({ width: 1280, height: 1100 }),
+    ]);
 
     await a.click('button:has-text("Criar sala privada")');
     const code = (await a.locator('.room-code').textContent())!.trim();
@@ -190,24 +194,30 @@ test.describe('gestos: arrastar para mirar (pointer events)', () => {
       }
 
       // arrasto: pressiona na criatura, move até o alvo, observa seta+prévia
-      const from = (await ready.first().boundingBox())!;
-      const blocked = (await a.locator('.hero-plate.enemy .portrait.blocked').count()) > 0;
-      const targetLoc = blocked
-        ? a.locator('.enemy-row .creature:not(.blocked):not(.ghost)').first()
-        : a.locator('.hero-plate.enemy .portrait');
-      const to = (await targetLoc.boundingBox())!;
-
+      const attacker = ready.first();
+      const attackerAnchor = await attacker.getAttribute('data-anchor');
+      const from = (await attacker.boundingBox())!;
       await a.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
       await a.mouse.down();
-      await a.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
+      // Primeiro ativa a mira. Só então o DOM diferencia comandante bloqueado
+      // e criaturas válidas (incluindo a prioridade de Provocar).
+      await a.mouse.move(from.x + from.width / 2, from.y - 12, { steps: 3 });
       await expect(a.locator('.aim-arrow')).toBeVisible();
+      const validCreature = a.locator('.enemy-row .creature:not(.blocked):not(.ghost)').first();
+      const targetLoc = await validCreature.count() > 0
+        ? validCreature
+        : a.locator('.hero-plate.enemy .portrait.targetable');
+      const to = (await targetLoc.boundingBox())!;
+      await a.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
+      await expect(a.locator('.aim-arrow.locked')).toBeVisible();
       await expect(a.locator('.preview-chip').first()).toBeVisible();
       await a.screenshot({ path: shotPath('11-arrasto-mira.png') });
       await a.mouse.up();
 
-      // soltou no alvo: o ataque saiu (criatura deixa de estar pronta)
+      // Soltou no alvo: a criatura usada deixa de estar pronta. Outras
+      // criaturas podem continuar aptas e não devem tornar o teste ambíguo.
       try {
-        await expect(a.locator('.my-row .creature.ready')).toHaveCount(0, { timeout: 2500 });
+        await expect(a.locator(`[data-anchor="${attackerAnchor}"].ready`)).toHaveCount(0, { timeout: 2500 });
       } catch {
         await a.keyboard.press('Escape').catch(() => undefined);
         await a.waitForTimeout(300);

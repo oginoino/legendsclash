@@ -2090,6 +2090,7 @@ input:focus {
   /* flex-wrap base: uma mesa cheia (7 fichas) quebra linha em vez de
      transbordar e cortar criaturas jogáveis em telas estreitas */
   display: flex;
+  position: relative;
   flex-wrap: wrap;
   gap: 12px;
   justify-content: center;
@@ -2103,6 +2104,76 @@ input:focus {
   padding: 10px 8px;
   box-shadow: inset 0 2px 12px #00000066, inset 0 -1px 0 #ffffff07;
   transition: border-color .2s, box-shadow .2s;
+}
+
+.board-row.drop-destinations,
+.board-row.card-drop-zone {
+  border-color: #d7a84c99;
+  box-shadow: inset 0 0 38px #d7a84c1f, inset 0 2px 12px #00000066, 0 0 18px #d7a84c18;
+}
+
+.board-row.drop-destinations.support {
+  border-color: #4fc36b99;
+  box-shadow: inset 0 0 38px #4fc36b1f, inset 0 2px 12px #00000066, 0 0 18px #4fc36b18;
+}
+
+.board-row.drop-destinations.enemy {
+  border-color: #e8665d99;
+  box-shadow: inset 0 0 38px #e8665d20, inset 0 2px 12px #00000066, 0 0 18px #e8665d18;
+}
+
+.board-row.card-drop-zone.ready {
+  border-color: #e3b341;
+  box-shadow: inset 0 0 46px #e3b3412b, inset 0 2px 12px #00000066, 0 0 24px #e3b3412a;
+}
+
+.drop-zone-label {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 20px);
+  min-height: 21px;
+  padding: 2px 9px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid #d7a84c66;
+  border-radius: 99px;
+  background: #080d16e8;
+  color: #f2d28a;
+  box-shadow: 0 5px 14px #0009, 0 0 12px #d7a84c22;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.drop-zone-label .ic {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+}
+
+.drop-zone-label.enemy {
+  border-color: #e8665d66;
+  color: #ffb3ad;
+}
+
+.drop-zone-label.support {
+  border-color: #4fc36b66;
+  color: #a7efb1;
+}
+
+.drop-zone-label.play {
+  border-color: #e3b34177;
+  color: #ffe29a;
 }
 
 /* zonas "acesas" quando há alvo válido nelas */
@@ -2830,6 +2901,23 @@ input:focus {
   z-index: 13;
 }
 
+/* A origem permanece na mao apenas como referencia espacial. A copia que
+   acompanha o gesto vive em .drag-card-layer, fora deste scroll container. */
+.hand .card.drag-origin,
+.hand .card.drag-origin.selected,
+.hand .card.drag-origin.playable:hover {
+  z-index: 1;
+  opacity: .24;
+  border-color: #71809a88;
+  box-shadow: inset 0 0 0 1px #ffffff0c;
+  filter: saturate(.45) brightness(.72);
+  transform: scale(.96) !important;
+}
+
+.hand .card.drag-origin .card-shine {
+  display: none;
+}
+
 /* carta não-jogável: só esmaece (sinal de "inativa"). Sem dessaturar — o
    filtro de grupo lavava a ilustração e quebrava a consistência com a arte
    da mesa/codex (que nunca dessaturam). O realce azul + brilho da .playable
@@ -3213,6 +3301,149 @@ input:focus {
   to {
     opacity: 0;
     transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Carta elevada durante o gesto: position:fixed escapa do overflow da mao e
+   z-index 78 a mantem acima da arena, dos paineis e da seta de mira. */
+.drag-card-layer {
+  position: fixed;
+  z-index: 78;
+  width: clamp(126px, 12vw, 146px);
+  height: clamp(264px, 27vw, 306px);
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  will-change: left, top, transform;
+  filter: drop-shadow(0 24px 34px #000d) drop-shadow(0 0 18px #4d8dff55);
+}
+
+.drag-card-layer.place-above {
+  transform: translate(-50%, calc(-100% + 38px)) rotate(-1.5deg);
+}
+
+.drag-card-layer.place-below {
+  transform: translate(-50%, 24px) rotate(1.5deg);
+}
+
+.drag-card-layer .drag-card-preview.card {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: .96;
+  border-color: #79a9ff;
+  box-shadow: var(--relief), 0 18px 34px #000b, 0 0 22px #4d8dff66;
+  transform: none !important;
+  transform-origin: center;
+  transition: none;
+  animation: none;
+}
+
+.drag-card-layer.support {
+  filter: drop-shadow(0 24px 34px #000d) drop-shadow(0 0 18px #4fc36b66);
+}
+
+.drag-card-layer.support .drag-card-preview.card {
+  border-color: #66d27e;
+  box-shadow: var(--relief), 0 18px 34px #000b, 0 0 22px #4fc36b66;
+}
+
+.drag-card-layer.valid {
+  filter: drop-shadow(0 24px 34px #000d) drop-shadow(0 0 26px #e3b34188);
+}
+
+.drag-card-layer.valid .drag-card-preview.card {
+  border-color: #f0c955;
+  box-shadow: var(--relief), 0 20px 38px #000c, 0 0 30px #e3b34199;
+}
+
+.drag-card-label {
+  position: absolute;
+  left: 50%;
+  bottom: -18px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  min-height: 25px;
+  padding: 4px 9px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid #79a9ff88;
+  border-radius: 99px;
+  background: #070c15f2;
+  color: #cfe0ff;
+  box-shadow: 0 7px 18px #000c, 0 0 14px #4d8dff33;
+  font-size: 8px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.drag-card-label .ic {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+}
+
+.drag-card-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drag-card-layer.valid .drag-card-label {
+  border-color: #e3b341aa;
+  color: #ffe29a;
+  box-shadow: 0 7px 18px #000c, 0 0 18px #e3b34155;
+}
+
+.drop-target-marker {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  z-index: 12;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  transform: translateX(-50%);
+  border: 1px solid #e8665daa;
+  border-radius: 50%;
+  background: #170b0dec;
+  color: #ffaaa3;
+  box-shadow: 0 0 0 2px #080d16, 0 0 15px #e8665d77;
+  pointer-events: none;
+  animation: drop-target-breathe 1.15s ease-in-out infinite;
+}
+
+.drop-target-marker svg {
+  width: 13px;
+  height: 13px;
+}
+
+.drop-support .drop-target-marker {
+  border-color: #4fc36baa;
+  background: #08160dec;
+  color: #a7efb1;
+  box-shadow: 0 0 0 2px #080d16, 0 0 15px #4fc36b77;
+}
+
+.drop-target-marker.active,
+.drop-hovered .drop-target-marker {
+  color: #fff4c6;
+  border-color: #f0c955;
+  box-shadow: 0 0 0 3px #080d16, 0 0 25px #e3b341cc;
+  transform: translateX(-50%) scale(1.12);
+}
+
+.creature.drop-hovered,
+.portrait.drop-hovered {
+  border-color: #f0c955 !important;
+  box-shadow: 0 0 0 3px #080d16, 0 0 30px #e3b341bb, 0 8px 20px #0009 !important;
+}
+
+@keyframes drop-target-breathe {
+  50% {
+    filter: brightness(1.2);
+    transform: translateX(-50%) scale(1.08);
   }
 }
 
@@ -6624,7 +6855,8 @@ input:focus {
   .aim-callout,
   .aim-reticle .reticle-ring,
   .aim-reticle .reticle-ping,
-  .aim-reticle .reticle-gem {
+  .aim-reticle .reticle-gem,
+  .drop-target-marker {
     animation: none !important;
   }
 }
