@@ -380,7 +380,8 @@ function appBaseUrl(): string {
 export function createAuthService(store: Store): AuthService {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const useSupabase = !!(url && key) && process.env.LC_LOCAL !== '1';
+  const forceLocal = process.env.LC_LOCAL === '1' || process.env.LEGENDSCLASH_E2E === '1';
+  const useSupabase = !!(url && key) && !forceLocal;
   if (useSupabase) {
     console.log('[auth] contas via Supabase Auth (e-mail + senha, sem envio de e-mail)');
     return new AuthService(store, new SupabasePasswordProvider(url!, key!));
