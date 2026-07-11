@@ -165,6 +165,13 @@ describe('criaturas e combate', () => {
     m.endTurn('p1');
     m.attack('p0', 'x1', { seat: 1 }); // lobo 3 de ataque na cara
     expect(m.seats[1].hp).toBe(STARTING_HP - 3);
+    expect(m.viewFor('p1').actions.at(-1)).toMatchObject({
+      seat: 0,
+      kind: 'attack',
+      sourceDefId: 'c_lobo',
+      sourceIid: 'x1',
+      target: { seat: 1 },
+    });
     expect(() => m.attack('p0', 'x1', { seat: 1 }))
       .toThrow('Essa criatura já atacou neste turno.');
   });
@@ -774,6 +781,13 @@ describe('recap pós-partida: estatísticas e MVP', () => {
     m.seats[0].hand.push({ iid: 'sf1', defId: 's_faisca' });
     m.playCard('p0', 'sf1', { seat: 1 }); // 2 de dano ao comandante (escudo absorve)
     expect(m.seats[1].shield).toBe(2);
+    expect(m.viewFor('p1').actions.at(-1)).toMatchObject({
+      seat: 0,
+      kind: 'card',
+      sourceDefId: 's_faisca',
+      sourceIid: 'sf1',
+      target: { seat: 1 },
+    });
     m.surrender('p1');
     const r = result()!;
     expect(r.stats[1].shieldAbsorbed).toBe(2);

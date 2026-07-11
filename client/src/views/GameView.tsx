@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_ENERGY, TAUNTS, TURN_SECONDS, achievementLabel, commanderTitle, keywordDesc, keywordLabel } from '@legendsclash/shared';
-import type { CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
+import type { CombatAction, CreatureOnBoard, GameView as GameViewState, SeatView } from '@legendsclash/shared';
 import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
 import { Avatar, CosmeticIcon, TauntIcon, accentVars } from '../cosmetics';
 import {
   IcoAddFriend, IcoAttack, IcoBanner, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
-  IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHint, IcoLethal, IcoMedal,
+  IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHealth, IcoHint, IcoLethal, IcoMedal,
   IcoOverflow, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap, IcoWard,
   IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
 } from '../icons';
@@ -165,7 +165,8 @@ let fxId = 1;
 const FX_TTL = 1100;
 const GHOST_TTL = 700;
 const REVEAL_TTL = 1700;
-const DAMAGE_NOTICE_TTL = 4200;
+const DAMAGE_NOTICE_TTL = 3600;
+const DAMAGE_SOURCE_TTL = 1500;
 /** Tempo que uma provocação fica como balão sobre o comandante. */
 const BUBBLE_TTL = 4500;
 /** Cadência mínima entre provocações (anti-spam local). */
@@ -181,6 +182,8 @@ interface Bubble {
 
 interface DamageNoticeHit {
   target: string;
+  iid?: string;
+  defId?: string;
   amount?: number;
   kind: 'hp' | 'shield' | 'creature' | 'defeat';
 }
@@ -189,8 +192,14 @@ interface DamageNotice {
   id: number;
   owner: string;
   source: string;
+  sourceDefId?: string;
+  sourceIid?: string;
+  actionLabel: string;
   summary: string;
-  detail: string;
+  incoming: number;
+  hpDamage: number;
+  shieldDamage: number;
+  hpAfter: number;
   hits: DamageNoticeHit[];
   severity: 'normal' | 'heavy' | 'lethal';
   at: number;
@@ -231,9 +240,52 @@ function damageSourceFromLog(text: string | undefined): string {
   return source?.replace(/^O\s+/, '').trim() || 'Ação inimiga';
 }
 
-function damageDetailFromLog(text: string | undefined): string {
-  if (!text) return 'O efeito inimigo afetou seu lado da mesa.';
-  return text.replace(/\s+/g, ' ').trim();
+function sourceDefIdFromLogs(lines: string[]): string | undefined {
+  const joined = lines.join(' · ').toLocaleLowerCase('pt-BR');
+  return Object.values(CARDS)
+    .sort((a, b) => b.name.length - a.name.length)
+    .find((card) => joined.includes(card.name.toLocaleLowerCase('pt-BR')))?.id;
+}
+
+function actionLabelFor(action: CombatAction | undefined, sourceDefId: string | undefined, logs: string[]): string {
+  const hasDeathrattle = logs.some((line) => /^Estertor:/i.test(line));
+  if (action?.kind === 'attack') return hasDeathrattle ? 'Ataque + Estertor' : 'Ataque';
+  if (hasDeathrattle) return 'Estertor';
+  const def = sourceDefId ? CARDS[sourceDefId] : undefined;
+  if (def?.keywords?.includes('battlecry')) return 'Grito de batalha';
+  if (def?.type === 'spell') return 'Magia';
+  if (def?.type === 'tactic') return 'Tática';
+  if (def?.type === 'artifact') return 'Artefato';
+  return 'Efeito inimigo';
+}
+
+function consolidateDamageHits(hits: DamageNoticeHit[]): DamageNoticeHit[] {
+  const direct = hits.filter((hit) => hit.kind === 'hp' || hit.kind === 'shield');
+  const creatures = new Map<string, DamageNoticeHit>();
+  for (const hit of hits) {
+    if (hit.kind !== 'creature' && hit.kind !== 'defeat') continue;
+    const key = hit.iid ?? `${hit.defId ?? ''}:${hit.target}`;
+    const current = creatures.get(key);
+    creatures.set(key, {
+      ...current,
+      ...hit,
+      amount: hit.amount ?? current?.amount,
+      kind: hit.kind === 'defeat' || current?.kind === 'defeat' ? 'defeat' : 'creature',
+    });
+  }
+  return [...direct, ...creatures.values()];
+}
+
+function impactSummary(hpDamage: number, shieldDamage: number, hits: DamageNoticeHit[]): string {
+  if (hpDamage > 0) return `${hpDamage} de vida perdida`;
+  if (shieldDamage > 0) return `${shieldDamage} de dano bloqueado`;
+  const defeated = hits.filter((hit) => hit.kind === 'defeat');
+  if (defeated.length === 1) return `${defeated[0].target} foi abatido`;
+  if (defeated.length > 1) return `${defeated.length} criaturas foram abatidas`;
+  const boardDamage = hits
+    .filter((hit) => hit.kind === 'creature')
+    .reduce((sum, hit) => sum + (hit.amount ?? 0), 0);
+  return boardDamage > 0 ? `${boardDamage} de dano na sua mesa` : 'Seu lado sofreu o impacto';
 }
 
 /**
@@ -533,6 +585,9 @@ export function GameView() {
     const damageLine = [...newLogs].reverse().find(isDamageLogLine);
     const newPlays = game.plays.slice(prev.plays.length);
     const enemyPlays = newPlays.filter((p) => p.seat !== game.yourSeat);
+    const previousActionSeq = Math.max(0, ...(prev.actions ?? []).map((action) => action.seq));
+    const newActions = (game.actions ?? []).filter((action) => action.seq > previousActionSeq);
+    const enemyActions = newActions.filter((action) => action.seat !== game.yourSeat);
     const enemySeatIdxForNotice = game.seats.findIndex((_, i) => i !== game.yourSeat);
     const enemyNameForNotice = enemySeatIdxForNotice >= 0 ? game.seats[enemySeatIdxForNotice].name : 'Adversário';
     let hadDamage = false;
@@ -567,7 +622,15 @@ export function GameView() {
         if (c.health < pc.health) {
           const amount = pc.health - c.health;
           newFx.push({ id: fxId++, kind: 'dmg', value: amount, anchor: `cr-${c.iid}`, at: ts });
-          if (i === game.yourSeat) receivedHits.push({ target: CARDS[c.defId].name, amount, kind: 'creature' });
+          if (i === game.yourSeat) {
+            receivedHits.push({
+              target: CARDS[c.defId].name,
+              iid: c.iid,
+              defId: c.defId,
+              amount,
+              kind: 'creature',
+            });
+          }
           hadDamage = true;
         } else if (c.health > pc.health) {
           newFx.push({ id: fxId++, kind: 'heal', value: c.health - pc.health, anchor: `cr-${c.iid}`, at: ts });
@@ -582,7 +645,14 @@ export function GameView() {
       before.board.forEach((pc, slot) => {
         if (!seat.board.some((c) => c.iid === pc.iid)) {
           newGhosts.push({ id: fxId++, seatIdx: i, creature: pc, slot, at: ts });
-          if (i === game.yourSeat) receivedHits.push({ target: CARDS[pc.defId].name, kind: 'defeat' });
+          if (i === game.yourSeat) {
+            receivedHits.push({
+              target: CARDS[pc.defId].name,
+              iid: pc.iid,
+              defId: pc.defId,
+              kind: 'defeat',
+            });
+          }
           hadDeath = true;
         }
       });
@@ -602,14 +672,21 @@ export function GameView() {
       sfx.reveal();
     }
 
+    const deathrattleLogs = newLogs.filter((line) => /^Estertor:/i.test(line));
+    const deathrattleSourceDefId = sourceDefIdFromLogs(deathrattleLogs);
+    const hostileDeathrattle = !!deathrattleSourceDefId && enemySeatIdxForNotice >= 0
+      && prev.seats[enemySeatIdxForNotice]?.board.some((card) => card.defId === deathrattleSourceDefId);
+    const causeAction = enemyActions.at(-1);
     const fatigueDamage = /\b(fadiga|baralho acabou|sem carta)\b/i.test(damageLine ?? '');
     const receivedFromOpponent =
       receivedHits.length > 0 &&
       !fatigueDamage &&
-      (enemyPlays.length > 0 || prev.turnSeat !== game.yourSeat || /^Estertor:/i.test(damageLine ?? ''));
+      (!!causeAction || hostileDeathrattle);
     if (receivedFromOpponent) {
-      const lastEnemyPlay = enemyPlays.at(-1);
-      const source = lastEnemyPlay ? CARDS[lastEnemyPlay.cardId]?.name ?? 'Carta inimiga' : damageSourceFromLog(damageLine);
+      const sourceDefId = causeAction?.sourceDefId
+        ?? (hostileDeathrattle ? deathrattleSourceDefId : undefined)
+        ?? sourceDefIdFromLogs(newLogs);
+      const source = sourceDefId ? CARDS[sourceDefId]?.name ?? 'Ação inimiga' : damageSourceFromLog(damageLine);
       const hpDamage = receivedHits
         .filter((hit) => hit.kind === 'hp')
         .reduce((sum, hit) => sum + (hit.amount ?? 0), 0);
@@ -620,23 +697,29 @@ export function GameView() {
       const myAfter = game.seats[game.yourSeat];
       const severity: DamageNotice['severity'] = myAfter.hp <= 0
         ? 'lethal'
-        : hpDamage >= 5 || defeats > 0 || myAfter.hp <= 10
+        : hpDamage + shieldDamage >= 5 || defeats > 0 || myAfter.hp <= 10
           ? 'heavy'
           : 'normal';
-      const summary = hpDamage > 0
-        ? `${hpDamage} de dano no seu comandante`
-        : shieldDamage > 0
-          ? `${shieldDamage} absorvido pelo seu escudo`
-          : defeats > 0
-            ? `${defeats} criatura${defeats > 1 ? 's' : ''} abatida${defeats > 1 ? 's' : ''}`
-            : 'Seu lado sofreu pressão';
+      const consolidatedHits = consolidateDamageHits(receivedHits);
       setDamageNotice({
         id: fxId++,
         owner: enemyNameForNotice,
         source,
-        summary,
-        detail: damageDetailFromLog(damageLine),
-        hits: receivedHits.slice(0, 4),
+        sourceDefId,
+        sourceIid: causeAction && causeAction.sourceDefId === sourceDefId
+          ? causeAction.sourceIid
+          : undefined,
+        actionLabel: actionLabelFor(
+          causeAction,
+          sourceDefId,
+          hostileDeathrattle ? deathrattleLogs : [],
+        ),
+        summary: impactSummary(hpDamage, shieldDamage, consolidatedHits),
+        incoming: hpDamage + shieldDamage,
+        hpDamage,
+        shieldDamage,
+        hpAfter: myAfter.hp,
+        hits: consolidatedHits.slice(0, 5),
         severity,
         at: ts,
       });
@@ -1443,6 +1526,7 @@ export function GameView() {
                 key={c.iid}
                 c={c}
                 bonus={enemy.attackBonus}
+                sourceActive={damageNotice?.sourceIid === c.iid && now - damageNotice.at < DAMAGE_SOURCE_TTL}
                 blocked={blocked}
                 posIndex={enemyPos.get(c.iid)}
                 preview={hovered ? preview : staticPv}
@@ -1609,6 +1693,7 @@ export function GameView() {
           energyWarn={energyWarn}
           fx={fxFor(`face-${game.yourSeat}`)}
           bubble={bubbleFor(game.yourSeat)}
+          impact={damageNotice}
         />
 
         <div className="hand" ref={handRef}>
@@ -1965,7 +2050,6 @@ export function GameView() {
           </div>
       )}
 
-      {damageNotice && <DamageNoticePanel notice={damageNotice} />}
       {banner && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
       {teach && (
         <div className="teach-toast" key={teach.id} role="status" aria-live="polite">
@@ -1993,25 +2077,63 @@ export function GameView() {
   );
 }
 
-function DamageNoticePanel({ notice }: { notice: DamageNotice }) {
+function ImpactRecap({ notice }: { notice: DamageNotice }) {
+  const boardHits = notice.hits.filter((hit) => hit.kind === 'creature' || hit.kind === 'defeat');
+  const shownBoardHits = boardHits.slice(0, 2);
+  const remaining = boardHits.length - shownBoardHits.length;
+  const aria = `${notice.actionLabel} de ${notice.owner}: ${notice.source}. ${notice.summary}.${
+    notice.incoming > 0 ? ` ${notice.hpAfter} de vida restante.` : ''
+  }`;
   return (
-    <div className={`damage-notice ${notice.severity}`} role="status" aria-live="assertive">
-      <span className="damage-notice-icon"><IcoWarning /></span>
-      <span className="damage-notice-copy">
-        <strong>{notice.summary}</strong>
-        <span className="damage-notice-source"><b>Origem</b> {notice.owner} · {notice.source}</span>
-        <span className="damage-notice-detail">{notice.detail}</span>
+    <div
+      key={notice.id}
+      className={`hero-impact-recap ${notice.severity}`}
+      role="status"
+      aria-live="assertive"
+      aria-atomic="true"
+      aria-label={aria}
+    >
+      <span className="impact-source-art" aria-hidden="true">
+        {notice.sourceDefId
+          ? <CardArt defId={notice.sourceDefId} loading="eager" fetchPriority="high" />
+          : <IcoWarning />}
       </span>
-      <span className="damage-notice-hits">
-        {notice.hits.map((hit, i) => (
-          <span key={`${hit.kind}-${hit.target}-${i}`} className={`damage-hit ${hit.kind}`}>
-            {hit.kind === 'shield'
-              ? <><IcoShield className="ic" /> {hit.target} absorveu {hit.amount}</>
-              : hit.kind === 'defeat'
-                ? <><IcoDeath className="ic" /> {hit.target} caiu</>
-                : <><IcoAttack className="ic" /> {hit.target} −{hit.amount}</>}
+      <span className="impact-copy">
+        <span className="impact-kicker"><b>{notice.actionLabel}</b> · {notice.owner}</span>
+        <strong>{notice.source}</strong>
+        <span className="impact-summary">
+          {notice.summary}
+          {notice.incoming > 0 && (
+            <span className="impact-hp-after"> · {notice.hpAfter} de vida restante</span>
+          )}
+        </span>
+      </span>
+      <span className={`impact-resolution ${notice.incoming > 0 ? 'commander' : 'board'}`} aria-hidden="true">
+        {notice.incoming > 0 && (
+          <span className="impact-step incoming">
+            <IcoAttack className="ic" /><b>{notice.incoming}</b><small>impacto</small>
+          </span>
+        )}
+        {notice.shieldDamage > 0 && (
+          <span className="impact-step shield">
+            <IcoShield className="ic" /><b>−{notice.shieldDamage}</b><small>escudo</small>
+          </span>
+        )}
+        {notice.hpDamage > 0 && (
+          <span className="impact-step hp">
+            <IcoHealth className="ic" /><b>−{notice.hpDamage}</b><small>vida</small>
+          </span>
+        )}
+        {notice.incoming === 0 && shownBoardHits.map((hit, i) => (
+          <span key={`${hit.iid ?? hit.target}-${i}`} className={`impact-step target ${hit.kind}`}>
+            {hit.kind === 'defeat' ? <IcoDeath className="ic" /> : <IcoAttack className="ic" />}
+            <b>{hit.kind === 'defeat' ? 'Caiu' : `−${hit.amount}`}</b>
+            <small>{hit.target}</small>
           </span>
         ))}
+        {notice.incoming === 0 && remaining > 0 && (
+          <span className="impact-more">+{remaining}</span>
+        )}
       </span>
     </div>
   );
@@ -2052,7 +2174,7 @@ function PreviewChip({ p, self, dim }: { p: CombatPreview; self?: boolean; dim?:
   );
 }
 
-function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx, bubble }: {
+function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, lethal, preview, previewDim, onHover, pendingCost = 0, energyWarn, fx, bubble, impact }: {
   seat: SeatView;
   seatIdx: number;
   isEnemy?: boolean;
@@ -2067,13 +2189,14 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   energyWarn?: boolean;
   fx: FloatFx[];
   bubble?: Bubble | null;
+  impact?: DamageNotice | null;
 }) {
   const hit = fx.some((f) => f.kind === 'dmg');
   const shielded = fx.some((f) => f.kind === 'shield');
   const title = commanderTitle(seat.commander);
   const deckRisk = seat.fatigue > 0 || seat.deckCount <= 3;
   return (
-    <div className={`hero-plate ${isEnemy ? 'enemy' : ''} ${hit ? 'hit-received' : ''} ${shielded ? 'shield-absorbed' : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
+    <div className={`hero-plate ${isEnemy ? 'enemy' : ''} ${hit ? 'hit-received' : ''} ${shielded ? 'shield-absorbed' : ''} ${impact ? `has-impact impact-${impact.severity}` : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
       {bubble && (
         <div className={`taunt-bubble ${isEnemy ? 'down' : 'up'}`} key={bubble.id}>{bubble.text}</div>
       )}
@@ -2108,6 +2231,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
         {preview && <PreviewChip p={preview} dim={previewDim} />}
         <FxLayer fx={fx} />
       </button>
+      {impact && <ImpactRecap notice={impact} />}
       <div className="hero-info">
         <span className="hero-name">
           {seat.name}
@@ -2144,7 +2268,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, l
   );
 }
 
-function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onMouseDown, onInspect, style }: {
+function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posIndex, lunging, sourceActive, preview, previewDim, retaliation, onHover, fx, onClick, onPointerDown, onMouseDown, onInspect, style }: {
   c: CreatureOnBoard;
   bonus: number;
   mine?: boolean;
@@ -2155,6 +2279,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
   /** Número da posição quando há cópias iguais na mesa (senão indefinido). */
   posIndex?: number;
   lunging?: boolean;
+  sourceActive?: boolean;
   preview?: CombatPreview | null;
   previewDim?: boolean;
   retaliation?: CombatPreview | null;
@@ -2185,6 +2310,7 @@ function Creature({ c, bonus, mine, selected, buffTarget, blocked, warn, posInde
     blocked ? 'blocked' : '',
     warn ? 'cant-attack' : '',
     lunging ? 'lunging' : '',
+    sourceActive ? 'impact-source' : '',
     isTaunt ? 'taunt' : '',
     c.health < c.baseHealth ? 'wounded' : '',
     hit ? 'hit struck' : '',

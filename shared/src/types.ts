@@ -160,6 +160,8 @@ export interface GameView {
   log: GameLogEntry[];
   /** Últimas cartas jogadas (informação pública para os dois lados). */
   plays: PlayedCard[];
+  /** Ações resolvidas, com origem e alvo estruturados para feedback de combate. */
+  actions: CombatAction[];
 }
 
 export interface GameLogEntry {
@@ -171,6 +173,22 @@ export interface GameLogEntry {
 export interface PlayedCard {
   seat: number;
   cardId: string;
+  at: number;
+}
+
+export type CombatActionKind = 'attack' | 'card';
+
+/**
+ * Ação pública já validada pelo servidor. Não contém mão ou informação
+ * privada; serve para o cliente ligar a origem visual aos resultados do diff.
+ */
+export interface CombatAction {
+  seq: number;
+  seat: number;
+  kind: CombatActionKind;
+  sourceDefId: string;
+  sourceIid?: string;
+  target?: Target;
   at: number;
 }
 
