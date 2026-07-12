@@ -89,6 +89,18 @@ describe('cosméticos v2 · store', () => {
     expect(store.userById(user.id)!.profileCover).toBe('champion');
   });
 
+  it('setFaction persiste somente tradições válidas nas visões privada e pública', async () => {
+    const store = await Store.create(tmpDbPath());
+    const { user } = store.findOrCreatePlayerByAuth('tradicao@t.test', null);
+
+    expect(store.setFaction(user.id, 'eter')?.faction).toBe('eter');
+    expect(store.profileOf(user).faction).toBe('eter');
+    expect(store.publicProfileOf(user).faction).toBe('eter');
+    expect(store.setFaction(user.id, 'javascript:')).toBeUndefined();
+    expect(user.faction).toBe('eter');
+    expect(store.setFaction(user.id, '')?.faction).toBe('');
+  });
+
   it('updateCosmetics ignora valores fora da lista (anti-abuso)', async () => {
     const store = await Store.create(tmpDbPath());
     const { user } = store.findOrCreatePlayerByAuth('lixo@t.test', null);

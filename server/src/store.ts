@@ -6,6 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import {
   DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME, DEFAULT_PROFILE_COVER,
+  FACTION_TILTS,
   isValidAccent, isValidAccentStyle, isValidAvatar, isValidCommander, isValidFrame, isValidProfileCover,
   achievementsOf, accentStyleUnlocked, accentUnlocked, commanderUnlocked, frameUnlocked, profileCoverUnlocked,
   normalizeIconId,
@@ -64,6 +65,8 @@ export interface UserRecord {
   accentStyle: string;
   /** Capa pública do perfil/card social (id em PROFILE_COVERS). */
   profileCover: string;
+  /** Tradição pública e inclinação de deck; vazio = neutro. */
+  faction: string;
   /** Vínculo com auth.users do Supabase (login por senha). Null em convidados/contas legadas/modo local. */
   authUserId: string | null;
   /**
@@ -173,6 +176,7 @@ class JsonPersistence implements Persistence {
       u.frame ??= DEFAULT_FRAME;
       u.accentStyle ??= DEFAULT_ACCENT_STYLE;
       u.profileCover ??= DEFAULT_PROFILE_COVER;
+      u.faction ??= '';
       u.guest = false; // só contas persistem; convidados vivem em memória
       u.league ??= leagueOf(u.mmr) as League;
       u.streak ??= 0;
@@ -324,6 +328,7 @@ class SupabasePersistence implements Persistence {
       frame: p.frame ?? DEFAULT_FRAME,
       accentStyle: p.accent_style ?? DEFAULT_ACCENT_STYLE,
       profileCover: p.profile_cover ?? DEFAULT_PROFILE_COVER,
+      faction: typeof p.faction === 'string' && (p.faction === '' || FACTION_TILTS[p.faction]) ? p.faction : '',
       authUserId: p.auth_user_id ?? null,
       guest: false,
       mmr: p.mmr,
@@ -353,6 +358,7 @@ class SupabasePersistence implements Persistence {
         frame: user.frame,
         accent_style: user.accentStyle,
         profile_cover: user.profileCover,
+        faction: user.faction,
         auth_user_id: user.authUserId,
         mmr: user.mmr,
         wins: user.wins,
@@ -484,9 +490,10 @@ export class Store {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const forceLocal = process.env.LC_LOCAL === '1' || process.env.LEGENDSCLASH_E2E === '1';
     const useSupabase = !!(url && key) && !forceLocal;
+    const localPath = jsonPath ?? process.env.LC_DB_PATH;
     const persistence = useSupabase
       ? new SupabasePersistence(url!, key!)
-      : new JsonPersistence(jsonPath);
+      : new JsonPersistence(localPath);
     if (!useSupabase) {
       console.log('[store] modo local — snapshot JSON (sem SUPABASE_* no ambiente, ou LC_LOCAL=1)');
     }
@@ -595,6 +602,7 @@ export class Store {
       frame: DEFAULT_FRAME,
       accentStyle: DEFAULT_ACCENT_STYLE,
       profileCover: DEFAULT_PROFILE_COVER,
+      faction: '',
       authUserId,
       guest: false,
       mmr: BASE_MMR,
@@ -632,6 +640,7 @@ export class Store {
       frame: DEFAULT_FRAME,
       accentStyle: DEFAULT_ACCENT_STYLE,
       profileCover: DEFAULT_PROFILE_COVER,
+      faction: '',
       authUserId: null,
       guest: true,
       mmr: BASE_MMR,
@@ -692,7 +701,7 @@ export class Store {
     if (patch.profileCover && isValidProfileCover(patch.profileCover) && profileCoverUnlocked(patch.profileCover, earned)) {
       u.profileCover = patch.profileCover;
     }
-    this.persistence.saveUser(u);
+    if (!u.guest) this.persistence.saveUser(u);
     return u;
   }
 
@@ -734,6 +743,7 @@ export class Store {
     target.frame = guest.frame;
     target.accentStyle = guest.accentStyle;
     target.profileCover = guest.profileCover;
+    target.faction = guest.faction;
     target.mmr = guest.mmr;
     target.league = guest.league ?? leagueOf(guest.mmr) as League;
     target.wins = guest.wins;
@@ -781,6 +791,7 @@ export class Store {
     for (const u of users) {
       if (!u.guest || this.byId.has(u.id) || !reachable.has(u.id)) continue;
       u.profileCover ??= DEFAULT_PROFILE_COVER;
+      u.faction ??= '';
       u.league ??= leagueOf(u.mmr) as League;
       this.byId.set(u.id, u);
       restored++;
@@ -795,6 +806,15 @@ export class Store {
 
   userById(id: string): UserRecord | undefined {
     return this.byId.get(id);
+  }
+
+  /** Persiste a tradição como identidade pública e fonte da composição do deck. */
+  setFaction(userId: string, factionId: string): UserRecord | undefined {
+    const u = this.byId.get(userId);
+    if (!u || (factionId !== '' && !FACTION_TILTS[factionId])) return undefined;
+    u.faction = factionId;
+    if (!u.guest) this.persistence.saveUser(u);
+    return u;
   }
 
   /**
@@ -909,6 +929,7 @@ export class Store {
       frame: u.frame,
       accentStyle: u.accentStyle,
       profileCover: u.profileCover,
+      faction: u.faction,
       guest: u.guest,
       mmr: u.mmr,
       league: u.league ?? leagueOf(u.mmr) as League,
@@ -934,6 +955,7 @@ export class Store {
       frame: u.frame,
       accentStyle: u.accentStyle,
       profileCover: u.profileCover,
+      faction: u.faction,
       league: u.league ?? leagueOf(u.mmr) as League,
       mmr: u.mmr,
       wins: u.wins,

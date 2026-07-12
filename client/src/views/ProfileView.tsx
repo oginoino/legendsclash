@@ -1,16 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { achievementLabel, commanderTitle } from '@legendsclash/shared';
-import type { Bus } from '../sounds';
 import { logout, openAccountPrompt, useAppState } from '../store';
 import { Avatar, Sigil, accentVars, profileCoverVars } from '../cosmetics';
 import { FACTIONS } from '../lore';
 import {
   IcoAchievement, IcoBack, IcoCheck, IcoHaptics, IcoHint, IcoMedal, IcoMotion,
-  IcoMusic, IcoMuted, IcoPreferences, IcoProfile, IcoReset, IcoSound, IcoSparkle,
+  IcoPreferences, IcoProfile, IcoReset, IcoSound, IcoSparkle,
   IcoStreak,
 } from '../icons';
 import {
-  DEFAULT_VOLUMES, getVolume, MUSIC_TRACK, resetVolumes, setVolume, sfx, subscribeVolume,
+  getVolume, MUSIC_TRACK, resetVolumes, setVolume, sfx, subscribeVolume,
 } from '../sounds';
 import {
   resetLearningProgress, resetPreferences, triggerHaptic, updatePreferences, usePreferences,
@@ -18,6 +17,7 @@ import {
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { ProfileModal } from '../components/ProfileModal';
+import { AudioLevelControl } from '../components/AudioLevelControl';
 
 type ProfileTab = 'overview' | 'preferences';
 
@@ -55,54 +55,6 @@ function PreferenceSwitch({
   );
 }
 
-function AudioRow({
-  bus,
-  label,
-  description,
-  value,
-  onChange,
-  onToggleMute,
-}: {
-  bus: Bus;
-  label: string;
-  description: string;
-  value: number;
-  onChange: (value: number) => void;
-  onToggleMute: () => void;
-}) {
-  const Icon = bus === 'music' ? IcoMusic : IcoSound;
-  const percent = Math.round(value * 100);
-  return (
-    <div className="audio-preference-row">
-      <span className="preference-leading" aria-hidden="true"><Icon /></span>
-      <div className="preference-copy">
-        <strong>{label}</strong>
-        <span>{description}</span>
-      </div>
-      <button
-        type="button"
-        className="preference-icon-button"
-        onClick={onToggleMute}
-        aria-label={value > 0 ? `Silenciar ${label.toLowerCase()}` : `Ativar ${label.toLowerCase()}`}
-        title={value > 0 ? 'Silenciar' : 'Ativar'}
-      >
-        {value > 0 ? <Icon /> : <IcoMuted />}
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        aria-label={`Volume de ${label.toLowerCase()}`}
-        style={{ '--audio-level': `${percent}%` } as React.CSSProperties}
-      />
-      <output>{percent}%</output>
-    </div>
-  );
-}
-
 export function ProfileView({ onClose }: { onClose: () => void }) {
   const s = useAppState();
   const p = s.profile;
@@ -113,10 +65,6 @@ export function ProfileView({ onClose }: { onClose: () => void }) {
   const [learningReset, setLearningReset] = useState(false);
   const [sfxVolume, setSfxVolume] = useState(() => getVolume('sfx'));
   const [musicVolume, setMusicVolume] = useState(() => getVolume('music'));
-  const audibleRef = useRef<Record<Bus, number>>({
-    sfx: sfxVolume > 0 ? sfxVolume : DEFAULT_VOLUMES.sfx,
-    music: musicVolume > 0 ? musicVolume : DEFAULT_VOLUMES.music,
-  });
 
   useEffect(() => subscribeVolume(() => {
     setSfxVolume(getVolume('sfx'));
@@ -129,26 +77,15 @@ export function ProfileView({ onClose }: { onClose: () => void }) {
   const games = p.wins + p.losses;
   const winRate = games > 0 ? Math.round((p.wins / games) * 100) : 0;
   const rankProgress = progression(p.mmr, p.league);
-  const faction = s.faction ? FACTIONS[s.faction] : null;
+  const faction = p.faction ? FACTIONS[p.faction] : null;
   const identityStyle = {
     ...accentVars(p.accent, p.accentStyle),
     ...profileCoverVars(p.profileCover),
   } as React.CSSProperties;
 
-  function changeVolume(bus: Bus, value: number) {
-    if (value > 0) audibleRef.current[bus] = value;
-    setVolume(bus, value);
-  }
-
-  function toggleMute(bus: Bus) {
-    const current = getVolume(bus);
-    changeVolume(bus, current > 0 ? 0 : audibleRef.current[bus]);
-  }
-
   function resetAll() {
     resetPreferences();
     resetVolumes();
-    audibleRef.current = { ...DEFAULT_VOLUMES };
     setConfirm(null);
   }
 
@@ -322,21 +259,19 @@ export function ProfileView({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
               <div className="preference-rows">
-                <AudioRow
+                <AudioLevelControl
                   bus="sfx"
                   label="Efeitos"
                   description="Ações, impactos, turnos e confirmações."
                   value={sfxVolume}
-                  onChange={(value) => changeVolume('sfx', value)}
-                  onToggleMute={() => toggleMute('sfx')}
+                  onChange={(value) => setVolume('sfx', value)}
                 />
-                <AudioRow
+                <AudioLevelControl
                   bus="music"
                   label="Música"
                   description={`${MUSIC_TRACK.title} · ${MUSIC_TRACK.artist}, em loop nos menus e Embates.`}
                   value={musicVolume}
-                  onChange={(value) => changeVolume('music', value)}
-                  onToggleMute={() => toggleMute('music')}
+                  onChange={(value) => setVolume('music', value)}
                 />
               </div>
             </section>

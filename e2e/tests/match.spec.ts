@@ -84,6 +84,27 @@ test.describe('partida real: matchmaking → duelo → fim de jogo', () => {
     expect(results.filter((t) => t!.includes('Derrota')).length).toBe(1);
     await expect(xOver.locator('.mmr-change')).toContainText('MMR');
 
+    // conteúdo variável (recap + primeira conquista) rola sem esconder o CTA.
+    const winner = results[0]!.includes('Vitória') ? xavier : aline;
+    await winner.setViewportSize({ width: 900, height: 520 });
+    const winnerOverlay = winner.locator('.game-over');
+    await expect(winnerOverlay.getByRole('button', { name: 'Jogar de novo' })).toBeVisible();
+    await expect(winner.locator('.toast')).toHaveCount(0);
+    const resultLayout = await winnerOverlay.evaluate((panel) => {
+      const scroller = panel.querySelector<HTMLElement>('.go-scroll')!;
+      const rect = panel.getBoundingClientRect();
+      return {
+        panelTop: rect.top,
+        panelBottom: rect.bottom,
+        clientHeight: scroller.clientHeight,
+        scrollHeight: scroller.scrollHeight,
+      };
+    });
+    expect(resultLayout.panelTop).toBeGreaterThanOrEqual(0);
+    expect(resultLayout.panelBottom).toBeLessThanOrEqual(520);
+    expect(resultLayout.scrollHeight).toBeGreaterThan(resultLayout.clientHeight);
+    await winner.screenshot({ path: shotPath('06b-resultado-compacto.png') });
+
     // de volta à home: histórico e ranking refletem a partida
     await xavier.click('button:has-text("Jogar de novo")');
     await expect(xavier.locator('.history-list li').first()).toContainText(/Vitória|Derrota/);

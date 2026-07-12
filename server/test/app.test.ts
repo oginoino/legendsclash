@@ -368,7 +368,7 @@ describe('app · continuidade social (revanche/amigos/perfil)', () => {
 
     // gate de relação: não dá para ver o perfil de um id qualquer
     wsA.msg({ t: 'profile:get', playerId: 'fantasma' });
-    expect(wsA.byType('error').some((e) => e.message.includes('quem enfrentou'))).toBe(true);
+    expect(wsA.byType('error').some((e) => e.message.includes('não encontrado'))).toBe(true);
   });
 
   it('revanche: A pede, B recebe e ao pedir de volta começa uma nova partida', async () => {
@@ -459,5 +459,34 @@ describe('app · variedade de conteúdo (Fase 6)', () => {
     const errsBefore = ws.byType('error').length;
     ws.msg({ t: 'faction:pick', factionId: 'eter' }); // válida → sem novo erro
     expect(ws.byType('error').length).toBe(errsBefore);
+    expect(store.userById(u.id)?.faction).toBe('eter');
+    expect(ws.byType('profile').at(-1)?.profile.faction).toBe('eter');
+  });
+
+  it('ranking expõe capa e tradição e libera a visão pública de quem pontua', async () => {
+    const { store, app, connect } = await makeApp();
+    dispose = () => app.dispose();
+    const { user: viewer } = store.findOrCreatePlayerByAuth('viewer@t.test', null);
+    viewer.name = 'Observadora';
+    const { user: ranked } = store.findOrCreatePlayerByAuth('ranked@t.test', null);
+    ranked.name = 'Arquimaga';
+    ranked.wins = 2;
+    store.updateCosmetics(ranked.id, { profileCover: 'archive' });
+    store.setFaction(ranked.id, 'eter');
+
+    const ws = connect();
+    ws.msg({ t: 'hello', token: store.createSession(viewer.id) });
+    ws.msg({ t: 'leaderboard:get' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const entry = ws.byType('leaderboard').at(-1)?.entries.find((candidate) => candidate.id === ranked.id);
+    expect(entry).toMatchObject({ profileCover: 'archive', faction: 'eter' });
+
+    ws.msg({ t: 'profile:get', playerId: ranked.id });
+    expect(ws.byType('profile:view').at(-1)?.profile).toMatchObject({
+      id: ranked.id,
+      profileCover: 'archive',
+      faction: 'eter',
+    });
   });
 });

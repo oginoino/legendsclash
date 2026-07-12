@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVolume, setVolume, subscribeVolume, type Bus } from '../sounds';
 import { IcoMuted, IcoSound, IcoMusic } from '../icons';
+import { AudioLevelControl } from './AudioLevelControl';
 
 /**
  * Controle de som: um botão (alto-falante/mudo) que abre um popover com dois sliders
@@ -37,7 +38,7 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
     if (bus === 'sfx') setSfx(value); else setMusic(value);
   }
 
-  const muted = sfxVol <= 0;
+  const muted = sfxVol <= 0 && musicVol <= 0;
   return (
     <div className="sound-control" ref={ref}>
       <button
@@ -47,27 +48,18 @@ export function SoundControl({ className = 'btn small ghost' }: { className?: st
         title="Som"
         aria-label="Ajustar som"
         aria-expanded={open}
+        aria-haspopup="dialog"
       >
         {muted ? <IcoMuted /> : <IcoSound />}
       </button>
       {open && (
-        <div className="volume-popover" role="group" aria-label="Volume">
-          <label className="volume-row">
-            <span><IcoSound className="ic" /> Efeitos</span>
-            <input
-              type="range" min={0} max={1} step={0.01} value={sfxVol}
-              onChange={(e) => change('sfx', Number(e.target.value))}
-              aria-label="Volume dos efeitos"
-            />
-          </label>
-          <label className="volume-row">
-            <span><IcoMusic className="ic" /> Música</span>
-            <input
-              type="range" min={0} max={1} step={0.01} value={musicVol}
-              onChange={(e) => change('music', Number(e.target.value))}
-              aria-label="Volume da música"
-            />
-          </label>
+        <div className="volume-popover" role="dialog" aria-label="Áudio da partida">
+          <div className="volume-popover-heading">
+            <span><IcoMusic className="ic" /> Áudio da partida</span>
+            <small>Aplicado em todo o jogo</small>
+          </div>
+          <AudioLevelControl bus="sfx" label="Efeitos" value={sfxVol} compact onChange={(value) => change('sfx', value)} />
+          <AudioLevelControl bus="music" label="Música" value={musicVol} compact onChange={(value) => change('music', value)} />
         </div>
       )}
     </div>

@@ -30,7 +30,7 @@ export function App() {
     <>
       {view}
       <PlayerProfileCard />
-      {s.toast && <div className="toast">{s.toast}</div>}
+      {s.toast && !s.gameOver && <div className="toast">{s.toast}</div>}
       {s.token && !s.connected && !s.recoveringGame && (s.replaced ? (
         <div className="conn-banner">
           O jogo foi aberto em outra aba ou dispositivo.{' '}

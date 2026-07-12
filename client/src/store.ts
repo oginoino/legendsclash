@@ -223,18 +223,24 @@ export function resumeHere(): void {
 
 function handleServerMsg(msg: ServerMsg): void {
   switch (msg.t) {
-    case 'hello:ok':
+    case 'hello:ok': {
+      const persistedFaction = msg.profile.faction ?? '';
+      const legacyFaction = state.faction;
+      const faction = persistedFaction || legacyFaction;
+      try { localStorage.setItem('lc_faction', faction); } catch { /* ignore */ }
       setState({
         connected: true, profile: msg.profile,
         factionsEnabled: !!msg.content?.factions,
         cosmeticsEnabled: !!msg.content?.cosmetics,
+        faction,
       });
       send({ t: 'leaderboard:get' });
       send({ t: 'history:get' });
-      // re-anuncia a facção escolhida (o servidor guarda em memória por sessão)
-      if (state.faction) send({ t: 'faction:pick', factionId: state.faction });
+      // Migra uma escolha antiga do dispositivo para o perfil persistido.
+      if (!persistedFaction && legacyFaction) send({ t: 'faction:pick', factionId: legacyFaction });
       joinPendingRoom();
       break;
+    }
     case 'pong':
       break; // o onmessage já registrou o sinal de vida
     case 'error':
@@ -242,7 +248,8 @@ function handleServerMsg(msg: ServerMsg): void {
       showToast(msg.message);
       break;
     case 'profile':
-      setState({ profile: msg.profile });
+      try { localStorage.setItem('lc_faction', msg.profile.faction ?? ''); } catch { /* ignore */ }
+      setState({ profile: msg.profile, faction: msg.profile.faction ?? '' });
       break;
     case 'queue:status':
       setState({ inQueue: msg.inQueue, queueSize: msg.size, waitingAlone: !!msg.waitingAlone });
