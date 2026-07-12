@@ -1,0 +1,178 @@
+/* ══ Mobile: telas de menu (login, home, sala, modais) ══════════ */
+@media (max-width: 640px) {
+
+  /* login */
+  /* login/logo/home/panel já escalam por clamp() — sem overrides fixos aqui */
+  .home-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .profile-chip {
+    width: 100%;
+  }
+
+  .home-screen::before {
+    background-position: 58% top;
+  }
+
+  .home-screen::after {
+    opacity: .45;
+  }
+
+  .home-vista {
+    min-height: 174px;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-start;
+    background-position: 60% center;
+  }
+
+  .home-vista-copy strong {
+    max-width: 15ch;
+    font-size: 1.55rem;
+  }
+
+  .home-vista-meta {
+    justify-content: flex-start;
+  }
+
+  .home-vista-meta span {
+    min-height: 30px;
+    font-size: 12px;
+  }
+
+  .home-world {
+    grid-template-columns: 1fr;
+  }
+
+  .home-chapter {
+    min-height: 0;
+  }
+
+  .home-traditions-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .home-traditions-head em {
+    white-space: normal;
+  }
+
+  .home-tradition-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-story-beat {
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 9px;
+  }
+
+  /* placar vira cartões de 2 linhas: sem nomes truncados nem colunas escondidas */
+  .board-table,
+  .board-table tbody,
+  .board-table tr,
+  .board-table td {
+    display: block;
+  }
+
+  .board-table tr {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "pos name mmr" "pos league vd";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 3px;
+    padding: 9px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .board-table tr.me {
+    background: #4d8dff14;
+    border-radius: var(--r-sm);
+  }
+
+  .board-table td {
+    padding: 0;
+    border: none;
+    font-size: 13px;
+  }
+
+  /* o destaque pinta só na linha (tr); zera a camada por célula p/ não dobrar o tom */
+  .board-table tr.me td {
+    background: transparent;
+  }
+
+  .board-table .pos {
+    grid-area: pos;
+    align-self: center;
+    width: auto;
+    font-size: 15px;
+  }
+
+  .board-table td:nth-child(2) {
+    grid-area: name;
+    min-width: 0;
+  }
+
+  .board-player-button {
+    min-width: 0;
+  }
+
+  .board-table td:nth-child(3) {
+    grid-area: league;
+  }
+
+  .board-table td:nth-child(4) {
+    grid-area: mmr;
+    text-align: right;
+    font-weight: 800;
+    color: var(--gold);
+  }
+
+  .board-table td:nth-child(5) {
+    grid-area: vd;
+    text-align: right;
+    color: var(--dim-strong);
+    font-size: var(--fs-xs);
+  }
+
+  .history-list .history-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    font-size: 13px;
+  }
+
+  /* sala */
+  .room-screen {
+    padding: 14px 12px;
+    gap: 12px;
+  }
+
+  .room-code {
+    padding: 10px;
+  }
+
+  /* tamanho/espaçamento já fluidos via clamp() */
+  .room-chat {
+    min-height: 300px;
+  }
+
+  /* modais cabem na tela e rolam (gutter já vem do padding fluido do .overlay) */
+  .go-header {
+    padding: 18px 18px 11px;
+  }
+
+  .go-scroll {
+    padding: 3px 17px 12px;
+  }
+
+  .go-footer {
+    padding: 9px 17px calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .go-reason {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}

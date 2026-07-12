@@ -1,0 +1,180 @@
+/* ── Login ────────────────────────────────────────────────────── */
+.login-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-screen::before,
+.login-screen::after {
+  content: '🐉';
+  position: absolute;
+  font-size: 130px;
+  opacity: .07;
+  animation: drift 14s ease-in-out infinite;
+}
+
+.login-screen::before {
+  top: 8%;
+  left: 6%;
+}
+
+.login-screen::after {
+  content: '⚔️';
+  bottom: 10%;
+  right: 8%;
+  animation-delay: -7s;
+}
+
+@keyframes drift {
+  50% {
+    transform: translateY(-26px) rotate(6deg);
+  }
+}
+
+.login-card {
+  background: linear-gradient(180deg, #1b2538f2, #141c2cf2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  padding: clamp(22px, 5vw, 38px);
+  width: 100%;
+  max-width: 430px;
+  text-align: center;
+  box-shadow: 0 30px 80px #000a, inset 0 1px 0 #ffffff14;
+  position: relative;
+  z-index: 1;
+}
+
+.tagline {
+  color: var(--dim);
+  margin: 4px 0 24px;
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.login-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+input {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 11px 12px;
+  font-size: 16px;
+  /* 16px+ evita o zoom automático do iOS ao focar o campo */
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px #4d8dff22;
+}
+
+.avatar-picker {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  background: var(--bg-2);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 5px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  overflow: hidden;
+  transition: transform .12s, border-color .12s;
+}
+
+.avatar svg,
+.avatar .lc-cosmetic-img {
+  width: 100%;
+  height: 100%;
+}
+
+.avatar .lc-cosmetic-img {
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .avatar:hover {
+    transform: translateY(-3px);
+  }
+}
+
+.avatar.selected {
+  border-color: var(--gold);
+  background: #e3b34122;
+  box-shadow: 0 0 14px #e3b34144;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0;
+}
+
+.login-note {
+  color: var(--dim);
+  font-size: 12px;
+  text-align: center;
+  margin: 0;
+}
+
+.login-step-info {
+  color: var(--dim);
+  font-size: 14px;
+  margin: 0;
+  text-align: center;
+}
+
+.login-step-info strong {
+  color: var(--text);
+  word-break: break-all;
+}
+
+.login-links {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* "link enviado" e retorno do link (/auth/callback) */
+.login-sent,
+.login-callback {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+
+.sent-icon {
+  font-size: 44px;
+}
+
+.login-callback .spinner {
+  margin: 4px auto;
+}

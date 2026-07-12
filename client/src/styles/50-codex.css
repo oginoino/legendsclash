@@ -1,0 +1,514 @@
+/* ══ Arquivo de Aurélia (Codex / lore das cartas) ══════════════ */
+.codex {
+  display: flex;
+  flex-direction: column;
+  max-width: 980px;
+  width: calc(100% - 32px);
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding: 0 30px 30px;
+  text-align: left;
+  background:
+    var(--noise),
+    linear-gradient(180deg, #1a2335, #141c2c);
+  animation: pop-in .35s cubic-bezier(.2, 1.4, .45, 1);
+  backdrop-filter: blur(18px);
+  scrollbar-width: thin;
+}
+
+.codex-close,
+.codex-back {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  align-self: flex-end;
+  margin: 14px 0 4px;
+  background: #141c2cf2;
+  backdrop-filter: blur(4px);
+}
+
+.codex-back {
+  align-self: flex-start;
+}
+
+.codex-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  min-height: clamp(190px, 24vw, 270px);
+  padding: 26px 18px;
+  margin: 2px 0 18px;
+  overflow: hidden;
+  border: 1px solid #ffffff22;
+  border-radius: 18px;
+  background:
+    radial-gradient(58% 52% at 50% 48%, #0a0e163a, #070b13da 78%),
+    linear-gradient(180deg, #080d17a8 0%, #080d17dc 100%),
+    url('/assets/illustrations/aurelia-archive.webp') center 46% / cover no-repeat;
+  box-shadow: 0 16px 44px #0008, inset 0 1px 0 #ffffff18;
+}
+
+.codex-hero::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border: 1px solid #e3b34124;
+  border-radius: 17px;
+  pointer-events: none;
+}
+
+.codex-hero>* {
+  position: relative;
+  z-index: 1;
+}
+
+.codex-kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.codex-realm {
+  margin: 2px 0 6px;
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  background: linear-gradient(180deg, #ffe9a8 10%, #c98f1b 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 4px 40px #e3b34133;
+}
+
+.codex-tagline {
+  margin: 0;
+  color: #d4deec;
+  font-style: italic;
+  font-size: 15px;
+  text-shadow: 0 2px 10px #000f;
+}
+
+.codex-intro {
+  max-width: 64ch;
+  margin: 16px auto 6px;
+}
+
+.codex-intro p {
+  color: #c2cdde;
+  line-height: 1.75;
+  font-size: 14.5px;
+  margin: 0 0 12px;
+}
+
+.codex-storyline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 860px;
+  margin: 16px auto 2px;
+}
+
+.codex-storybeat {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #ffffff16;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, #121b2cc4, #0a0f19e0),
+    var(--noise);
+  box-shadow: inset 0 1px 0 #ffffff0a;
+}
+
+.codex-storybeat-step {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #e3b34166;
+  background: #2b210acc;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.codex-storybeat div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.codex-storybeat em {
+  color: var(--gold);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+}
+
+.codex-storybeat strong {
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.codex-storybeat p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.codex-section-title {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-size: 15px;
+  color: var(--gold);
+  margin: 26px 0 14px;
+}
+
+.codex-section-title::after {
+  content: '';
+  display: block;
+  width: 54px;
+  height: 2px;
+  margin: 8px auto 0;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+
+.codex-factions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
+}
+
+.codex-faction-card {
+  --accent: var(--gold);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  background: linear-gradient(160deg, #1c2740, #141c2c);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: var(--text);
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+
+.codex-faction-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px #0007;
+}
+
+.codex-faction-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 10px 30px #0008;
+}
+
+.codex-faction-sigil {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.codex-faction-sigil.sm {
+  font-size: 18px;
+}
+
+.codex-faction-card strong {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.codex-faction-motto {
+  color: #cdd7e6;
+  font-size: 12.5px;
+}
+
+.codex-faction-blurb {
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.codex-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 24px 0 6px;
+  position: sticky;
+  top: 52px;
+  z-index: 4;
+  padding: 8px 0;
+  background: linear-gradient(180deg, #141c2cf2 70%, transparent);
+}
+
+.codex-search {
+  flex: 1 1 220px;
+  min-width: min(240px, 100%);
+}
+
+.codex-search input {
+  width: 100%;
+  padding: 8px 11px;
+  font-size: 13px;
+  border-radius: 99px;
+  background: #0a0e16dd;
+  border-color: #ffffff24;
+}
+
+.codex-pill {
+  --accent: var(--gold);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+
+.codex-pill:hover {
+  color: var(--text);
+}
+
+.codex-pill.active {
+  color: #0a0e16;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.codex-group {
+  --accent: var(--gold);
+  margin: 14px 0 6px;
+}
+
+.codex-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--accent);
+  border-bottom: 1px solid #ffffff12;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.codex-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 22px 16px;
+  align-items: start;
+}
+
+.codex-tile {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 14px;
+  padding: 2px 0 4px;
+  color: var(--text);
+  text-align: center;
+  cursor: pointer;
+  transition: transform .14s;
+}
+
+.codex-tile:hover {
+  transform: translateY(-3px);
+}
+
+.codex-tile:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 8px;
+}
+
+.codex-tile .card {
+  opacity: 1;
+  cursor: pointer;
+}
+
+.codex-tile:hover .card {
+  border-color: #4d8dff99;
+  box-shadow: 0 14px 30px #000a, 0 0 18px #4d8dff44;
+}
+
+.codex-tile-card.card:not(.playable),
+.codex-detail-card.card:not(.playable) {
+  opacity: 1;
+}
+
+.codex-tile-epithet {
+  color: var(--dim);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.25;
+  max-width: var(--card-w);
+}
+
+.codex-empty {
+  margin: 28px auto 10px;
+  color: var(--dim);
+  text-align: center;
+  font-size: 14px;
+}
+
+.codex-notes {
+  display: grid;
+  gap: 10px;
+  max-width: 70ch;
+  margin: 0 auto;
+}
+
+.codex-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: #0e1626;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.codex-note-icon {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.codex-note strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.codex-note p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* — página de lore de uma carta — */
+.codex-detail {
+  --accent: var(--gold);
+}
+
+.codex-detail-head {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  margin: 6px 0 8px;
+  border-bottom: 1px solid #ffffff12;
+  padding-bottom: 20px;
+}
+
+.codex-detail-card {
+  flex-shrink: 0;
+  cursor: default;
+  box-shadow: 0 0 0 1px #ffffff22, 0 18px 50px #000d, 0 0 34px var(--accent);
+}
+
+.codex-detail-id {
+  min-width: 0;
+}
+
+.codex-faction-chip {
+  display: inline-block;
+  background: #0a0e16;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 99px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.codex-detail-id h2 {
+  font-size: 30px;
+  margin: 0 0 4px;
+}
+
+.codex-epithet {
+  color: var(--accent);
+  font-style: italic;
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+
+.codex-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.codex-stat {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 4px 11px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dim);
+}
+
+.codex-stat.atk {
+  color: var(--gold);
+  border-color: var(--gold-soft);
+}
+
+.codex-stat.hp {
+  color: #ff8c86;
+  border-color: #f8514955;
+}
+
+.codex-stat.keyword {
+  color: #8fa3c0;
+  border-color: #8fa3c055;
+}
+
+.codex-prose {
+  max-width: 64ch;
+  margin: 18px 0 0;
+}
+
+.codex-prose h4 {
+  color: var(--accent);
+  letter-spacing: 1px;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.codex-prose p {
+  color: #c8d2e2;
+  line-height: 1.8;
+  font-size: 14.5px;
+  margin: 0;
+}
+
+.codex-prose.mechanic p {
+  background: #0e1626;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #b6c1d2;
+  font-size: 13.5px;
+  line-height: 1.6;
+}

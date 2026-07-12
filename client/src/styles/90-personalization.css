@@ -1,0 +1,564 @@
+/* ── Provocações na arena (roda + balões sobre o comandante) ───── */
+.taunt-dock {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.taunt-toggle {
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 11px;
+}
+
+.taunt-toggle.active {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.taunt-wheel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: max-content;
+  max-width: min(280px, 86vw);
+  background: linear-gradient(180deg, #1d2840, #161f30);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 14px 36px #000c;
+  z-index: 47;
+  animation: pop-in .16s cubic-bezier(.2, 1.4, .45, 1);
+}
+
+.taunt-pick {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+  transition: transform .1s, border-color .1s, background .1s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .taunt-pick:hover {
+    transform: translateY(-1px);
+    border-color: var(--gold-soft);
+    background: var(--panel);
+  }
+}
+
+.taunt-bubble {
+  position: absolute;
+  left: 10px;
+  max-width: 220px;
+  background: linear-gradient(180deg, #ffffff, #e6edfb);
+  color: #15233f;
+  border-radius: 14px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 10px 26px #000b;
+  z-index: 32;
+  pointer-events: none;
+  animation: bubble-pop .3s cubic-bezier(.2, 1.5, .4, 1), bubble-fade .5s ease 3.9s forwards;
+}
+
+.taunt-bubble.up {
+  bottom: calc(100% - 4px);
+  transform-origin: 24px 100%;
+}
+
+.taunt-bubble.down {
+  top: calc(100% - 4px);
+  transform-origin: 24px 0;
+}
+
+.taunt-bubble::after {
+  content: '';
+  position: absolute;
+  left: 22px;
+  border: 8px solid transparent;
+}
+
+.taunt-bubble.up::after {
+  top: 100%;
+  border-bottom: 0;
+  border-top-color: #e6edfb;
+}
+
+.taunt-bubble.down::after {
+  bottom: 100%;
+  border-top: 0;
+  border-bottom-color: #ffffff;
+}
+
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: scale(.5) translateY(6px);
+  }
+}
+
+@keyframes bubble-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ── Modal de personalização (perfil + comandante) ─────────────── */
+.customize-modal {
+  max-width: 560px;
+  width: calc(100% - 32px);
+  max-height: 92dvh;
+  overflow-y: auto;
+  text-align: left;
+  animation: pop-in .35s cubic-bezier(.2, 1.4, .45, 1);
+}
+
+.customize-modal h4 {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+}
+
+.commander-preview {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  margin: 6px 0 4px;
+}
+
+.identity-preview {
+  min-height: 118px;
+  background:
+    linear-gradient(90deg, #0a0e16f2 0%, #101827db 58%, #1018277a 100%),
+    radial-gradient(60% 90% at 8% 52%, var(--accent-glow), transparent 70%),
+    var(--profile-cover) center / cover no-repeat,
+    var(--bg-2);
+}
+
+.identity-preview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid #ffffff14;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.identity-preview>* {
+  position: relative;
+  z-index: 1;
+}
+
+.commander-medallion {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 32px;
+  background: radial-gradient(circle at 35% 30%, #2c3c5e, #16203455);
+  border: 2px solid var(--accent, var(--gold));
+  box-shadow: inset 0 0 14px #0008, 0 0 18px color-mix(in srgb, var(--accent, #e3b341) 60%, transparent);
+}
+
+.commander-id {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.commander-id strong {
+  font-size: 18px;
+}
+
+.commander-title {
+  color: var(--accent, var(--gold));
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.commander-tradition {
+  color: #c8d2e2;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.cz-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0 10px;
+  padding: 4px;
+  border: 1px solid #ffffff14;
+  border-radius: 12px;
+  background: #080d16b8;
+}
+
+.cz-tab {
+  min-width: 0;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 6px;
+  background: transparent;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cz-tab.active {
+  background: var(--accent-grad, var(--gold));
+  color: #07101d;
+  box-shadow: 0 5px 14px #0007;
+}
+
+.cz-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--dim);
+  margin-top: 14px;
+}
+
+.cz-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cz-grid.commanders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 8px;
+}
+
+.cz-chip {
+  background: var(--bg-2);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 5px;
+  cursor: pointer;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  overflow: hidden;
+  transition: transform .1s, border-color .1s, background .1s, color .1s;
+}
+
+.cz-avatar-portrait {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0f1727;
+}
+
+.cz-chip.sel {
+  border-color: var(--accent, var(--gold));
+  background: #ffffff12;
+  color: var(--accent);
+}
+
+.cz-covers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cz-cover {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 74px;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 9px;
+  background:
+    linear-gradient(180deg, #0509131a 0%, #050913d9 100%),
+    var(--profile-cover) center / cover no-repeat,
+    var(--bg-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .1s, border-color .1s, box-shadow .1s;
+}
+
+.cz-cover.sel {
+  border-color: var(--accent, var(--gold));
+  box-shadow: 0 0 0 1px var(--accent, var(--gold)), 0 10px 24px #0009;
+}
+
+.cz-cover>span:first-child {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border-radius: 99px;
+  padding: 4px 8px;
+  background: #050913cc;
+  color: #e7edf7;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.cz-cover.locked {
+  filter: grayscale(.65) brightness(.72);
+}
+
+.cz-traditions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  gap: 8px;
+}
+
+.cz-tradition {
+  --accent: var(--gold);
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 2px 9px;
+  align-items: center;
+  min-height: 74px;
+  padding: 10px;
+  border: 2px solid var(--line);
+  border-left-color: var(--accent);
+  border-radius: 12px;
+  background:
+    linear-gradient(160deg, #101827d0, #080d16e8),
+    var(--noise);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .1s, border-color .1s, background .1s;
+}
+
+.cz-tradition.sel {
+  border-color: var(--accent);
+  background:
+    linear-gradient(160deg, #17243bd8, #0b111fe8),
+    var(--noise);
+}
+
+.cz-tradition-sigil {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #050913b8;
+  color: var(--accent);
+}
+
+.cz-tradition strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.cz-tradition small {
+  min-width: 0;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+
+.cz-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #ffffff14;
+  border-radius: 10px;
+  background: #080d16a8;
+  color: #b8c5d8;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.cz-cmd {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-2);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 6px;
+  min-height: 94px;
+  cursor: pointer;
+  color: var(--text);
+  overflow: hidden;
+  transition: transform .1s, border-color .1s, background .1s;
+}
+
+.cz-cmd.sel {
+  border-color: var(--accent, var(--gold));
+  background: #ffffff12;
+}
+
+.cz-cmd-portrait {
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 66px;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  color: var(--text);
+  background: #0f1727;
+  border: 1px solid #ffffff14;
+}
+
+.cz-cmd-portrait svg,
+.cz-cmd-portrait .lc-cosmetic-img {
+  width: 100%;
+  height: 100%;
+}
+
+.cz-cmd-portrait svg {
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.cz-cmd.sel .cz-cmd-portrait {
+  color: var(--accent);
+}
+
+.cz-cmd.locked .cz-cmd-portrait {
+  color: var(--dim);
+}
+
+.cz-cmd-title {
+  font-size: 11px;
+  color: var(--dim);
+  text-align: center;
+  line-height: 1.1;
+}
+
+.cz-cmd.sel .cz-cmd-title {
+  color: var(--text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .cz-chip:hover,
+  .cz-cover:hover,
+  .cz-tradition:hover,
+  .cz-cmd:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.cz-swatches {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cz-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #00000066;
+  box-shadow: 0 2px 6px #0007;
+  transition: transform .1s;
+}
+
+.cz-swatch.sel {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #fff;
+}
+
+/* foco por teclado num swatch JÁ selecionado: soma o anel dourado ao anel
+   branco de seleção (senão o foco some sob a seleção, e é onde o Tab cai) */
+.cz-swatch.sel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #fff, 0 0 0 6px var(--gold-2);
+}
+
+.cz-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+/* compactação da arena (mobile): provocações e título do comandante */
+@media (max-width: 700px),
+(max-height: 500px) {
+  .taunt-toggle {
+    padding: 6px 9px;
+    font-size: 16px;
+  }
+
+  .taunt-pick {
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+}
+
+@media (max-height: 500px) {
+  .commander-sub {
+    display: none;
+  }
+}
+
+/* ── Acessibilidade: sem movimento contínuo p/ quem pediu menos animação ──
+   Os destaques continuam (borda/brilho estáticos), só param de pulsar. */
+@media (prefers-reduced-motion: reduce) {
+
+  .card.playable::before,
+  .card.playable::after,
+  .card.selected::before,
+  .card.selected::after,
+  .enemy-row.targetable .creature:not(.blocked)::before,
+  .enemy-row.targetable .creature:not(.blocked)::after,
+  .creature.buff-target::before,
+  .creature.buff-target::after,
+  .creature.selected::before,
+  .portrait.targetable,
+  .portrait.targetable::after,
+  .portrait.lethal::after,
+  .aim-flow,
+  .aim-origin,
+  .aim-rune,
+  .aim-callout,
+  .aim-reticle .reticle-ring,
+  .aim-reticle .reticle-ping,
+  .aim-reticle .reticle-gem,
+  .drop-target-marker {
+    animation: none !important;
+  }
+}
