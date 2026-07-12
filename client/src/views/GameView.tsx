@@ -4,7 +4,7 @@ import type { CombatAction, CreatureOnBoard, GameView as GameViewState, SeatView
 import { addFriend, declineRematch, dismissGameOver, requestRematch, send, useAppState, viewProfile } from '../store';
 import { Avatar, CosmeticIcon, TauntIcon, accentVars } from '../cosmetics';
 import {
-  IcoAddFriend, IcoAttack, IcoBanner, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
+  IcoAddFriend, IcoAttack, IcoBanner, IcoBot, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoCoin,
   IcoDeath, IcoDeck, IcoEnergy, IcoEvents, IcoExpensive, IcoHand, IcoHealth, IcoHint, IcoLethal, IcoMedal,
   IcoOverflow, IcoPause, IcoRematch, IcoRules, IcoShield, IcoSparkle, IcoStar, IcoSurrender, IcoSwap, IcoWard,
   IcoTarget, IcoTaunt, IcoTimer, IcoVictory, IcoWarning,
@@ -39,7 +39,7 @@ type InspectCard = {
 };
 
 type LogTone = 'turn' | 'damage' | 'summon' | 'spell' | 'fatigue' | 'shield' | 'surrender' | 'neutral';
-type CoachTone = 'wait' | 'end' | 'play' | 'attack' | 'lethal';
+type CoachTone = 'wait' | 'end' | 'play' | 'attack' | 'lethal' | 'bot';
 type HandIntentTone = 'neutral' | 'good' | 'target' | 'support';
 
 /** Efeito flutuante transitório, ancorado a um elemento da arena.
@@ -168,6 +168,7 @@ const GHOST_TTL = 700;
 const REVEAL_TTL = 1700;
 const DAMAGE_NOTICE_TTL = 3600;
 const DAMAGE_SOURCE_TTL = 1500;
+const ENEMY_ATTACK_FX_TTL = 800;
 /** Tempo que uma provocação fica como balão sobre o comandante. */
 const BUBBLE_TTL = 4500;
 /** Cadência mínima entre provocações (anti-spam local). */
@@ -712,6 +713,10 @@ export function GameView() {
     const previousActionSeq = Math.max(0, ...(prev.actions ?? []).map((action) => action.seq));
     const newActions = (game.actions ?? []).filter((action) => action.seq > previousActionSeq);
     const enemyActions = newActions.filter((action) => action.seat !== game.yourSeat);
+    const enemyAttack = [...enemyActions].reverse().find(
+      (action) => action.kind === 'attack' && action.sourceIid,
+    );
+    if (enemyAttack?.sourceIid) setAttackFx({ iid: enemyAttack.sourceIid, at: ts });
     const enemySeatIdxForNotice = game.seats.findIndex((_, i) => i !== game.yourSeat);
     const enemyNameForNotice = enemySeatIdxForNotice >= 0 ? game.seats[enemySeatIdxForNotice].name : 'Adversário';
     let hadDamage = false;
@@ -983,6 +988,7 @@ export function GameView() {
 
   const enemySeatIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
   const enemy = game.seats[enemySeatIdx];
+  const isPracticeOpponent = enemy.playerId.startsWith('bot:');
   const timerPct = Math.min(100, (secondsLeft / TURN_SECONDS) * 100);
   // últimos 10s do seu turno: cue de ícone (timer) reduced-motion-safe + aviso a11y
   const timeUrgent = myTurn && !game.turnPaused && secondsLeft <= 10 && secondsLeft > 0;
@@ -1685,11 +1691,17 @@ export function GameView() {
               title: 'Procure a próxima janela',
               body: 'Sem ataques prontos. Avalie encerrar depois de revisar a mão.',
             }
-    : {
-      tone: 'wait',
-      title: 'Planeje a resposta',
-      body: `${enemy.name} tem ${enemy.handCount} ${enemy.handCount === 1 ? 'carta' : 'cartas'} na mão.`,
-    };
+    : isPracticeOpponent
+      ? {
+        tone: 'bot',
+        title: 'Treinador avaliando a mesa',
+        body: `${enemy.handCount} ${enemy.handCount === 1 ? 'carta' : 'cartas'} na mão · ${enemy.board.length} na mesa.`,
+      }
+      : {
+        tone: 'wait',
+        title: 'Planeje a resposta',
+        body: `${enemy.name} tem ${enemy.handCount} ${enemy.handCount === 1 ? 'carta' : 'cartas'} na mão.`,
+      };
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
@@ -1827,6 +1839,7 @@ export function GameView() {
                 key={c.iid}
                 c={c}
                 bonus={enemy.attackBonus}
+                lunging={attackFx?.iid === c.iid && now - attackFx.at < ENEMY_ATTACK_FX_TTL}
                 sourceActive={damageNotice?.sourceIid === c.iid && now - damageNotice.at < DAMAGE_SOURCE_TTL}
                 blocked={blocked}
                 dropTarget={!!draggingHandTarget && !!targetingEnemyCreature && !blocked}
@@ -1938,7 +1951,9 @@ export function GameView() {
           </div>
           <div className={`turn-coach ${turnCoach.tone}`} role="status" aria-live="polite">
             <span className="turn-coach-icon">
-              {turnCoach.tone === 'attack' || turnCoach.tone === 'lethal'
+              {turnCoach.tone === 'bot'
+                ? <IcoBot />
+                : turnCoach.tone === 'attack' || turnCoach.tone === 'lethal'
                 ? <IcoAttack />
                 : turnCoach.tone === 'play'
                   ? <IcoEnergy />

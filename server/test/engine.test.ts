@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Match, type EngineResult, type MatchPlayer } from '../src/game/engine.js';
+import { BOT_CADENCE_MS, Match, type EngineResult, type MatchPlayer } from '../src/game/engine.js';
 import {
   CARDS, STARTING_HP, RECONNECT_GRACE_MS, DECK_SIZE, deckComposition,
   CARD_OF_DAY_POOL, FACTION_TILTS, KEYWORD_GLOSSARY,
@@ -844,6 +844,62 @@ describe('recap pós-partida: estatísticas e MVP', () => {
 });
 
 describe('bot de treino (vs CPU)', () => {
+  it('revela uma ação por etapa antes de passar das cartas ao combate', () => {
+    vi.useFakeTimers();
+    const m = new Match(players(2), () => {}, () => {}, 60, false, ['p1']);
+    track(m).start();
+
+    // Cenário determinístico: Moeda libera uma criatura de custo 2 e uma
+    // criatura antiga já está pronta para atacar depois da fase de cartas.
+    m.seats[1].hand = [
+      { iid: 'bot-coin', defId: 't_moeda' },
+      { iid: 'bot-play', defId: 'c_lobo' },
+    ];
+    m.seats[1].deck = [{ iid: 'bot-draw', defId: 'c_dragao' }];
+    m.seats[1].board = [{
+      iid: 'bot-attacker', defId: 'c_lobo', attack: 3, health: 2,
+      baseHealth: 2, canAttack: false, attacked: false,
+    }];
+
+    const hpBefore = m.seats[0].hp;
+    m.endTurn('p0');
+    expect(m.viewFor('p0').turnSeat).toBe(1);
+
+    vi.advanceTimersByTime(BOT_CADENCE_MS.think - 1);
+    expect(m.viewFor('p0').actions).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(m.viewFor('p0').actions).toMatchObject([
+      { kind: 'card', sourceDefId: 't_moeda' },
+    ]);
+
+    vi.advanceTimersByTime(BOT_CADENCE_MS.card - 1);
+    expect(m.viewFor('p0').actions).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(m.viewFor('p0').actions.at(-1)).toMatchObject({
+      kind: 'card', sourceDefId: 'c_lobo', sourceIid: 'bot-play',
+    });
+
+    // Uma etapa confirma que não há outra carta; outra separa a entrada no combate.
+    vi.advanceTimersByTime(BOT_CADENCE_MS.card);
+    vi.advanceTimersByTime(BOT_CADENCE_MS.combat - 1);
+    expect(m.seats[0].hp).toBe(hpBefore);
+    vi.advanceTimersByTime(1);
+    expect(m.seats[0].hp).toBe(hpBefore - 3);
+    expect(m.viewFor('p0').actions.at(-1)).toMatchObject({
+      kind: 'attack', sourceIid: 'bot-attacker',
+    });
+
+    const actions = m.viewFor('p0').actions;
+    expect(actions[1].at - actions[0].at).toBe(BOT_CADENCE_MS.card);
+    expect(actions[2].at - actions[1].at).toBe(BOT_CADENCE_MS.card + BOT_CADENCE_MS.combat);
+
+    vi.advanceTimersByTime(BOT_CADENCE_MS.attack);
+    vi.advanceTimersByTime(BOT_CADENCE_MS.end - 1);
+    expect(m.viewFor('p0').turnSeat).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect(m.viewFor('p0').turnSeat).toBe(0);
+  });
+
   it('runBotTurn joga legal, nunca lança e encerra o turno', () => {
     const m = new Match(players(2), () => {}, () => {}, 60, false, ['p1']);
     track(m).start();
