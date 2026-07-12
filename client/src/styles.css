@@ -2416,6 +2416,39 @@ input:focus {
   color: var(--dim-strong);
 }
 
+.turn-coach.bot {
+  border-color: #3fd3c64a;
+  background: #08151bcf;
+  box-shadow: 0 6px 18px #0006, 0 0 18px #3fd3c614, inset 0 1px 0 #ffffff0d;
+}
+
+.turn-coach.bot .turn-coach-icon {
+  position: relative;
+  color: #75e5d9;
+  background: #3fd3c617;
+}
+
+.turn-coach.bot .turn-coach-icon::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1px solid #3fd3c670;
+  border-radius: 50%;
+  animation: bot-deliberating 1.4s ease-out infinite;
+}
+
+@keyframes bot-deliberating {
+  from {
+    opacity: .75;
+    transform: scale(.82);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+}
+
 .turn-pill {
   --timer-state: #7fb1ff;
   --timer-angle: 360deg;
@@ -2834,9 +2867,27 @@ input:focus {
   z-index: 5;
 }
 
+.enemy-row .creature.lunging {
+  animation: summon .3s cubic-bezier(.2, 1.6, .5, 1), enemy-lunge .58s cubic-bezier(.22, .72, .28, 1);
+}
+
 @keyframes lunge {
   35% {
     transform: translateY(-30px) scale(1.07);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes enemy-lunge {
+  18% {
+    transform: translateY(-5px) scale(.99);
+  }
+
+  58% {
+    transform: translateY(30px) scale(1.07);
   }
 
   100% {
@@ -7824,6 +7875,8 @@ input:focus {
   .energy-crystals.warn,
   .hero-impact-recap,
   .creature.impact-source::before,
+  .creature.lunging,
+  .turn-coach.bot .turn-coach-icon::after,
   .login-screen::before,
   .login-screen::after {
     animation: none !important;
@@ -9003,6 +9056,8 @@ html[data-motion='reduced'] .game-over.won .go-emblem::before,
 html[data-motion='reduced'] .energy-crystals.warn,
 html[data-motion='reduced'] .hero-impact-recap,
 html[data-motion='reduced'] .creature.impact-source::before,
+html[data-motion='reduced'] .creature.lunging,
+html[data-motion='reduced'] .turn-coach.bot .turn-coach-icon::after,
 html[data-motion='reduced'] .login-screen::before,
 html[data-motion='reduced'] .login-screen::after,
 html[data-motion='reduced'] .spinner,
