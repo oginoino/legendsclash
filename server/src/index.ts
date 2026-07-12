@@ -86,7 +86,7 @@ function parseByteRange(header: string, size: number): { start: number; end: num
 const store = await Store.create();
 const app = new App(store);
 const auth = createAuthService(store);
-const runtime = new RuntimeSnapshot(app, store);
+const runtime = new RuntimeSnapshot(app, store, process.env.LC_RUNTIME_PATH);
 runtime.start();
 
 function json(res: ServerResponse, status: number, body: unknown): void {

@@ -47,7 +47,6 @@ export class App {
   private rooms = new RoomManager();
   private matches = new Map<string, Match>(); // userId → partida ativa
   private practiceMatches = new Set<string>(); // ids de partidas de treino (sem MMR)
-  private factionChoice = new Map<string, string>(); // userId → facção escolhida (Fase 6)
   private recentChat = new Map<string, string[]>(); // userId → últimas mensagens (contexto de report)
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
   private userIp = new Map<string, string>(); // userId → IP da conexão ativa
@@ -770,8 +769,9 @@ export class App {
   private factionPick(user: UserRecord, factionId: string): void {
     // '' = neutro; senão precisa ser uma facção conhecida (anti-lixo)
     if (factionId && !FACTION_TILTS[factionId]) throw new KnownError('Facção desconhecida.');
-    if (factionId) this.factionChoice.set(user.id, factionId);
-    else this.factionChoice.delete(user.id);
+    const updated = this.store.setFaction(user.id, factionId);
+    if (!updated) throw new KnownError('Perfil não encontrado.');
+    this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(updated) });
   }
 
   /** Monta o conteúdo variável da partida a partir das flags + escolhas (Fase 6). */
@@ -780,7 +780,7 @@ export class App {
     if (contentFlags.factions) {
       const factions: Record<string, string> = {};
       for (const id of ids) {
-        const f = this.factionChoice.get(id);
+        const f = this.store.userById(id)?.faction;
         if (f) factions[id] = f;
       }
       if (Object.keys(factions).length) content.factions = factions;
@@ -791,11 +791,12 @@ export class App {
 
   private profileGet(user: UserRecord, targetId: string): void {
     if (!this.socialLimiter.take(user.id)) return;
-    if (!this.knows(user.id, targetId)) {
-      throw new KnownError('Você só pode ver o perfil de quem enfrentou.');
-    }
     const target = this.store.userById(targetId);
     if (!target) throw new KnownError('Jogador não encontrado.');
+    const appearsInRanking = !target.guest && target.wins + target.losses > 0;
+    if (!this.knows(user.id, targetId) && !appearsInRanking) {
+      throw new KnownError('Perfil ainda não está disponível publicamente.');
+    }
     this.sendTo(user.id, { t: 'profile:view', profile: this.store.publicProfileOf(target) });
   }
 
@@ -804,6 +805,7 @@ export class App {
   private async sendLeaderboard(user: UserRecord): Promise<void> {
     const toEntry = (u: UserRecord): LeaderboardEntry => ({
       id: u.id, name: displayName(u), avatar: u.avatar, photo: u.photo, mmr: u.mmr,
+      profileCover: u.profileCover, faction: u.faction,
       league: u.league ?? leagueOf(u.mmr), wins: u.wins, losses: u.losses,
     });
     const ranking = await this.store.rankingSnapshot(user.id);

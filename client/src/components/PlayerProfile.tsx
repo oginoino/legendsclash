@@ -1,7 +1,8 @@
 import { achievementLabel } from '@legendsclash/shared';
 import { GiFlame, GiRibbonMedal, GiThreeFriends } from 'react-icons/gi';
 import { addFriend, closeProfile, removeFriend, useAppState } from '../store';
-import { Avatar, profileCoverVars } from '../cosmetics';
+import { Avatar, Sigil, profileCoverVars } from '../cosmetics';
+import { FACTIONS } from '../lore';
 import { LeagueBadge } from './LeagueBadge';
 
 /**
@@ -15,9 +16,10 @@ export function PlayerProfileCard() {
   if (!p) return null;
   const isSelf = s.profile?.id === p.id;
   const isFriend = s.profile?.friends?.includes(p.id) ?? false;
+  const faction = p.faction ? FACTIONS[p.faction] : null;
 
   return (
-    <div className="overlay" onClick={closeProfile}>
+    <div className="overlay player-profile-overlay" onClick={closeProfile}>
       <div className="panel player-profile" style={profileCoverVars(p.profileCover)} onClick={(e) => e.stopPropagation()}>
         <div className="pp-head">
           <Avatar
@@ -34,6 +36,9 @@ export function PlayerProfileCard() {
             <strong className="pp-name">{p.name}</strong>
             <span className="pp-sub">
               <LeagueBadge league={p.league} /> {p.mmr} MMR · {p.wins}V {p.losses}D
+            </span>
+            <span className="pp-tradition" style={{ '--tradition-color': faction?.color ?? '#7183a1' } as React.CSSProperties}>
+              {faction ? <><Sigil id={faction.sigil} /> {faction.name}</> : 'Tradição livre'}
             </span>
           </div>
         </div>

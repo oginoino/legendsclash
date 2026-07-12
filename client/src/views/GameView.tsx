@@ -2437,7 +2437,7 @@ export function GameView() {
           </div>
       )}
 
-      {banner && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
+      {banner && !s.gameOver && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
       {teach && (
         <div className="teach-toast" key={teach.id} role="status" aria-live="polite">
           <span>{teach.text}</span>
@@ -2888,6 +2888,15 @@ function GameOverOverlay() {
 
   const won = result.winnerId === myId;
   const my = result.mmr[myId];
+  const stats = result.stats?.[myId];
+  const mvp = result.mvp?.[myId];
+  const newly = result.unlocked?.[myId] ?? [];
+  const opponentId = Object.keys(result.mmr).find((id) => id !== myId);
+  const opponentName = opponentId
+    ? s.game?.seats.find((seat) => seat.playerId === opponentId)?.name ?? 'oponente'
+    : null;
+  const isFriend = !!opponentId && (s.profile?.friends?.includes(opponentId) ?? false);
+  const rematch = s.rematch;
   const reasonText: Record<string, string> = {
     hp: won ? 'Você zerou a vida do oponente!' : 'Sua vida chegou a zero.',
     surrender: won ? 'O oponente desistiu da partida.' : 'Você desistiu da partida.',
@@ -2904,7 +2913,7 @@ function GameOverOverlay() {
   };
 
   return (
-    <div className="overlay">
+    <div className="overlay game-over-overlay">
       {won && (
         <div className="confetti">
           {Array.from({ length: 18 }, (_, i) => (
@@ -2919,31 +2928,36 @@ function GameOverOverlay() {
           ))}
         </div>
       )}
-      <div className={`panel game-over ${won ? 'won' : 'lost'}`} role="alert" aria-live="assertive">
-        <div className="go-emblem">{won ? <IcoVictory /> : <IcoDeath />}</div>
-        <h2>{won ? 'Vitória!' : 'Derrota'}</h2>
-        <p>{reasonText[result.reason] ?? 'A partida foi encerrada.'}</p>
-        <div className={`go-reason go-reason-${result.reason}`}>
-          <span>{reasonLabel[result.reason] ?? 'Fim da partida'}</span>
-          <strong>{won ? 'Resultado favorável' : 'Ponto de melhoria'}</strong>
-        </div>
-        <p className="go-lesson">{gameOverLesson(result.reason, won)}</p>
-        <p className="dim">{result.turns} turnos · {Math.max(1, Math.round(result.durationMs / 60000))} min</p>
-        {my && (
-          <p className="mmr-change">
-            MMR: {my.before} → <strong>{my.after}</strong>{' '}
-            <span className={my.delta >= 0 ? 'delta up' : 'delta down'}>
-              ({my.delta >= 0 ? '+' : ''}{my.delta})
-            </span>
-            <br />
-            <LeagueBadge league={my.league} />
-          </p>
-        )}
-        {(() => {
-          const stats = result.stats?.[myId];
-          const mvp = result.mvp?.[myId];
-          if (!stats) return null;
-          return (
+      <div
+        className={`panel game-over ${won ? 'won' : 'lost'}`}
+        role="dialog"
+        aria-modal="true"
+        aria-live="assertive"
+        aria-labelledby="game-over-title"
+      >
+        <header className="go-header">
+          <div className="go-emblem">{won ? <IcoVictory /> : <IcoDeath />}</div>
+          <h2 id="game-over-title">{won ? 'Vitória!' : 'Derrota'}</h2>
+          <p>{reasonText[result.reason] ?? 'A partida foi encerrada.'}</p>
+        </header>
+        <div className="go-scroll" tabIndex={0} aria-label="Resumo da partida">
+          <div className={`go-reason go-reason-${result.reason}`}>
+            <span>{reasonLabel[result.reason] ?? 'Fim da partida'}</span>
+            <strong>{won ? 'Resultado favorável' : 'Ponto de melhoria'}</strong>
+          </div>
+          <p className="go-lesson">{gameOverLesson(result.reason, won)}</p>
+          <p className="dim">{result.turns} turnos · {Math.max(1, Math.round(result.durationMs / 60000))} min</p>
+          {my && (
+            <p className="mmr-change">
+              MMR: {my.before} → <strong>{my.after}</strong>{' '}
+              <span className={my.delta >= 0 ? 'delta up' : 'delta down'}>
+                ({my.delta >= 0 ? '+' : ''}{my.delta})
+              </span>
+              <br />
+              <LeagueBadge league={my.league} />
+            </p>
+          )}
+          {stats && (
             <div className="go-recap">
               {mvp && CARDS[mvp.defId] && (
                 <div className="go-mvp">
@@ -2963,63 +2977,50 @@ function GameOverOverlay() {
                 {stats.shieldAbsorbed > 0 && <span><b>{stats.shieldAbsorbed}</b> escudo</span>}
               </div>
             </div>
-          );
-        })()}
-        {(() => {
-          const newly = (myId && result.unlocked?.[myId]) || [];
-          return newly.length ? (
+          )}
+          {newly.length > 0 && (
             <div className="go-unlocks">
               <p className="go-unlocks-title"><IcoSparkle className="ic" /> Conquista desbloqueada!</p>
               {newly.map((a) => <span key={a} className="go-unlock"><IcoMedal className="ic" /> {achievementLabel(a)}</span>)}
             </div>
-          ) : null;
-        })()}
-        {(() => {
-          // oponente = a outra chave do mapa de MMR; habilita revanche/amizade/perfil
-          const opponentId = Object.keys(result.mmr).find((id) => id !== myId);
-          const opponentName = opponentId
-            ? s.game?.seats.find((st) => st.playerId === opponentId)?.name ?? 'oponente'
-            : null;
-          const isFriend = !!opponentId && (s.profile?.friends?.includes(opponentId) ?? false);
-          const rematch = s.rematch;
-          return (
-            <>
-              {opponentId && (
-                <p className="go-opponent">
-                  vs{' '}
-                  <button className="link-btn" onClick={() => viewProfile(opponentId)}>
-                    {opponentName}
-                  </button>
-                </p>
-              )}
-              {rematch?.status === 'incoming' ? (
-                <div className="go-rematch-incoming">
-                  <p>
-                    {rematch.from && <CosmeticIcon id={rematch.from.avatar} size={18} className="inline-ico" />}
-                    {' '}{rematch.from?.name} quer revanche!
-                  </p>
-                  <div className="go-actions">
-                    <button className="btn primary" onClick={() => { sfx.click(); requestRematch(); }}><IcoCheck className="ic" /> Aceitar revanche</button>
-                    <button className="btn ghost" onClick={() => declineRematch()}>Recusar</button>
-                  </div>
-                </div>
-              ) : rematch?.status === 'sent' ? (
-                <p className="go-rematch-sent"><IcoRematch className="ic" /> Revanche enviada — aguardando o oponente…</p>
-              ) : null}
-              <div className="go-actions">
-                {opponentId && rematch?.status !== 'incoming' && rematch?.status !== 'sent' && (
-                  <button className="btn" onClick={() => { sfx.click(); requestRematch(); }}><IcoRematch className="ic" /> Revanche</button>
-                )}
-                {opponentId && !isFriend && (
-                  <button className="btn ghost" onClick={() => addFriend(opponentId)}><IcoAddFriend className="ic" /> Amigo</button>
-                )}
-              </div>
-              <button className="btn primary big" onClick={() => { sfx.click(); dismissGameOver(); }}>
-                <IcoAttack className="ic" /> Jogar de novo
+          )}
+          {opponentId && (
+            <p className="go-opponent">
+              vs{' '}
+              <button className="link-btn" onClick={() => viewProfile(opponentId)}>
+                {opponentName}
               </button>
-            </>
-          );
-        })()}
+            </p>
+          )}
+          {rematch?.status === 'sent' && (
+            <p className="go-rematch-sent"><IcoRematch className="ic" /> Revanche enviada — aguardando o oponente…</p>
+          )}
+        </div>
+        <footer className="go-footer">
+          {rematch?.status === 'incoming' && (
+            <div className="go-rematch-incoming">
+              <p>
+                {rematch.from && <CosmeticIcon id={rematch.from.avatar} size={18} className="inline-ico" />}
+                {' '}{rematch.from?.name} quer revanche!
+              </p>
+              <div className="go-actions">
+                <button className="btn primary" onClick={() => { sfx.click(); requestRematch(); }}><IcoCheck className="ic" /> Aceitar revanche</button>
+                <button className="btn ghost" onClick={() => declineRematch()}>Recusar</button>
+              </div>
+            </div>
+          )}
+          <div className="go-actions">
+            {opponentId && rematch?.status !== 'incoming' && rematch?.status !== 'sent' && (
+              <button className="btn" onClick={() => { sfx.click(); requestRematch(); }}><IcoRematch className="ic" /> Revanche</button>
+            )}
+            {opponentId && !isFriend && (
+              <button className="btn ghost" onClick={() => addFriend(opponentId)}><IcoAddFriend className="ic" /> Amigo</button>
+            )}
+          </div>
+          <button className="btn primary big" onClick={() => { sfx.click(); dismissGameOver(); }}>
+            <IcoAttack className="ic" /> Jogar de novo
+          </button>
+        </footer>
       </div>
     </div>
   );

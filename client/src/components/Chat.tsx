@@ -2,7 +2,9 @@ import type { IconType } from 'react-icons';
 import { useEffect, useRef, useState } from 'react';
 import { send, useAppState } from '../store';
 import { InlineAvatar } from '../cosmetics';
-import { IcoCool, IcoHandshake, IcoMuted, IcoSound, IcoStreak, IcoThumbUp, IcoWarning } from '../icons';
+import {
+  IcoChat, IcoCool, IcoHandshake, IcoMuted, IcoSend, IcoSound, IcoStreak, IcoThumbUp, IcoWarning,
+} from '../icons';
 
 /** Atalhos de chat: ícone no botão, texto limpo enviado ao oponente. */
 const EMOTES: { icon: IconType; text: string }[] = [
@@ -41,8 +43,14 @@ export function Chat() {
 
   return (
     <div className="chat">
-      <div className="chat-messages">
-        {s.chat.length === 0 && <p className="hint">Diga olá! O chat é filtrado e moderado.</p>}
+      <div className="chat-messages" role="log" aria-live="polite" aria-label="Mensagens da partida">
+        {s.chat.length === 0 && (
+          <div className="chat-empty">
+            <IcoChat />
+            <strong>Canal do Embate</strong>
+            <span>O silêncio precede a primeira jogada.</span>
+          </div>
+        )}
         {s.chat.map((m, i) => (
           <div key={i} className={m.from.id === myId ? 'chat-msg mine' : 'chat-msg'}>
             <span className="chat-author"><InlineAvatar iconId={m.from.avatar} photo={m.from.photo} size={16} /> {m.from.name}</span>
@@ -51,6 +59,7 @@ export function Chat() {
               <span className="chat-actions">
                 <button
                   title={muted.includes(m.from.id) ? 'Reativar' : 'Silenciar'}
+                  aria-label={muted.includes(m.from.id) ? `Reativar ${m.from.name}` : `Silenciar ${m.from.name}`}
                   onClick={() =>
                     send({
                       t: muted.includes(m.from.id) ? 'chat:unmute' : 'chat:mute',
@@ -71,7 +80,7 @@ export function Chat() {
       </div>
 
       {reporting && (
-        <div className="report-box">
+        <div className="report-box" role="dialog" aria-label={`Denunciar ${reporting.name}`}>
           <p>Denunciar <strong>{reporting.name}</strong>:</p>
           <input
             value={reason}
@@ -96,7 +105,7 @@ export function Chat() {
         </div>
       )}
 
-      <div className="emote-row">
+      <div className="emote-row" aria-label="Respostas rápidas">
         {EMOTES.map(({ icon: Icon, text }) => (
           <button key={text} type="button" className="emote" onClick={() => send({ t: 'chat:send', text })}>
             <Icon className="ic" /> {text}
@@ -107,10 +116,16 @@ export function Chat() {
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Mensagem…"
+          placeholder="Escreva…"
           maxLength={240}
+          aria-label="Mensagem ao oponente"
+          autoComplete="off"
+          enterKeyHint="send"
         />
-        <button className="btn small" disabled={!text.trim()}>Enviar</button>
+        {text.length >= 180 && <span className="chat-count" aria-live="polite">{240 - text.length}</span>}
+        <button className="btn chat-send" disabled={!text.trim()} aria-label="Enviar mensagem" title="Enviar">
+          <IcoSend />
+        </button>
       </form>
     </div>
   );

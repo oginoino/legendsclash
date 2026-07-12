@@ -19,6 +19,8 @@ export interface Profile {
   accentStyle: string;
   /** Capa pública do card/perfil social (id em PROFILE_COVERS). */
   profileCover: string;
+  /** Tradição escolhida (id de FACTION_TILTS); vazio = identidade livre. */
+  faction: string;
   /** Convidado: joga sem cadastro, mas chat/histórico/ranking pedem conta. */
   guest: boolean;
   mmr: number;
@@ -50,6 +52,7 @@ export interface PublicProfile {
   frame: string;
   accentStyle: string;
   profileCover: string;
+  faction: string;
   league: League;
   mmr: number;
   wins: number;
@@ -76,6 +79,9 @@ export interface LeaderboardEntry {
   avatar: string;
   /** Foto de perfil (opcional) — a lista mostra o ícone quando ausente. */
   photo?: string | null;
+  /** Capa e tradição públicas tornam cada presença no ranking reconhecível. */
+  profileCover: string;
+  faction: string;
   mmr: number;
   league: League;
   wins: number;

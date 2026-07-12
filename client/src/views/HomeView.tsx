@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { CARDS, cardOfDay } from '@legendsclash/shared';
-import { openAccountPrompt, pickFaction, send, useAppState } from '../store';
+import { openAccountPrompt, pickFaction, send, useAppState, viewProfile } from '../store';
 import { Avatar, InlineAvatar, Sigil, profileCoverVars } from '../cosmetics';
 import {
   IcoStar,
@@ -413,15 +413,38 @@ export function HomeView() {
           ) : (
             <table className="board-table">
               <tbody>
-                {s.leaderboard.map((e, i) => (
-                  <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
-                    <td className="pos">{i + 1}</td>
-                    <td className="board-player"><InlineAvatar iconId={e.avatar} photo={e.photo} size={20} /> {e.name}</td>
-                    <td><LeagueBadge league={e.league} /></td>
-                    <td className="num">{e.mmr}</td>
-                    <td className="num dim">{e.wins}V {e.losses}D</td>
-                  </tr>
-                ))}
+                {s.leaderboard.map((e, i) => {
+                  const faction = e.faction ? FACTIONS[e.faction] : null;
+                  const identityStyle = {
+                    ...profileCoverVars(e.profileCover),
+                    '--tradition-color': faction?.color ?? '#7183a1',
+                  } as CSSProperties;
+                  return (
+                    <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
+                      <td className="pos">{i + 1}</td>
+                      <td className="board-player">
+                        <button
+                          type="button"
+                          className="board-player-button"
+                          style={identityStyle}
+                          onClick={e.id === p.id ? openProfile : () => viewProfile(e.id)}
+                          aria-label={`Ver perfil de ${e.name}`}
+                        >
+                          <InlineAvatar iconId={e.avatar} photo={e.photo} size={24} />
+                          <span className="board-player-copy">
+                            <strong>{e.name}</strong>
+                            <small>
+                              {faction ? <><Sigil id={faction.sigil} className="ic" /> {faction.name.replace(/^(A |O |Os )/, '')}</> : 'Tradição livre'}
+                            </small>
+                          </span>
+                        </button>
+                      </td>
+                      <td><LeagueBadge league={e.league} /></td>
+                      <td className="num">{e.mmr}</td>
+                      <td className="num dim">{e.wins}V {e.losses}D</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

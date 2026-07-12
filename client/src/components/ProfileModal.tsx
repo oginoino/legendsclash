@@ -46,7 +46,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
   const [frame, setFrame] = useState(p?.frame ?? FRAMES[0].id);
   const [accentStyle, setAccentStyle] = useState(p?.accentStyle ?? ACCENT_STYLES[0].id);
   const [profileCover, setProfileCover] = useState(p?.profileCover ?? PROFILE_COVERS[0].id);
-  const [faction, setFaction] = useState(s.faction ?? '');
+  const [faction, setFaction] = useState(p?.faction ?? '');
   const [tab, setTab] = useState<CustomizeTab>('identity');
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoErr, setPhotoErr] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
       accentStyle: v2 && accentStyle !== current.accentStyle ? accentStyle : undefined,
       profileCover: profileCover !== current.profileCover ? profileCover : undefined,
     });
-    if (faction !== s.faction) pickFaction(faction);
+    if (faction !== current.faction) pickFaction(faction);
     onClose();
   }
 

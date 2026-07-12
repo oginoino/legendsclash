@@ -1,8 +1,10 @@
 import { defineConfig } from '@playwright/test';
-import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const runId = `${process.pid}-${Date.now()}`;
 
 /**
  * Testes ponta a ponta com navegadores reais.
@@ -36,6 +38,12 @@ export default defineConfig({
     // Modo local forçado: snapshot JSON + contas (e-mail+senha) em memória.
     // Os testes nunca tocam o Supabase de produção, mesmo com o .env da
     // raiz preenchido.
-    env: { ...(process.env as Record<string, string>), LC_LOCAL: '1', LEGENDSCLASH_E2E: '1' },
+    env: {
+      ...(process.env as Record<string, string>),
+      LC_LOCAL: '1',
+      LEGENDSCLASH_E2E: '1',
+      LC_DB_PATH: join(tmpdir(), `legendsclash-e2e-${runId}.json`),
+      LC_RUNTIME_PATH: join(tmpdir(), `legendsclash-e2e-runtime-${runId}.json`),
+    },
   },
 });

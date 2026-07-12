@@ -6,6 +6,7 @@
  * fantasia. Use com a classe `ic` para alinhar ícones inline ao texto.
  */
 import type { IconType } from 'react-icons';
+import { LuSend } from 'react-icons/lu';
 import {
   GiScrollUnfurled, GiSpellBook, GiOpenBook, GiChatBubble, GiPartyPopper, GiFlyingFlag,
   GiCancel, GiCheckMark, GiPlainSquare, GiSpeaker, GiSpeakerOff, GiMusicalNotes, GiLinkedRings,
@@ -22,6 +23,7 @@ import {
 } from 'react-icons/gi';
 
 export {
+  LuSend as IcoSend,
   // — UI / navegação / controles —
   GiScrollUnfurled as IcoEvents,
   GiSpellBook as IcoCodex, // Arquivo de Aurélia

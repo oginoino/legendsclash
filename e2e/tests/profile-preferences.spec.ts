@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { guestAs, shotPath } from './helpers.js';
+import { guestAs, passMulligan, passTutorial, shotPath, surrender } from './helpers.js';
 
 test('perfil centraliza progressão e preferências reativas no desktop', async ({ browser }) => {
   const page = await guestAs(browser, 'Aurelia', 'shield', {
@@ -98,5 +98,36 @@ test('perfil mantém controles acessíveis e sem overflow no mobile', async ({ b
   await page.setViewportSize({ width: 320, height: 700 });
   const compactOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(compactOverflow).toBeLessThanOrEqual(1);
+  await page.context().close();
+});
+
+test('partida e preferências compartilham o mesmo controle e valor de áudio', async ({ browser }) => {
+  const page = await guestAs(browser, 'Sonora', 'orb', {
+    viewport: { width: 1280, height: 820 },
+  });
+
+  await page.getByRole('button', { name: 'Perfil', exact: true }).click();
+  await page.getByRole('tab', { name: 'Preferências' }).click();
+  const profileMusic = page.getByRole('slider', { name: 'Volume de música' });
+  await profileMusic.fill('0.37');
+  await expect(profileMusic).toHaveValue('0.37');
+  await page.getByRole('button', { name: 'Voltar' }).click();
+
+  await page.getByRole('button', { name: /Treino/ }).click();
+  await passMulligan(page);
+  await passTutorial(page);
+  await expect(page.locator('.game-board')).toBeVisible();
+  await page.locator('.game-side').getByRole('button', { name: 'Ajustar som' }).click();
+
+  const popover = page.getByRole('dialog', { name: 'Áudio da partida' });
+  await expect(popover).toBeVisible();
+  await expect(popover.locator('.audio-level-control')).toHaveCount(2);
+  const matchMusic = popover.getByRole('slider', { name: 'Volume de música' });
+  await expect(matchMusic).toHaveValue('0.37');
+  await expect(popover.getByText('37%')).toBeVisible();
+  await matchMusic.fill('0.19');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('lc_vol_music'))).toBe('0.19');
+
+  await surrender(page);
   await page.context().close();
 });
