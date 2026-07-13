@@ -1,0 +1,336 @@
+/* ══ Cosméticos v2: medalhão de avatar, molduras e estilos de cor ══ */
+
+/* Medalhão reutilizável (Avatar): foto/ícone + anel em gradiente + brilho.
+   As variáveis --accent / --accent-grad / --accent-glow vêm de accentVars(). */
+.lc-avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: middle;
+  box-shadow: 0 0 16px var(--accent-glow, transparent);
+}
+
+.lc-avatar-ring {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-sizing: border-box;
+  padding: 2px;
+  background: var(--accent-grad, var(--accent, var(--gold)));
+  overflow: hidden;
+}
+
+.lc-avatar-face {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: var(--accent, var(--gold));
+  background: radial-gradient(circle at 35% 28%, #2c3c5e, #141d31);
+  box-shadow: inset 0 0 12px #0009;
+}
+
+.lc-avatar-face svg {
+  width: 62%;
+  height: 62%;
+}
+
+.lc-cosmetic-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+}
+
+.lc-avatar-face .lc-cosmetic-img,
+.lc-inline .lc-cosmetic-img {
+  border-radius: 50%;
+}
+
+.lc-avatar-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+/* Avatar compacto p/ listas/chat/lobby: sem anel nem moldura. */
+.lc-inline {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.lc-inline svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lc-inline-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.inline-ico {
+  vertical-align: middle;
+}
+
+/* ícone inline alinhado ao texto (registro central icons.ts) — herda cor/tamanho */
+.ic {
+  vertical-align: -0.14em;
+  flex-shrink: 0;
+}
+
+/* Molduras (armações): camada decorativa em volta de qualquer .lc-avatar
+   (medalhão do perfil e retrato da arena). */
+[class*="lc-frame--"]::before,
+[class*="lc-frame--"]::after {
+  pointer-events: none;
+}
+
+.lc-frame--gilded::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid #e9c879;
+  box-shadow: 0 0 10px #e9c87966, inset 0 0 6px #e9c87944;
+}
+
+.lc-frame--laurel::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px solid #bfa75a;
+}
+
+.lc-frame--laurel::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid #7fc98a;
+  box-shadow: 0 0 8px #7fc98a55;
+}
+
+.lc-frame--runes::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px dashed var(--accent, #b083f0);
+  box-shadow: 0 0 10px var(--accent-glow, #b083f088);
+}
+
+.lc-frame--arcane::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--accent, #b083f0), #4d8dff, #3fd3c6, var(--accent, #b083f0));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: lc-spin 6s linear infinite;
+}
+
+.lc-frame--dragon::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(#b5651d, #e3b341, #f85149, #b5651d);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  box-shadow: 0 0 12px #f8514955;
+}
+
+@keyframes lc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Retrato da arena: o Avatar preenche o botão responsivo (.portrait). */
+.portrait-avatar.lc-avatar {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-shadow: none;
+}
+
+/* o brilho fica no próprio .portrait */
+.shield-orb svg {
+  width: 11px;
+  height: 11px;
+  vertical-align: -1px;
+}
+
+/* ProfileModal v2: seções de foto, estilo de cor e armação. */
+.cz-photo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 2px;
+}
+
+.cz-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cz-hint {
+  font-size: 11px;
+  color: var(--dim);
+  flex-basis: 100%;
+}
+
+.cz-err {
+  font-size: 12px;
+  color: var(--red);
+  flex-basis: 100%;
+}
+
+.cz-styles {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cz-style {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-2);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 6px;
+  min-width: 64px;
+  cursor: pointer;
+  color: var(--dim);
+  transition: transform .1s, border-color .1s, color .1s;
+}
+
+.cz-style.sel {
+  border-color: var(--accent, var(--gold));
+  color: var(--text);
+}
+
+.cz-style-orb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--prev);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--prev) 50%, transparent), inset 0 0 6px #0006;
+}
+
+.cz-style-name {
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.cz-style-name svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cz-grid.frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 8px;
+}
+
+.cz-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  background: var(--bg-2);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 13px 6px 8px;
+  cursor: pointer;
+  color: var(--text);
+  transition: transform .1s, border-color .1s, background .1s;
+}
+
+.cz-frame.sel {
+  border-color: var(--accent, var(--gold));
+  background: #ffffff10;
+}
+
+.cz-frame-name {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.cz-frame.sel .cz-frame-name {
+  color: var(--text);
+}
+
+.cz-frame-lock {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: var(--dim);
+}
+
+.cz-frame-lock svg {
+  width: 22px;
+  height: 22px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .cz-style:hover,
+  .cz-frame:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (max-width: 480px) {
+  .customize-modal {
+    width: calc(100% - 16px);
+    padding: 14px;
+  }
+
+  .identity-preview {
+    min-height: 104px;
+  }
+
+  .cz-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cz-covers {
+    grid-template-columns: 1fr;
+  }
+
+  .cz-photo {
+    flex-wrap: wrap;
+  }
+}

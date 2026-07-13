@@ -1,0 +1,462 @@
+/* ── Mão em leque ─────────────────────────────────────────────── */
+.hand {
+  /* sem justify-content: center — num scroll container, centralizar o
+     conteúdo transbordante deixa a metade esquerda INALCANÇÁVEL (scrollLeft
+     não vai abaixo de 0); a centralização fica com as margens auto abaixo */
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  /* padding lateral/inferior ≥ saliência das gemas (10px): sem overflow fantasma */
+  padding: 18px 14px 14px;
+  background: linear-gradient(180deg, transparent, #0a101cd9),
+    radial-gradient(60% 100% at 50% 100%, #1b274233, transparent);
+  border-top: 1px solid #ffffff0a;
+  /* comporta a carta de altura fixa + saliência das gemas, sem rolagem vertical */
+  border-radius: var(--r-lg);
+  min-height: var(--hand-min);
+  overflow-x: auto;
+  /* mãos cheias rolam na horizontal em telas estreitas */
+  touch-action: pan-x;
+  scrollbar-width: thin;
+}
+
+/* centraliza quando sobra espaço e ainda permite rolar até a 1ª carta */
+.hand .card:first-child {
+  margin-left: auto;
+}
+
+.hand .card:last-child {
+  margin-right: auto;
+}
+
+.card {
+  /* relevo de moldura física reutilizado por todos os estados: brilho no topo,
+     borda interna clara e sombra interna inferior (bisel de carta de verdade) */
+  --relief: inset 0 1px 0 #ffffff33, inset 0 0 0 1px #ffffff12, inset 0 -13px 22px #00000055;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* tamanho fixo e idêntico em toda a mão e no mulligan: nada de altura
+     desigual quando o texto/keywords variam de carta para carta */
+  width: var(--card-w);
+  height: var(--card-h);
+  flex-shrink: 0;
+  /* a mão rola; cartas não esmagam */
+  background:
+    var(--noise),
+    radial-gradient(120% 60% at 50% 0%, #ffffff0a, transparent 60%),
+    linear-gradient(180deg, #283655, #161f33);
+  border: 2px solid #3a4a6e;
+  border-radius: 12px;
+  color: var(--text);
+  padding: 9px 8px 10px;
+  text-align: center;
+  font-size: 11px;
+  cursor: default;
+  /* pan-x deixa a rolagem horizontal com o navegador; o arrasto vertical
+     (jogar/mirar) chega aos pointer events sem precisar de preventDefault */
+  touch-action: pan-x;
+  transition: transform .18s cubic-bezier(.2, .9, .4, 1.2), border-color .15s, box-shadow .15s, filter .2s;
+  animation: card-deal .35s ease;
+  transform-origin: 50% 120%;
+  box-shadow: 0 8px 18px #00000077, inset 0 1px 0 #ffffff1c;
+}
+
+/* filete interno dourado bem sutil: acabamento de carta premium */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid #ffffff12;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+@keyframes card-deal {
+  from {
+    transform: translateX(70px) translateY(-14px) rotate(8deg);
+    opacity: 0;
+  }
+}
+
+.card.playable {
+  cursor: pointer;
+  border-color: #5d9aff;
+  box-shadow: 0 0 14px #4d8dff44, 0 8px 18px #00000077;
+}
+
+/* o hover dá um lift sutil; a leitura ampliada fica com o .card-inspect
+   (a mão é um scroll container — escalar no lugar seria cortado no topo) */
+@media (hover: hover) and (pointer: fine) {
+  .card.playable:hover {
+    transform: translateY(-12px) !important;
+    z-index: 12;
+    box-shadow: 0 16px 30px #000a, 0 0 22px #4d8dff55;
+  }
+}
+
+.card.selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 20px #e3b341aa, 0 14px 30px #000a;
+  transform: translateY(-12px) scale(1.04) !important;
+  z-index: 11;
+}
+
+/* carta escolhida: halo dourado pulsante (vem depois → vence a aura azul) */
+.card.selected::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow: 0 0 22px 2px #e3b341aa;
+  animation: aura-gold 1.5s ease-in-out infinite;
+}
+
+.card.selected::after {
+  animation-duration: 2.4s;
+}
+
+.card.lifting {
+  transition: none;
+  /* segue o dedo sem atraso */
+  border-color: var(--gold);
+  box-shadow: var(--relief), 0 22px 46px #000c, 0 0 22px #e3b34188;
+  z-index: 13;
+}
+
+/* A origem permanece na mao apenas como referencia espacial. A copia que
+   acompanha o gesto vive em .drag-card-layer, fora deste scroll container. */
+.hand .card.drag-origin,
+.hand .card.drag-origin.selected,
+.hand .card.drag-origin.playable:hover {
+  z-index: 1;
+  opacity: .24;
+  border-color: #71809a88;
+  box-shadow: inset 0 0 0 1px #ffffff0c;
+  filter: saturate(.45) brightness(.72);
+  transform: scale(.96) !important;
+}
+
+.hand .card.drag-origin .card-shine {
+  display: none;
+}
+
+/* Depois que a intenção vertical foi confirmada, a arena assume o gesto até
+   pointerup/pointercancel. Antes disso a mão continua com pan-x nativo. */
+.game-screen.dragging-hand-card {
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.game-screen.dragging-hand-card .hand,
+.game-screen.dragging-hand-card .hand .card {
+  touch-action: none;
+}
+
+/* carta não-jogável: só esmaece (sinal de "inativa"). Sem dessaturar — o
+   filtro de grupo lavava a ilustração e quebrava a consistência com a arte
+   da mesa/codex (que nunca dessaturam). O realce azul + brilho da .playable
+   já distingue o que dá pra jogar. */
+.card:not(.playable) {
+  opacity: .88;
+}
+
+.card-cost {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  background:
+    radial-gradient(circle at 32% 26%, #b8d4ff, #3a72e0 45%, #1c3f96 80%);
+  color: #fff;
+  font-weight: 900;
+  font-size: 15px;
+  width: 30px;
+  height: 30px;
+  /* cristal facetado (hexágono) no lugar do círculo */
+  clip-path: polygon(50% 0, 96% 26%, 96% 74%, 50% 100%, 4% 74%, 4% 26%);
+  display: grid;
+  place-items: center;
+  text-shadow: 0 1px 2px #000c;
+  filter: drop-shadow(0 0 7px #4d8dff88);
+  z-index: 3;
+}
+
+.card-status {
+  position: absolute;
+  top: 35px;
+  right: 7px;
+  z-index: 4;
+  max-width: calc(100% - 18px);
+  border: 1px solid #ffffff24;
+  border-radius: 99px;
+  padding: 2px 7px;
+  background: #050915cc;
+  color: var(--dim-strong);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.2;
+  box-shadow: 0 3px 10px #0009;
+  pointer-events: none;
+}
+
+.card-status-warn {
+  color: #ffb3ad;
+  border-color: #f8514966;
+  background: #2a0c0acc;
+}
+
+.card-status-good {
+  color: #bff2cf;
+  border-color: #3fb95066;
+  background: #0f2a1acc;
+}
+
+.card-status-target {
+  color: #ffe9a8;
+  border-color: #e3b34177;
+  background: #2b210acc;
+}
+
+.card-status-support {
+  color: #d8c4ff;
+  border-color: #b083f077;
+  background: #241637cc;
+}
+
+.card.unaffordable .card-cost {
+  filter: drop-shadow(0 0 6px #f8514977) saturate(.75);
+}
+
+.card-name {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1.12;
+  letter-spacing: .2px;
+  text-shadow: 0 1px 2px #000a;
+  min-height: 26px;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+}
+
+/* ornamento sob o nome: filetes + losango na cor da raridade */
+.card-ornament {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px;
+}
+
+.card-ornament::before,
+.card-ornament::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #ffffff30);
+}
+
+.card-ornament::after {
+  background: linear-gradient(90deg, #ffffff30, transparent);
+}
+
+.rarity-gem {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border-radius: 1px;
+  background: var(--rar-common);
+  box-shadow: 0 0 6px var(--rar-common), inset 0 1px 1px #ffffff88;
+}
+
+.rarity-rare .rarity-gem {
+  background: var(--rar-rare);
+  box-shadow: 0 0 7px var(--rar-rare), inset 0 1px 1px #ffffff88;
+}
+
+.rarity-epic .rarity-gem {
+  background: var(--rar-epic);
+  box-shadow: 0 0 7px var(--rar-epic), inset 0 1px 1px #ffffff88;
+}
+
+.rarity-legendary .rarity-gem {
+  background: var(--rar-legendary);
+  box-shadow: 0 0 8px var(--rar-legendary), inset 0 1px 1px #ffffff88;
+}
+
+/* lendária: moldura banhada a ouro */
+.card.rarity-legendary {
+  border-color: #c9941bcc;
+}
+
+.card.rarity-legendary::before {
+  border-color: #ffae3433;
+}
+
+.card.rarity-legendary .card-name {
+  color: #ffe9a8;
+}
+
+.card-creature {
+  background: var(--noise), radial-gradient(120% 60% at 50% 0%, #e3b34112, transparent 60%), linear-gradient(180deg, #34415e, #1c2235);
+}
+
+.card-spell {
+  background: var(--noise), radial-gradient(120% 60% at 50% 0%, #4d8dff14, transparent 60%), linear-gradient(180deg, #253b66, #151f3a);
+}
+
+.card-artifact {
+  background: var(--noise), radial-gradient(120% 60% at 50% 0%, #c4d2e410, transparent 60%), linear-gradient(180deg, #333b4a, #1b212d);
+}
+
+.card-tactic {
+  background: var(--noise), radial-gradient(120% 60% at 50% 0%, #b083f014, transparent 60%), linear-gradient(180deg, #392e58, #1e1932);
+}
+
+.card-meta {
+  min-height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.card-type {
+  border: 1px solid #ffffff1f;
+  border-radius: 99px;
+  padding: 1px 7px;
+  background: #05091566;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.card-creature .card-type {
+  color: var(--gold);
+  border-color: #e3b34155;
+}
+
+.card-spell .card-type {
+  color: #7fb1ff;
+  border-color: #7fb1ff55;
+}
+
+.card-artifact .card-type {
+  color: #c4d2e4;
+  border-color: #c4d2e455;
+}
+
+.card-tactic .card-type {
+  color: var(--purple);
+  border-color: #b083f055;
+}
+
+.card-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+}
+
+.keyword-chip {
+  align-self: center;
+  background: #0d142299;
+  border: 1px solid #8fa3c855;
+  border-radius: 99px;
+  padding: 1px 6px;
+  font-size: 8.5px;
+  font-weight: 800;
+  color: #c8d6ea;
+  letter-spacing: .2px;
+  line-height: 1.35;
+}
+
+/* texto de regras: painel próprio para contraste, com área estável e legível. */
+.card-text {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: block;
+  color: #d7e0ec;
+  background: linear-gradient(180deg, #0a1020cc, #080d18e6);
+  border: 1px solid #ffffff1a;
+  border-radius: 7px;
+  line-height: 1.25;
+  font-size: 11.2px;
+  padding: 6px 7px;
+  text-align: left;
+  box-shadow: inset 0 1px 0 #ffffff0c;
+}
+
+.card.text-dense-1 .card-text {
+  font-size: 10.4px;
+  line-height: 1.18;
+}
+
+.card.text-dense-2 .card-text {
+  font-size: 9.8px;
+  line-height: 1.15;
+}
+
+/* criaturas reservam a faixa inferior para as gemas de ataque/vida: a
+   pontuação nunca fica por cima do texto de efeito */
+.card-creature {
+  padding-bottom: 18px;
+}
+
+/* criaturas usam as gemas .stat-gem (cantos inferiores), como na mesa */
+.card .stat-gem {
+  bottom: -10px;
+  min-width: 28px;
+  height: 28px;
+  font-size: 13px;
+}
+
+.card .stat-gem.atk {
+  left: -10px;
+}
+
+.card .stat-gem.hp {
+  right: -10px;
+}
+
+/* varredura de luz nas cartas jogáveis: "está na sua vez, essa aqui dá" */
+.card-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.card.playable .card-shine::after {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: -90%;
+  width: 55%;
+  height: 180%;
+  transform: rotate(22deg);
+  background: linear-gradient(100deg, transparent, #ffffff24, transparent);
+  animation: shine-sweep 3.8s ease-in-out infinite;
+}
+
+@keyframes shine-sweep {
+  0% {
+    left: -90%;
+  }
+
+  34% {
+    left: 150%;
+  }
+
+  100% {
+    left: 150%;
+  }
+}

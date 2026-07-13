@@ -1,0 +1,792 @@
+/* ── Convidado: selo e convites para criar conta ──────────────── */
+.guest-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--bg-2);
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
+.account-cta {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: var(--gold-2);
+}
+
+/* ── HUD de ritmo: turno atual + fadiga iminente ──────────────── */
+.pace-hud {
+  /* sem margin-top: o espaçamento vertical na régua vem do row-gap do
+     .board-divider — assim o HUD alinha em vez de "flutuar" deslocado */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.pace-turn {
+  color: var(--dim);
+}
+
+.pace-fatigue {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.pace-opportunity {
+  color: var(--gold-2);
+  font-weight: 700;
+}
+
+.pace-action {
+  color: var(--dim-strong);
+  font-weight: 700;
+}
+
+.pace-action.done {
+  color: var(--green);
+}
+
+/* ── Tutorial da 1ª partida ────────────────────────────────────── */
+.panel.tutorial {
+  width: min(460px, calc(100vw - 24px));
+  max-width: 460px;
+  padding: 0 24px 22px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.panel.tutorial h2 {
+  font-family: var(--font-display);
+  color: var(--gold);
+  margin: 7px 0;
+}
+
+.tutorial-pause-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 -24px 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e3b3413d;
+  background: linear-gradient(90deg, transparent, #e3b34112 25%, #e3b34112 75%, transparent);
+  color: #ffe29a;
+}
+
+.tutorial-pause-status.syncing {
+  color: #b9c4d5;
+  border-color: #7f91aa35;
+  background: #ffffff05;
+}
+
+.tutorial-pause-status>.ic {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 0 7px #e3b34155);
+}
+
+.tutorial-pause-status span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.tutorial-pause-status strong,
+.tutorial-pause-status small {
+  line-height: 1.1;
+}
+
+.tutorial-pause-status strong {
+  font-size: 12px;
+}
+
+.tutorial-pause-status small {
+  color: var(--dim-strong);
+  font-size: 9px;
+}
+
+.tutorial-step-label {
+  color: var(--dim);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tutorial-icon {
+  margin-top: 8px;
+  color: #dce9ff;
+  font-size: 2.4rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 16px #4d8dff55);
+}
+
+.tutorial-text {
+  color: var(--text);
+  margin: 4px 0 14px;
+}
+
+.tutorial-dots {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.tutorial-dot {
+  width: 40px;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--line);
+  transition: background .2s ease, box-shadow .2s ease;
+}
+
+.tutorial-dot.on {
+  background: var(--gold);
+  box-shadow: 0 0 7px #e3b34166;
+}
+
+.tutorial-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ── Cosméticos por mérito: bloqueados + celebração de conquista ── */
+.cz-cmd.locked,
+.cz-swatch.locked,
+.cz-style.locked,
+.cz-frame.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.cz-cmd.locked .cz-cmd-title {
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+/* Fase 3: barra de progresso + selo de prestígio nos cosméticos */
+.cz-cmd {
+  position: relative;
+}
+
+.cz-tier {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+}
+
+.cz-tier svg {
+  width: 13px;
+  height: 13px;
+}
+
+.cz-tier--rare {
+  color: #8fb3ff;
+}
+
+.cz-tier--legendary {
+  color: var(--gold);
+  filter: drop-shadow(0 0 3px #e3b34188);
+}
+
+.cz-progress {
+  display: block;
+  width: 82%;
+  height: 4px;
+  margin: 5px auto 0;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.cz-progress>span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  border-radius: 99px;
+}
+
+.go-unlocks {
+  margin: 6px 0 4px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.go-unlocks-title {
+  margin: 0;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.go-unlock {
+  color: var(--text);
+}
+
+/* ── Fase 3: recap pós-partida (MVP + estatísticas) ─────────────── */
+.go-recap {
+  margin: 4px 0 2px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.go-mvp {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.go-mvp-art.card-art-frame {
+  width: 56px;
+  height: 44px;
+  font-size: 30px;
+  flex-shrink: 0;
+}
+
+.go-mvp-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.go-mvp-name {
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.go-mvp-line {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.go-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.go-stats b {
+  color: var(--text);
+  font-size: 15px;
+}
+
+/* ── Fase 4: revanche/amizade no fim de jogo + card de perfil ───── */
+.go-opponent {
+  margin: 2px 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.go-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+
+.go-rematch-incoming {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-soft);
+  background: var(--panel-2);
+}
+
+.go-rematch-incoming p {
+  margin: 0 0 6px;
+}
+
+.go-rematch-sent {
+  margin: 6px 0;
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.player-profile {
+  position: relative;
+  overflow: hidden;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  padding-top: 92px;
+  background:
+    linear-gradient(180deg, #10182700 0, #182235f5 86px, #182235f5 100%),
+    var(--profile-cover) center top / 100% 120px no-repeat,
+    var(--noise),
+    linear-gradient(180deg, #1a2335f2, #161f30f0);
+}
+
+.player-profile::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 120px;
+  border-radius: inherit;
+  border-bottom: 1px solid #ffffff18;
+  pointer-events: none;
+  box-shadow: inset 0 -52px 54px #101827f2;
+}
+
+.pp-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  margin-bottom: 10px;
+}
+
+.pp-portrait {
+  flex-shrink: 0;
+}
+
+/* visual agora vem do .lc-avatar (Avatar) */
+.pp-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pp-name {
+  font-size: 20px;
+}
+
+.pp-sub {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.pp-tradition {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin-top: 5px;
+  color: #d7e0ec;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pp-tradition svg {
+  color: var(--tradition-color);
+}
+
+.pp-streak {
+  position: relative;
+  z-index: 1;
+  color: var(--gold);
+  margin: 4px 0;
+}
+
+.pp-achievements {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.pp-ach {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 2px 8px;
+}
+
+.pp-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+/* ── Sequência diária + missão do dia (retenção) ──────────────── */
+.daily-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+
+.daily-strip .streak {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.daily-strip .daily-mission {
+  color: var(--dim);
+}
+
+.daily-strip .daily-mission.done {
+  color: var(--green);
+}
+
+/* ── Fase 5/6: treino, carta do dia e facções ──────────────────── */
+.practice-btn {
+  width: 100%;
+}
+
+.card-of-day {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--gold-soft);
+  border-radius: 8px;
+}
+
+.cod-art.card-art-frame {
+  width: 48px;
+  height: 38px;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.cod-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cod-label {
+  font-size: 11px;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.cod-name {
+  font-weight: 600;
+}
+
+.faction-pick {
+  margin-bottom: 12px;
+}
+
+.faction-label {
+  display: block;
+  font-size: 12px;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+
+.faction-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.faction-chip {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.faction-chip.sel {
+  border-color: var(--gold);
+  background: #e3b34122;
+  color: var(--gold-2);
+}
+
+/* ── Ranking: sua posição e alvo de subida ────────────────────── */
+.my-rank {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.my-rank-pos {
+  margin: 0 0 4px;
+}
+
+.my-rank .hint {
+  margin: 0;
+}
+
+/* ── Fila magra: rota de escape (convidar) quando se está sozinho ─ */
+.queue-thin {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ── Mulligan: troca da mão inicial ───────────────────────────── */
+.panel.mulligan {
+  width: min(960px, calc(100vw - 24px));
+  max-width: 960px;
+  max-height: min(92dvh, 820px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 12px;
+  text-align: center;
+}
+
+.panel.mulligan h2 {
+  font-family: var(--font-display);
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.mulligan-hint {
+  color: var(--dim);
+  margin: 0 auto 18px;
+  max-width: 540px;
+}
+
+.mulligan-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  align-items: flex-end;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.mulligan-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.mulligan-slot.swapping .card {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+  opacity: 0.78;
+}
+
+.mulligan-slot.locked .card {
+  cursor: default;
+}
+
+.mulligan-flag {
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 0.02em;
+}
+
+.mulligan-slot.swapping .mulligan-flag {
+  color: var(--red);
+}
+
+.mulligan-waiting {
+  color: var(--dim);
+  font-style: italic;
+  margin-top: 8px;
+}
+
+.mulligan-confirm {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 auto 14px;
+  max-width: 520px;
+  box-shadow: 0 12px 30px #111827cc, 0 4px 18px #2c54a866, inset 0 1px 0 #ffffff2a;
+}
+
+/* ── Fase 2: ensino contextual + dicas de mulligan ──────────────── */
+.mulligan-tip {
+  color: var(--gold);
+  font-size: 13px;
+  margin: -8px auto 14px;
+  max-width: 540px;
+}
+
+.mulligan-timer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  margin: 0 auto 16px;
+  max-width: 360px;
+}
+
+.mulligan-timer .timer-track {
+  flex: 1;
+}
+
+.mulligan-secs {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--dim);
+  min-width: 30px;
+}
+
+.mulligan-secs.urgent {
+  color: var(--red);
+}
+
+.mulligan-slot {
+  position: relative;
+}
+
+.mulligan-cost-tag {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  white-space: nowrap;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+  padding: 1px 7px;
+}
+
+/* dica contextual one-shot (Provocar, fadiga) — toast no topo, dispensável */
+.teach-toast {
+  position: fixed;
+  top: calc(54px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 47;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(440px, calc(100vw - 24px));
+  background: var(--panel-2);
+  border: 1px solid var(--gold-soft);
+  border-radius: 12px;
+  padding: 8px 8px 8px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  box-shadow: 0 10px 30px #000a;
+  animation: msg-in .25s ease;
+  pointer-events: none;
+  /* nunca rouba toques da arena… */
+}
+
+.teach-toast>span {
+  min-width: 0;
+}
+
+.teach-toast .btn {
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+/* …exceto o botão de fechar */
+
+/* ── Acessibilidade: sem animação decorativa contínua ─────────── */
+@media (prefers-reduced-motion: reduce) {
+
+  .card.playable .card-shine::after,
+  .aim-arrow path,
+  .aim-origin,
+  .aim-rune,
+  .aim-callout,
+  .btn.end-turn.pulse,
+  .ready-dot,
+  .portrait.targetable,
+  .portrait.lethal,
+  .preview-chip.lethal,
+  .creature.buff-target,
+  .time-urgent,
+  .timer-fill.paused,
+  .turn-pill.paused .turn-clock .ic,
+  .game-over.won .go-emblem::before,
+  .energy-crystals.warn,
+  .hero-impact-recap,
+  .creature.impact-source::before,
+  .creature.lunging,
+  .turn-coach.bot .turn-coach-icon::after,
+  .login-screen::before,
+  .login-screen::after {
+    animation: none !important;
+  }
+
+  /* loops que faltavam: roda de carregar para estática; chuva de vitória some */
+  .spinner {
+    animation: none;
+    border-top-color: var(--gold);
+  }
+
+  .confetti {
+    display: none;
+  }
+
+  .lc-frame--arcane::after {
+    animation: none !important;
+  }
+}

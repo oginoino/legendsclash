@@ -1,0 +1,670 @@
+/* ── Home ─────────────────────────────────────────────────────── */
+.home-screen {
+  position: relative;
+  isolation: isolate;
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: var(--pad-container);
+}
+
+.home-screen::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, #070b12cc 0%, #0a0e16f4 58%, #0a0e16 100%),
+    linear-gradient(90deg, #0a0e16 0%, #0a0e16aa 34%, #0a0e1630 72%),
+    url('/assets/illustrations/aurelia-panorama.webp') center top / cover no-repeat;
+}
+
+.home-screen::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(800px 360px at 72% 18%, #e3b34120, transparent 65%),
+    radial-gradient(680px 320px at 22% 24%, #4d8dff18, transparent 70%);
+  mix-blend-mode: screen;
+  opacity: .75;
+}
+
+.home-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 0 16px;
+  border-bottom: 1px solid #ffffff1f;
+  margin-bottom: 20px;
+}
+
+/* wrap: as ações de perfil/conta caem p/ outra linha em telas estreitas em
+   vez de transbordar a viewport */
+.profile-chip {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px;
+  border: 1px solid #ffffff18;
+  border-radius: var(--r-xl);
+  background: #0c1322a8;
+  box-shadow: 0 10px 28px #0006, inset 0 1px 0 #ffffff0e;
+  backdrop-filter: blur(10px);
+}
+
+.profile-chip-cover {
+  background:
+    linear-gradient(90deg, #0c1322f0 0%, #0c1322d9 54%, #0c132280 100%),
+    var(--profile-cover) center / cover no-repeat,
+    #0c1322a8;
+}
+
+.profile-chip-cover>* {
+  position: relative;
+  z-index: 1;
+}
+
+.profile-sub {
+  font-size: 13px;
+  color: var(--dim);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.avatar-lg {
+  flex-shrink: 0;
+}
+
+/* tamanho vem do Avatar/InlineAvatar (inline) */
+
+/* grade intrínseca: 2+ colunas quando cabem (≥340px cada), 1 quando não —
+   acaba com a zona apertada de 800–980px e o salto seco em 800px.
+   min(340px,100%) impede que a faixa mínima estoure telas <340px */
+.home-main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.home-main-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 1080px) {
+  .home-main {
+    grid-template-columns: minmax(330px, .92fr) minmax(360px, 1fr) minmax(340px, .94fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .home-main-column {
+    gap: 18px;
+  }
+
+  .home-ranking-panel {
+    overflow: hidden;
+  }
+
+  .home-history-panel .history-list {
+    display: block;
+  }
+
+  .home-history-panel .history-row {
+    border-radius: 8px;
+    padding-inline: 8px;
+  }
+}
+
+.home-vista {
+  position: relative;
+  min-height: clamp(132px, 14vw, 184px);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+  margin: 0 0 16px;
+  padding: clamp(16px, 3vw, 28px);
+  border: 1px solid #ffffff22;
+  border-radius: 20px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, #07101edc 0%, #07101eb8 38%, #07101e22 76%),
+    linear-gradient(180deg, #05091226 0%, #050912e6 100%),
+    url('/assets/illustrations/aurelia-panorama.webp') center 42% / cover no-repeat;
+  box-shadow: 0 18px 58px #0008, inset 0 1px 0 #ffffff18;
+}
+
+.home-vista::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 19px;
+  border: 1px solid #e3b34128;
+  pointer-events: none;
+}
+
+.home-vista-copy,
+.home-vista-meta {
+  position: relative;
+  z-index: 1;
+}
+
+.home-vista-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 620px;
+}
+
+.home-vista-kicker {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+.home-vista-copy strong {
+  max-width: 16ch;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1.08;
+  text-shadow: 0 3px 24px #000f;
+}
+
+.home-vista-copy span:last-child {
+  color: #d4deec;
+  font-size: 14px;
+  text-shadow: 0 2px 8px #000d;
+}
+
+.home-vista-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.home-vista-actions .btn {
+  background: #08101edc;
+  border-color: #ffffff2b;
+  backdrop-filter: blur(8px);
+}
+
+.home-vista-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.home-vista-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid #ffffff24;
+  border-radius: var(--r-pill);
+  background: #08101ed9;
+  color: #d6e1ef;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 #ffffff10;
+  backdrop-filter: blur(8px);
+}
+
+.home-world {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.home-chapter,
+.home-traditions {
+  border: 1px solid #ffffff18;
+  border-radius: var(--r-lg);
+  background:
+    var(--noise),
+    linear-gradient(160deg, #121b2ccf, #0a0f19dc);
+  box-shadow: 0 12px 36px #0006, inset 0 1px 0 #ffffff0d;
+  backdrop-filter: blur(10px);
+}
+
+.home-chapter {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 118px;
+}
+
+.home-world-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.home-chapter strong {
+  display: block;
+  margin: 6px 0 5px;
+  font-family: var(--font-display);
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.05;
+}
+
+.home-chapter p {
+  max-width: 70ch;
+  margin: 0;
+  color: #b8c5d8;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.home-traditions {
+  padding: 12px;
+}
+
+.home-traditions-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.home-traditions-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.home-traditions-head em {
+  color: var(--gold);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.home-tradition-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.home-tradition {
+  --accent: var(--gold);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid #ffffff18;
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: #08101db8;
+  color: #d4deec;
+  text-align: left;
+  cursor: pointer;
+  transition: transform .15s, border-color .15s, background .15s;
+}
+
+.home-tradition:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  background: #111b2acc;
+}
+
+.home-tradition.chosen {
+  color: #fff4c9;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 18px #0008;
+}
+
+.home-tradition .ic {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.home-tradition span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+@media (min-width: 1080px) {
+  .home-vista {
+    min-height: 152px;
+    padding: 22px 28px;
+    background-position: center 38%;
+  }
+
+  .home-vista-copy {
+    max-width: 780px;
+  }
+
+  .home-vista-copy strong {
+    max-width: 28ch;
+    font-size: clamp(1.75rem, 2.25vw, 2.35rem);
+  }
+
+  .home-vista-copy span:last-child {
+    max-width: 74ch;
+  }
+
+  .home-world {
+    grid-template-columns: minmax(0, 1.35fr) minmax(380px, .8fr);
+    gap: 14px;
+  }
+}
+
+.play-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.panel {
+  background:
+    var(--noise),
+    linear-gradient(180deg, #1a2335f2, #161f30f0);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: clamp(14px, 2.5vw, 20px);
+  box-shadow: var(--elev-3), inset 0 1px 0 #ffffff0d;
+  backdrop-filter: blur(8px);
+}
+
+.panel h3 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  letter-spacing: 1px;
+}
+
+/* títulos de painel no font display, com filete dourado — devolve a
+   hierarquia de marca que o login estabelece (antes caíam no font do corpo) */
+.panel h2 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  letter-spacing: 1px;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+
+/* filete dourado só nos títulos alinhados à esquerda do lobby (Home/Sala);
+   títulos centralizados de modais — mulligan, tutorial — não recebem o filete */
+.home-main .panel h2::after,
+.room-screen .panel h2::after {
+  content: '';
+  display: block;
+  width: 34px;
+  height: 2px;
+  margin-top: 7px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+  border-radius: 2px;
+}
+
+/* o título da sala é centralizado → o filete acompanha (gradiente simétrico) */
+.room-panel h2::after {
+  margin-inline: auto;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dim);
+  font-size: 12px;
+  margin: 18px 0 10px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.join-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.join-form input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+}
+
+.join-form .btn {
+  flex: 0 0 auto;
+}
+
+.queue-status {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.spinner {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 12px;
+  border: 3px solid var(--line);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.board-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.board-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.board-table tr.me td {
+  background: #4d8dff14;
+}
+
+.board-table .pos {
+  color: var(--gold);
+  font-weight: 700;
+  width: 28px;
+}
+
+.board-table .num {
+  text-align: right;
+}
+
+.board-player {
+  min-width: 0;
+  width: 100%;
+}
+
+.board-player-button {
+  position: relative;
+  width: 100%;
+  min-width: 150px;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 5px 9px;
+  border: 1px solid #ffffff18;
+  border-left: 3px solid var(--tradition-color);
+  border-radius: var(--r-sm);
+  background:
+    linear-gradient(90deg, #09111ee8 0%, #101a2be6 70%, #101a2bf5 100%),
+    var(--profile-cover) center 38% / cover no-repeat;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 #ffffff0c;
+  transition: border-color .15s, filter .15s;
+}
+
+.board-player-button .lc-avatar {
+  flex: 0 0 auto;
+}
+
+.board-player-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.board-player-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-player-copy small {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  margin-top: 3px;
+  color: #b7c3d5;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-player-copy small .ic {
+  flex: 0 0 auto;
+  color: var(--tradition-color);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .board-player-button:hover {
+    border-color: var(--tradition-color);
+    filter: brightness(1.12);
+  }
+}
+
+.league-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.league-bronze {
+  background: #8d541f33;
+  color: #d9985f;
+}
+
+.league-prata {
+  background: #9aa7b633;
+  color: #c4cfdb;
+}
+
+.league-ouro {
+  background: #e3b34126;
+  color: var(--gold);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.history-list li {
+  border-bottom: 1px solid var(--line);
+}
+
+/* Fase 3: a linha vira botão expansível com o detalhe da partida abaixo */
+.history-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-row:hover {
+  background: var(--bg-2);
+}
+
+.history-detail {
+  padding: 0 4px 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.history-list .result {
+  font-weight: 700;
+  width: 64px;
+}
+
+.history-list li.won .result {
+  color: var(--green);
+}
+
+.history-list li.lost .result {
+  color: var(--red);
+}
+
+.history-list .delta {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+.delta.up {
+  color: var(--green);
+}
+
+.delta.down {
+  color: var(--red);
+}
