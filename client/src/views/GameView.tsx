@@ -12,12 +12,11 @@ import { CodexView } from './CodexView';
 import { sfx } from '../sounds';
 import { usePreferences } from '../preferences';
 import { createGameActionController } from '../features/game/action-controller';
+import { resolveAimArrow } from '../features/game/aim-geometry-model';
 import { Creature, GhostCreature, HeroPlate } from '../features/game/components/ArenaPieces';
-import type { AimMode } from '../features/game/components/AimOverlay';
 import { GameSidePanel, MobileGameToolbar } from '../features/game/components/GameChrome';
 import type { SidePane } from '../features/game/components/GameChrome';
 import { GameInteractionOverlays } from '../features/game/components/GameInteractionOverlays';
-import type { HandConfirm, TargetHint } from '../features/game/components/GameInteractionOverlays';
 import { GameOverOverlay } from '../features/game/components/GameOverOverlay';
 import { MulliganOverlay } from '../features/game/components/MulliganOverlay';
 import { TurnHud } from '../features/game/components/TurnHud';
@@ -33,6 +32,12 @@ import { useGameFeedback } from '../features/game/hooks/useGameFeedback';
 import { useHandFocus } from '../features/game/hooks/useHandFocus';
 import { useTurnClock } from '../features/game/hooks/useTurnClock';
 import {
+  deriveAimMode,
+  deriveHandConfirm,
+  deriveTargetHint,
+  visibleInspection,
+} from '../features/game/presentation-model';
+import {
   CAN_HOVER,
   TAUNT_COOLDOWN_MS,
   dupPositions, handIntent,
@@ -41,10 +46,8 @@ import {
   combatPreviewFor,
   deriveTargetingState,
   isHoverTargetValid,
-  noTargetActionLabel,
 } from '../features/game/targeting-model';
 import type {
-  ArrowGeometry,
   HoverTarget,
   Selection,
 } from '../features/game/targeting-model';
@@ -322,83 +325,50 @@ export function GameView() {
   const draggingHandTarget = dragCard?.mode === 'target';
   const draggingCreaturePlay = dragCard?.mode === 'play' && CARDS[dragCard.defId]?.type === 'creature';
 
-  // ── Seta de mira ────────────────────────────────────────────────
-  // A ponta segue o ponteiro; sobre um alvo válido ela "trava" no centro
-  // dele e troca a flecha por uma retícula pulsante (estilo Hearthstone).
-  let arrow: ArrowGeometry | null = null;
-  let lockOn = false;
-  if (selection && mouse) {
-    const originKey = selection.kind === 'attacker' ? `cr-${selection.iid}` : `hand-${selection.iid}`;
-    const el = document.querySelector(`[data-anchor="${originKey}"]`);
-    if (el) {
-      const r = el.getBoundingClientRect();
-      let x2 = mouse.x;
-      let y2 = mouse.y;
-      if (hoverValid && hover) {
-        const tKey = hover.kind === 'face' ? `face-${enemySeatIdx}` : `cr-${hover.iid}`;
-        const te = document.querySelector(`[data-anchor="${tKey}"]`);
-        if (te) {
-          const tr = te.getBoundingClientRect();
-          x2 = tr.left + tr.width / 2;
-          y2 = tr.top + tr.height / 2;
-          lockOn = true;
-        }
-      }
-      arrow = { x1: r.left + r.width / 2, y1: r.top + r.height / 2, x2, y2 };
-    }
-  }
+  const { arrow, lockOn } = resolveAimArrow({
+    enemySeatIdx,
+    hover,
+    hoverValid,
+    mouse,
+    rectForAnchor: (anchor) => document
+      .querySelector<HTMLElement>(`[data-anchor="${anchor}"]`)
+      ?.getBoundingClientRect() ?? null,
+    selection,
+  });
 
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
-  const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
-  const aimMode: AimMode = lethalAim
-    ? 'lethal'
-    : selection?.kind === 'attacker'
-      ? 'attack'
-      : targetingFriendly
-        ? 'support'
-        : 'spell';
+  const aimMode = deriveAimMode({
+    lethal: !!preview?.lethal,
+    selection,
+    targetingFriendly,
+  });
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
   const staticFacePreview = targetingFace && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
-  const targetHint: TargetHint | null = selection?.kind === 'attacker'
-    ? {
-      mode: 'attack',
-      title: selectedAttacker ? CARDS[selectedAttacker.defId].name : 'Ataque selecionado',
-      body: mustHitTaunt
-        ? `${tauntFocusName} está protegendo a mesa. Ataque Provocar primeiro.`
-        : faceShielded
-          ? 'As criaturas inimigas protegem o comandante. Remova a mesa para abrir dano direto.'
-          : 'Mesa livre. Escolha um alvo e confirme pela prévia de dano.',
-    }
-    : selection?.kind === 'hand' && selectedHandDef
-      ? {
-        mode: selectedHandDef.target === 'friendly-creature' ? 'support' : 'spell',
-        title: selectedHandDef.name,
-        body: selectedHandDef.target === 'friendly-creature'
-          ? 'Escolha uma criatura aliada para receber o efeito.'
-          : faceShielded && !selectedHandDef.pierce
-            ? 'As criaturas inimigas bloqueiam o comandante. Mire uma criatura primeiro.'
-            : 'Escolha o melhor alvo usando a prévia de dano.',
-      }
-      : null;
-  const handConfirm: HandConfirm | null = touchPlayConfirm && handFocus && focusedHandDef && myTurn
-    ? {
-      mode: 'play' as const,
-      title: focusedHandDef.name,
-      body: 'Revise antes de jogar.',
-      actionLabel: noTargetActionLabel(handFocus.defId),
-    }
-    : null;
-  const visibleInspect = inspect
-    && (!selection || inspect.source === 'creature')
-    && !dragCard
-    && game.status === 'active'
-    && (inspect.source === 'creature' || game.hand.some((card) => card.iid === inspect.iid))
-    ? inspect
-    : null;
+  const targetHint = deriveTargetHint({
+    faceShielded,
+    mustHitTaunt,
+    selectedAttacker,
+    selectedCard: selectedHandDef,
+    selection,
+    tauntFocusName,
+  });
+  const handConfirm = deriveHandConfirm({
+    focusedCard: focusedHandDef,
+    handFocus,
+    myTurn,
+    touchPlayConfirm,
+  });
+  const visibleInspect = visibleInspection({
+    dragCard,
+    gameActive: game.status === 'active',
+    hand: game.hand,
+    inspect,
+    selection,
+  });
 
   return (
     <div

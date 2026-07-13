@@ -30,13 +30,6 @@ export interface TargetingState {
   enemy: boolean;
 }
 
-export interface ArrowGeometry {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
 interface RectBounds {
   left: number;
   right: number;
@@ -250,20 +243,4 @@ export function playDropLabel(defId: string, ready: boolean): string {
   if (!ready && CARDS[defId]?.type === 'creature') return 'Leve até sua mesa';
   const action = noTargetActionLabel(defId).toLocaleLowerCase('pt-BR');
   return ready ? `Solte para ${action}` : `Arraste para ${action}`;
-}
-
-export function arrowPath(arrow: ArrowGeometry): string {
-  const cx = (arrow.x1 + arrow.x2) / 2;
-  const cy = Math.min(arrow.y1, arrow.y2) - 60;
-  return `M ${arrow.x1} ${arrow.y1} Q ${cx} ${cy} ${arrow.x2} ${arrow.y2}`;
-}
-
-export function arrowPoint(arrow: ArrowGeometry, t: number): { x: number; y: number } {
-  const cx = (arrow.x1 + arrow.x2) / 2;
-  const cy = Math.min(arrow.y1, arrow.y2) - 60;
-  const remaining = 1 - t;
-  return {
-    x: remaining * remaining * arrow.x1 + 2 * remaining * t * cx + t * t * arrow.x2,
-    y: remaining * remaining * arrow.y1 + 2 * remaining * t * cy + t * t * arrow.y2,
-  };
 }

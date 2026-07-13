@@ -1,8 +1,7 @@
 import type * as React from 'react';
-import { arrowPath, arrowPoint } from '../targeting-model';
-import type { ArrowGeometry } from '../targeting-model';
-
-export type AimMode = 'lethal' | 'attack' | 'support' | 'spell';
+import { arrowPath, arrowPoint } from '../aim-geometry-model';
+import type { ArrowGeometry } from '../aim-geometry-model';
+import type { AimMode } from '../presentation-model';
 
 const AIM_PALETTE: Record<AimMode, { color: string; accent: string }> = {
   lethal: { color: '#e8665d', accent: '#ffd6a3' },
