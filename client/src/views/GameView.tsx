@@ -10,7 +10,7 @@ import { RulesModal } from '../components/RulesModal';
 import { Tutorial } from '../components/Tutorial';
 import { CodexView } from './CodexView';
 import { sfx } from '../sounds';
-import { triggerHaptic, usePreferences } from '../preferences';
+import { usePreferences } from '../preferences';
 import { createGameActionController } from '../features/game/action-controller';
 import { Creature, GhostCreature, HeroPlate } from '../features/game/components/ArenaPieces';
 import type { AimMode } from '../features/game/components/AimOverlay';
@@ -21,17 +21,8 @@ import type { HandConfirm, TargetHint } from '../features/game/components/GameIn
 import { GameOverOverlay } from '../features/game/components/GameOverOverlay';
 import { MulliganOverlay } from '../features/game/components/MulliganOverlay';
 import { TurnHud } from '../features/game/components/TurnHud';
-import {
-  PLAY_LIFT_PX,
-  TOUCH_DROP_SLOP_PX,
-  TOUCH_PLAY_LIFT_PX,
-  TOUCH_TARGET_MAGNET_PX,
-} from '../features/game/drag-gesture-model';
-import type {
-  DragCardVisual,
-  DragOrigin,
-  DragState,
-} from '../features/game/drag-gesture-model';
+import { createGameDragController } from '../features/game/drag-controller';
+import type { DragCardVisual } from '../features/game/drag-gesture-model';
 import { DAMAGE_SOURCE_TTL, ENEMY_ATTACK_FX_TTL } from '../features/game/feedback-model';
 import type { Bubble } from '../features/game/feedback-model';
 import { deriveGameHud } from '../features/game/hud-model';
@@ -47,21 +38,12 @@ import {
   dupPositions, handIntent,
 } from '../features/game/view-model';
 import {
-  aimTargetToHover,
   combatPreviewFor,
   deriveTargetingState,
-  distanceFromRect,
   isHoverTargetValid,
-  isValidDragTarget,
   noTargetActionLabel,
-  playDropLabel,
-  targetAnchor,
-  targetFromAnchor,
-  targetKey,
-  targetLabel,
 } from '../features/game/targeting-model';
 import type {
-  AimTarget,
   ArrowGeometry,
   HoverTarget,
   Selection,
@@ -250,6 +232,30 @@ export function GameView() {
     touchPlayConfirm,
   });
 
+  const {
+    onTargetMouseDown,
+    onTargetPointerDown,
+  } = createGameDragController({
+    cancelDrag,
+    clearAim,
+    clearInspect,
+    dragApiRef,
+    dragRef,
+    enemy,
+    enemySeatIdx,
+    myTurn,
+    performAttack,
+    performPlay,
+    player: me,
+    setCantAttackWarn,
+    setDragCard,
+    setEnergyWarnAt,
+    setHandFocus,
+    setHover,
+    setMouse,
+    setSelection,
+  });
+
   // Cartas iguais na mesa ganham o número da posição (casa com o log do
   // servidor) — assim o efeito/dano nunca fica ambíguo entre cópias idênticas.
   const enemyPos = dupPositions(enemy.board);
@@ -290,225 +296,6 @@ export function GameView() {
     setConfirmSurrenderOpen(false);
     send({ t: 'game:surrender' });
   }
-
-  // ── Arrasto para mirar/jogar (mouse e toque via Pointer Events) ──
-
-  /** Resolve o alvo exato sob o ponteiro pelos data-anchor presentes no DOM. */
-  function resolveTargetAt(x: number, y: number): AimTarget | null {
-    const anchor = document.elementFromPoint(x, y)?.closest('[data-anchor]')?.getAttribute('data-anchor');
-    return targetFromAnchor(anchor, enemySeatIdx, enemy.board, me!.board);
-  }
-
-  /**
-   * O dedo cobre parte do alvo. Quando não há um elemento exatamente sob ele,
-   * aproxima para o destino válido mais próximo, sem atravessar um alvo inválido.
-   */
-  function resolveDragTargetAt(drag: DragState, x: number, y: number): { target: AimTarget | null; magnetized: boolean } {
-    const exact = resolveTargetAt(x, y);
-    if (exact || drag.pointerType !== 'touch') return { target: exact, magnetized: false };
-
-    const candidates: AimTarget[] = [
-      { kind: 'face' },
-      ...enemy.board.map((c) => ({ kind: 'enemy-creature' as const, c })),
-      ...me!.board.map((c) => ({ kind: 'my-creature' as const, c })),
-    ];
-    let nearest: AimTarget | null = null;
-    let nearestDistance = TOUCH_TARGET_MAGNET_PX + 1;
-    for (const candidate of candidates) {
-      if (!isValidDragTarget(drag, candidate, enemy.board)) continue;
-      const element = document.querySelector<HTMLElement>(`[data-anchor="${targetAnchor(candidate, enemySeatIdx)}"]`);
-      if (!element) continue;
-      const distance = distanceFromRect(x, y, element.getBoundingClientRect());
-      if (distance < nearestDistance) {
-        nearest = candidate;
-        nearestDistance = distance;
-      }
-    }
-    return {
-      target: nearestDistance <= TOUCH_TARGET_MAGNET_PX ? nearest : null,
-      magnetized: !!nearest && nearestDistance <= TOUCH_TARGET_MAGNET_PX,
-    };
-  }
-
-  function setDragLockFeedback(drag: DragState, target: AimTarget | null, valid: boolean): void {
-    const next = valid && target ? targetKey(target) : null;
-    if (drag.pointerType === 'touch' && next && next !== drag.lockedTarget) {
-      triggerHaptic();
-    }
-    drag.lockedTarget = next;
-  }
-
-  function isPlayDropReady(drag: DragState, x: number, y: number): boolean {
-    const def = CARDS[drag.defId];
-    if (!def) return false;
-    const lift = drag.startY - y;
-    const requiredLift = drag.pointerType === 'touch' ? TOUCH_PLAY_LIFT_PX : PLAY_LIFT_PX;
-    if (lift < requiredLift) return false;
-    if (def.type !== 'creature' || drag.pointerType !== 'touch') return true;
-
-    const row = document.querySelector<HTMLElement>('.my-row');
-    if (!row) return false;
-    const rect = row.getBoundingClientRect();
-    return x >= rect.left - TOUCH_DROP_SLOP_PX
-      && x <= rect.right + TOUCH_DROP_SLOP_PX
-      && y >= rect.top - TOUCH_DROP_SLOP_PX
-      && y <= rect.bottom + TOUCH_DROP_SLOP_PX;
-  }
-
-  /** Início de gesto numa carta da mão ou criatura própria. */
-  function onTargetPointerDown(e: React.PointerEvent, origin: DragOrigin) {
-    if (!myTurn || !e.isPrimary || e.button !== 0) return;
-    if ((e.target as Element).closest('.creature-info')) return;
-    if (dragRef.current) cancelDrag();
-    dragRef.current = {
-      pointerId: e.pointerId,
-      pointerType: e.pointerType,
-      ...origin,
-      startX: e.clientX,
-      startY: e.clientY,
-      mode: 'pending',
-      captureEl: e.currentTarget as HTMLElement,
-    };
-  }
-
-  function onTargetMouseDown(e: React.MouseEvent, origin: DragOrigin) {
-    if (!myTurn || e.button !== 0 || dragRef.current) return;
-    if ((e.target as Element).closest('.creature-info')) return;
-    dragRef.current = {
-      pointerId: -1,
-      pointerType: 'mouse',
-      ...origin,
-      startX: e.clientX,
-      startY: e.clientY,
-      mode: 'pending',
-    };
-  }
-
-  // fechamento fresco deste render para os listeners de window
-  dragApiRef.current = {
-    begin(drag) {
-      if (drag.kind === 'creature') {
-        const c = me?.board.find((x) => x.iid === drag.iid);
-        if (!c || !myTurn) {
-          drag.mode = 'dead';
-        } else if (!c.canAttack) {
-          setSelection(null);
-          setCantAttackWarn({ iid: c.iid, at: Date.now() });
-          sfx.error();
-          drag.mode = 'dead';
-        } else {
-          sfx.click();
-          setSelection({ kind: 'attacker', iid: drag.iid });
-          drag.mode = 'target';
-        }
-        return;
-      }
-      const def = CARDS[drag.defId];
-      setHandFocus(null);
-      clearInspect('hand');
-      if (!def || !myTurn) {
-        drag.mode = 'dead';
-      } else if (def.cost > me!.energy) {
-        setEnergyWarnAt(Date.now());
-        sfx.error();
-        drag.mode = 'dead';
-      } else if (def.target && def.target !== 'none') {
-        sfx.click();
-        setSelection({ kind: 'hand', iid: drag.iid });
-        drag.mode = 'target';
-        setDragCard({
-          iid: drag.iid,
-          defId: drag.defId,
-          x: drag.startX,
-          y: drag.startY,
-          mode: 'target',
-          valid: false,
-          label: targetLabel(null, false, drag.defId),
-          pointerType: drag.pointerType,
-          magnetized: false,
-        });
-      } else {
-        setSelection(null);
-        drag.mode = 'lift';
-        setDragCard({
-          iid: drag.iid,
-          defId: drag.defId,
-          x: drag.startX,
-          y: drag.startY,
-          mode: 'play',
-          valid: false,
-          label: playDropLabel(drag.defId, false),
-          pointerType: drag.pointerType,
-          magnetized: false,
-        });
-      }
-    },
-    move(drag, x, y) {
-      if (drag.mode === 'target') {
-        const { target, magnetized } = resolveDragTargetAt(drag, x, y);
-        const valid = isValidDragTarget(drag, target, enemy.board);
-        setDragLockFeedback(drag, target, valid);
-        setMouse({ x, y });
-        setHover(aimTargetToHover(target));
-        setDragCard((card) => card ? {
-          ...card,
-          x,
-          y,
-          valid,
-          label: targetLabel(target, valid, drag.defId),
-          magnetized,
-        } : card);
-      } else if (drag.mode === 'lift') {
-        const def = CARDS[drag.defId];
-        const hasRoom = def.type !== 'creature' || me!.board.length < MAX_BOARD;
-        const ready = hasRoom && isPlayDropReady(drag, x, y);
-        const nextLock = ready ? 'play-zone' : null;
-        if (drag.pointerType === 'touch' && nextLock && drag.lockedTarget !== nextLock) {
-          triggerHaptic();
-        }
-        drag.lockedTarget = nextLock;
-        setDragCard((card) => card ? {
-          ...card,
-          x,
-          y,
-          valid: ready,
-          label: hasRoom ? playDropLabel(drag.defId, ready) : 'Sua mesa está cheia',
-        } : card);
-      }
-    },
-    finish(drag, x, y) {
-      setDragCard(null);
-      if (drag.mode === 'target') {
-        const { target: t } = resolveDragTargetAt(drag, x, y);
-        const valid = isValidDragTarget(drag, t, enemy.board);
-        if (drag.kind === 'creature') {
-          const attacker = me?.board.find((c) => c.iid === drag.iid);
-          if (attacker && t && valid) performAttack(attacker, t);
-          else clearAim(); // soltou no vazio: cancela a mira
-        } else if (t && valid) {
-          performPlay(drag.iid, drag.defId, t);
-        } else {
-          clearAim();
-        }
-        // alvo bloqueado (Provocar/escudo) mantém a seleção para o tap-tap,
-        // mas a seta não deve ficar congelada no ponto do último toque
-        setMouse(null);
-        setHover(null);
-      } else if (drag.mode === 'lift') {
-        const def = CARDS[drag.defId];
-        const hasRoom = def.type !== 'creature' || me!.board.length < MAX_BOARD;
-        if (hasRoom && isPlayDropReady(drag, x, y)) performPlay(drag.iid, drag.defId, null);
-        else clearInspect('hand');
-      }
-    },
-    cancel(drag) {
-      // navegador tomou o gesto (rolagem da mão, gesto de sistema): limpa tudo
-      if (drag.mode === 'target') clearAim();
-      setDragCard(null);
-      setMouse(null);
-      setHover(null);
-    },
-  };
 
   const targeting = deriveTargetingState(selection, selectedHandDef);
   const targetingFriendly = targeting.friendly;
