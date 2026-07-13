@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_BOARD } from '@legendsclash/shared';
-import type { CreatureOnBoard } from '@legendsclash/shared';
 import { send, useAppState } from '../store';
 import {
   IcoCheck, IcoSurrender, IcoTarget,
@@ -12,6 +11,7 @@ import { Tutorial } from '../components/Tutorial';
 import { CodexView } from './CodexView';
 import { sfx } from '../sounds';
 import { triggerHaptic, usePreferences } from '../preferences';
+import { createGameActionController } from '../features/game/action-controller';
 import { Creature, GhostCreature, HeroPlate } from '../features/game/components/ArenaPieces';
 import type { AimMode } from '../features/game/components/AimOverlay';
 import { GameSidePanel, MobileGameToolbar } from '../features/game/components/GameChrome';
@@ -204,21 +204,51 @@ export function GameView() {
   const enemy = game.seats[enemySeatIdx];
   const hud = deriveGameHud({ hand: game.hand, player: me, enemy, myTurn });
 
-  const selectedHandDef = selection?.kind === 'hand'
-    ? CARDS[game.hand.find((c) => c.iid === selection.iid)?.defId ?? '']
-    : null;
-  const selectedAttacker = selection?.kind === 'attacker'
-    ? me.board.find((c) => c.iid === selection.iid) ?? null
-    : null;
-  const focusedHandDef = handFocus ? CARDS[handFocus.defId] : null;
+  function clearAim() {
+    setSelection(null);
+    setHover(null);
+    setMouse(null);
+    setDragCard(null);
+    setHoverCost(0);
+    setHandFocus(null);
+    clearInspect('hand');
+  }
 
-  // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
-  // e magias (apenas efeitos especiais "pierce" atravessam).
-  const faceShielded = enemy.board.length > 0;
-  // Provocar: prioridade entre criaturas — a com a palavra-chave vai primeiro
-  const enemyTaunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
-  const mustHitTaunt = selection?.kind === 'attacker' && enemyTaunts.length > 0;
-  const tauntFocusName = enemyTaunts[0] ? CARDS[enemyTaunts[0].defId].name : 'criatura com Provocar';
+  const {
+    clickEnemyCreature,
+    clickEnemyFace,
+    clickHandCard,
+    clickMyCreature,
+    confirmFocusedHandPlay,
+    faceShielded,
+    focusedHandDef,
+    mustHitTaunt,
+    performAttack,
+    performPlay,
+    selectedAttacker,
+    selectedHandDef,
+    tauntFocusName,
+  } = createGameActionController({
+    clearAim,
+    clearInspect,
+    enemy,
+    enemySeatIdx,
+    game,
+    handFocus,
+    myTurn,
+    player: me,
+    selection,
+    setAttackFx,
+    setCantAttackWarn,
+    setDragCard,
+    setEnergyWarnAt,
+    setHandFocus,
+    setHover,
+    setHoverCost,
+    setMouse,
+    setSelection,
+    touchPlayConfirm,
+  });
 
   // Cartas iguais na mesa ganham o número da posição (casa com o log do
   // servidor) — assim o efeito/dano nunca fica ambíguo entre cópias idênticas.
@@ -237,46 +267,6 @@ export function GameView() {
     });
   }
   const preview = previewFor(hover);
-
-  // ── Ações ───────────────────────────────────────────────────────
-  // Núcleo parametrizado, compartilhado pelo clique-clique e pelo arrasto
-  // (Pointer Events): validações de Provocar/escudo/energia num lugar só.
-
-  function clearAim() {
-    setSelection(null);
-    setHover(null);
-    setMouse(null);
-    setDragCard(null);
-    setHoverCost(0);
-    setHandFocus(null);
-    clearInspect('hand');
-  }
-
-  function focusHandCard(iid: string, defId: string) {
-    sfx.click();
-    setSelection(null);
-    setHover(null);
-    setMouse(null);
-    setDragCard(null);
-    clearInspect('hand');
-    setHandFocus({ iid, defId });
-    setHoverCost(CARDS[defId]?.cost ?? 0);
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-anchor="hand-${iid}"]`)
-        ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-    });
-  }
-
-  function confirmFocusedHandPlay() {
-    if (!handFocus || !game) return;
-    const current = game.hand.find((c) => c.iid === handFocus.iid);
-    if (!current) {
-      setHandFocus(null);
-      return;
-    }
-    performPlay(current.iid, current.defId, null);
-  }
 
   /** Dispara uma provocação no chat da partida (cadência no cliente p/ UX; o
    *  servidor reforça o cooldown e valida o id contra o catálogo). */
@@ -299,141 +289,6 @@ export function GameView() {
     sfx.click();
     setConfirmSurrenderOpen(false);
     send({ t: 'game:surrender' });
-  }
-
-  /** Ataca com a criatura no alvo; valida Provocar e proteção do comandante. */
-  function performAttack(attacker: CreatureOnBoard, t: AimTarget): void {
-    if (!myTurn || !attacker.canAttack) return;
-    if (t.kind === 'my-creature') {
-      sfx.error();
-      return; // sem fogo amigo
-    }
-    if (t.kind === 'face') {
-      if (faceShielded) {
-        sfx.error();
-        return;
-      }
-      send({ t: 'game:attack', attackerIid: attacker.iid, target: { seat: enemySeatIdx } });
-    } else {
-      if (enemyTaunts.length > 0 && !CARDS[t.c.defId].keywords?.includes('taunt')) {
-        sfx.error();
-        return; // alvo bloqueado por Provocar — o visual já explica
-      }
-      send({ t: 'game:attack', attackerIid: attacker.iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
-    }
-    setAttackFx({ iid: attacker.iid, at: Date.now() });
-    sfx.attack();
-    clearAim();
-  }
-
-  /** Joga a carta da mão (com ou sem alvo), preservando a mira quando o alvo é inválido. */
-  function performPlay(iid: string, defId: string, t: AimTarget | null): void {
-    if (!myTurn) return;
-    const def = CARDS[defId];
-    if (def.cost > me!.energy) {
-      // feedback de "por que não posso?": cristais tremem + som de erro
-      setEnergyWarnAt(Date.now());
-      sfx.error();
-      return;
-    }
-    const wants = def.target ?? 'none';
-    if (wants === 'none') {
-      send({ t: 'game:play', iid });
-    } else if (!t) {
-      return;
-    } else if (wants === 'friendly-creature') {
-      if (t.kind !== 'my-creature') {
-        sfx.error();
-        return;
-      }
-      send({ t: 'game:play', iid, target: { seat: game!.yourSeat, iid: t.c.iid } });
-    } else if (t.kind === 'enemy-creature') {
-      if (wants !== 'enemy-creature' && wants !== 'enemy-any') {
-        sfx.error();
-        return;
-      }
-      send({ t: 'game:play', iid, target: { seat: enemySeatIdx, iid: t.c.iid } });
-    } else if (t.kind === 'face') {
-      if (wants !== 'enemy-any') {
-        sfx.error();
-        return;
-      }
-      if (faceShielded && !def.pierce) {
-        sfx.error();
-        return; // criaturas protegem o comandante até de magias
-      }
-      send({ t: 'game:play', iid, target: { seat: enemySeatIdx } });
-    } else {
-      sfx.error();
-      return;
-    }
-    clearInspect('hand');
-    if (def.type === 'creature') sfx.summon(); else sfx.play();
-    clearAim();
-  }
-
-  function clickHandCard(iid: string, defId: string) {
-    if (!myTurn) return;
-    const def = CARDS[defId];
-    if (def.cost > me!.energy) {
-      setEnergyWarnAt(Date.now());
-      sfx.error();
-      return;
-    }
-    if (def.target === 'none' || !def.target) {
-      if (touchPlayConfirm) {
-        focusHandCard(iid, defId);
-        return;
-      }
-      performPlay(iid, defId, null);
-    } else {
-      sfx.click();
-      setHandFocus(null);
-      clearInspect('hand');
-      setSelection(selection?.kind === 'hand' && selection.iid === iid ? null : { kind: 'hand', iid });
-    }
-  }
-
-  function clickMyCreature(c: CreatureOnBoard) {
-    if (!myTurn) return;
-    if (selection?.kind === 'hand' && selectedHandDef) {
-      if (selectedHandDef.target === 'friendly-creature') {
-        performPlay(selection.iid, selectedHandDef.id, { kind: 'my-creature', c });
-      } else {
-        sfx.error();
-      }
-      return;
-    }
-    if (c.canAttack) {
-      sfx.click();
-      setSelection(
-        selection?.kind === 'attacker' && selection.iid === c.iid ? null : { kind: 'attacker', iid: c.iid },
-      );
-    } else {
-      // criatura que não pode atacar: limpa a seleção e avisa — nunca deixar
-      // uma seleção antiga ativa em silêncio (o ataque sairia do monstro errado)
-      setSelection(null);
-      setCantAttackWarn({ iid: c.iid, at: Date.now() });
-      sfx.error();
-    }
-  }
-
-  function clickEnemyCreature(c: CreatureOnBoard) {
-    if (!myTurn) return;
-    if (selection?.kind === 'hand' && selectedHandDef) {
-      performPlay(selection.iid, selectedHandDef.id, { kind: 'enemy-creature', c });
-    } else if (selection?.kind === 'attacker' && selectedAttacker) {
-      performAttack(selectedAttacker, { kind: 'enemy-creature', c });
-    }
-  }
-
-  function clickEnemyFace() {
-    if (!myTurn) return;
-    if (selection?.kind === 'hand' && selectedHandDef) {
-      performPlay(selection.iid, selectedHandDef.id, { kind: 'face' });
-    } else if (selection?.kind === 'attacker' && selectedAttacker) {
-      performAttack(selectedAttacker, { kind: 'face' });
-    }
   }
 
   // ── Arrasto para mirar/jogar (mouse e toque via Pointer Events) ──
