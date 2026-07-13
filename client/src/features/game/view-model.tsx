@@ -73,69 +73,14 @@ function handIntent(defId: string, selected: boolean): { label: string; tone: Ha
 /** Cadência mínima entre provocações (anti-spam local). */
 const TAUNT_COOLDOWN_MS = 2500;
 
-/** Movimento mínimo (px) para mouse virar arrasto em vez de clique. */
-const DRAG_THRESHOLD_PX = 8;
-/** O dedo oscila mais que o mouse: uma margem maior preserva o tap intencional. */
-const TOUCH_DRAG_THRESHOLD_PX = 14;
-/** Deslocamento vertical mínimo para assumir que o dedo quer sair da mão. */
-const TOUCH_VERTICAL_INTENT_PX = 10;
-/** Margem ao redor de um alvo para compensar a área escondida sob o dedo. */
-const TOUCH_TARGET_MAGNET_PX = 32;
-/** Tolerância fora da borda visual da mesa ao soltar uma criatura. */
-const TOUCH_DROP_SLOP_PX = 24;
-
 /** Inspeção no hover só com mouse real — no toque o mouseover sintético do
  *  tap deixaria o overlay preso na tela (não há mouseleave correspondente). */
 const CAN_HOVER = typeof window !== 'undefined'
   && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-/** Fluxo mobile/touch: tap foca a carta; jogar sem alvo exige CTA explícito. */
-const TOUCH_CONFIRM_QUERY = '(hover: none), (pointer: coarse)';
-/** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
-const PLAY_LIFT_PX = 48;
-const TOUCH_PLAY_LIFT_PX = 56;
-
-/**
- * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
- * `pending` ainda pode virar clique; `pan` pertence à rolagem da mão;
- * `target` mira com a seta; `lift` levanta uma carta sem alvo para jogá-la;
- * `dead` consome o gesto sem ação (feedback de erro já dado).
- */
-interface DragState {
-  pointerId: number;
-  pointerType: string;
-  kind: 'hand' | 'creature';
-  iid: string;
-  defId: string;
-  startX: number;
-  startY: number;
-  mode: 'pending' | 'pan' | 'target' | 'lift' | 'dead';
-  captureEl?: HTMLElement | null;
-  lockedTarget?: string | null;
-}
-
-interface DragCardVisual {
-  iid: string;
-  defId: string;
-  x: number;
-  y: number;
-  mode: 'target' | 'play';
-  valid: boolean;
-  label: string;
-  pointerType: string;
-  magnetized: boolean;
-}
 
 export {
   CAN_HOVER,
-  DRAG_THRESHOLD_PX,
-  PLAY_LIFT_PX,
   TAUNT_COOLDOWN_MS,
-  TOUCH_CONFIRM_QUERY,
-  TOUCH_DRAG_THRESHOLD_PX,
-  TOUCH_DROP_SLOP_PX,
-  TOUCH_PLAY_LIFT_PX,
-  TOUCH_TARGET_MAGNET_PX,
-  TOUCH_VERTICAL_INTENT_PX,
   creatureHint,
   dupPositions,
   gameOverLesson,
@@ -143,8 +88,6 @@ export {
 };
 
 export type {
-  DragCardVisual,
-  DragState,
   HandFocus,
   InspectCard,
 };

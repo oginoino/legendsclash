@@ -11,9 +11,10 @@ import {
 } from '../../../icons';
 import { AimOverlay } from './AimOverlay';
 import type { AimMode } from './AimOverlay';
+import type { DragCardVisual } from '../drag-gesture-model';
 import type { Reveal } from '../feedback-model';
 import type { ArrowGeometry } from '../targeting-model';
-import type { DragCardVisual, HandFocus, InspectCard } from '../view-model';
+import type { HandFocus, InspectCard } from '../view-model';
 
 export interface TargetHint {
   mode: 'attack' | 'support' | 'spell';
