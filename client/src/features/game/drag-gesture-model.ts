@@ -46,6 +46,13 @@ export interface DragCardVisual {
   magnetized: boolean;
 }
 
+export interface DropZoneRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export type PendingDragIntent = 'pending' | 'pan' | 'activate';
 
 /** Classifica o gesto antes de qualquer efeito ou captura de ponteiro. */
@@ -65,4 +72,30 @@ export function pendingDragIntent(
   const horizontalIntent = Math.abs(dx) > Math.abs(dy) + TOUCH_AXIS_BIAS_PX;
   const upwardIntent = -dy >= TOUCH_VERTICAL_INTENT_PX;
   return horizontalIntent || !upwardIntent ? 'pan' : 'activate';
+}
+
+/** Decide se a carta foi elevada e solta numa zona jogável. */
+export function isPlayDropReadyAt({
+  drag,
+  isCreature,
+  rowRect,
+  x,
+  y,
+}: {
+  drag: Pick<DragState, 'pointerType' | 'startY'>;
+  isCreature: boolean;
+  rowRect?: DropZoneRect | null;
+  x: number;
+  y: number;
+}): boolean {
+  const lift = drag.startY - y;
+  const requiredLift = drag.pointerType === 'touch' ? TOUCH_PLAY_LIFT_PX : PLAY_LIFT_PX;
+  if (lift < requiredLift) return false;
+  if (!isCreature || drag.pointerType !== 'touch') return true;
+  if (!rowRect) return false;
+
+  return x >= rowRect.left - TOUCH_DROP_SLOP_PX
+    && x <= rowRect.right + TOUCH_DROP_SLOP_PX
+    && y >= rowRect.top - TOUCH_DROP_SLOP_PX
+    && y <= rowRect.bottom + TOUCH_DROP_SLOP_PX;
 }
