@@ -1,43 +1,41 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CARDS, MAX_BOARD, TAUNTS } from '@legendsclash/shared';
+import { CARDS, MAX_BOARD } from '@legendsclash/shared';
 import type { CreatureOnBoard } from '@legendsclash/shared';
 import { send, useAppState } from '../store';
-import { TauntIcon } from '../cosmetics';
 import {
-  IcoAttack, IcoBanner, IcoBot, IcoChat, IcoCheck, IcoCodex, IcoDeath,
-  IcoDeck, IcoEnergy, IcoEvents, IcoHand, IcoHint, IcoPause, IcoRules,
-  IcoSurrender, IcoTarget, IcoTaunt, IcoTimer, IcoWarning,
+  IcoCheck, IcoSurrender, IcoTarget,
 } from '../icons';
 import { CardView } from '../components/CardView';
-import { Chat } from '../components/Chat';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { RulesModal } from '../components/RulesModal';
 import { Tutorial } from '../components/Tutorial';
 import { CodexView } from './CodexView';
-import { SoundControl } from '../components/SoundControl';
 import { sfx } from '../sounds';
 import { triggerHaptic, usePreferences } from '../preferences';
 import { Creature, GhostCreature, HeroPlate } from '../features/game/components/ArenaPieces';
 import type { AimMode } from '../features/game/components/AimOverlay';
+import { GameSidePanel, MobileGameToolbar } from '../features/game/components/GameChrome';
+import type { SidePane } from '../features/game/components/GameChrome';
 import { GameInteractionOverlays } from '../features/game/components/GameInteractionOverlays';
 import type { HandConfirm, TargetHint } from '../features/game/components/GameInteractionOverlays';
 import { GameOverOverlay } from '../features/game/components/GameOverOverlay';
 import { MulliganOverlay } from '../features/game/components/MulliganOverlay';
+import { TurnHud } from '../features/game/components/TurnHud';
 import { DAMAGE_SOURCE_TTL, ENEMY_ATTACK_FX_TTL } from '../features/game/feedback-model';
 import type { Bubble } from '../features/game/feedback-model';
+import { deriveGameHud } from '../features/game/hud-model';
 import { useCardImagePreload } from '../features/game/hooks/useCardImagePreload';
 import { useGameFeedback } from '../features/game/hooks/useGameFeedback';
 import { useTurnClock } from '../features/game/hooks/useTurnClock';
 import {
   CAN_HOVER, DRAG_THRESHOLD_PX,
-  PACE_CHIP_STYLE, PACE_CHIP_TEXT_STYLE, PACE_CHIP_TIGHT_STYLE, PACE_HUD_STYLE,
   PLAY_LIFT_PX,
   TAUNT_COOLDOWN_MS, TOUCH_CONFIRM_QUERY, TOUCH_DRAG_THRESHOLD_PX, TOUCH_DROP_SLOP_PX,
   TOUCH_PLAY_LIFT_PX, TOUCH_TARGET_MAGNET_PX, TOUCH_VERTICAL_INTENT_PX,
-  dupPositions, formatTurnClock, handIntent, logIcon, logTone,
+  dupPositions, handIntent,
 } from '../features/game/view-model';
 import type {
-  CoachTone, DragCardVisual, DragState, HandFocus, InspectCard,
+  DragCardVisual, DragState, HandFocus, InspectCard,
 } from '../features/game/view-model';
 import {
   aimTargetToHover,
@@ -83,7 +81,7 @@ export function GameView() {
   // a mão é um scroll container, então escalar a carta no lugar seria cortado
   const [inspect, setInspect] = useState<InspectCard | null>(null);
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
-  const [sidePane, setSidePane] = useState<'log' | 'chat' | null>(null);
+  const [sidePane, setSidePane] = useState<SidePane>(null);
   const [chatSeen, setChatSeen] = useState(0);
   const [confirmSurrenderOpen, setConfirmSurrenderOpen] = useState(false);
   const [handFocus, setHandFocus] = useState<HandFocus>(null);
@@ -385,7 +383,7 @@ export function GameView() {
 
   const enemySeatIdx = game.seats.findIndex((_, i) => i !== game.yourSeat);
   const enemy = game.seats[enemySeatIdx];
-  const isPracticeOpponent = enemy.playerId.startsWith('bot:');
+  const hud = deriveGameHud({ hand: game.hand, player: me, enemy, myTurn });
 
   const selectedHandDef = selection?.kind === 'hand'
     ? CARDS[game.hand.find((c) => c.iid === selection.iid)?.defId ?? '']
@@ -394,28 +392,6 @@ export function GameView() {
     ? me.board.find((c) => c.iid === selection.iid) ?? null
     : null;
   const focusedHandDef = handFocus ? CARDS[handFocus.defId] : null;
-
-  const noMovesLeft =
-    myTurn &&
-    !game.hand.some((c) => CARDS[c.defId].cost <= me.energy) &&
-    !me.board.some((c) => c.canAttack);
-  const playableCardCount = myTurn ? game.hand.filter((c) => CARDS[c.defId].cost <= me.energy).length : 0;
-  const readyAttackerCount = myTurn ? me.board.filter((c) => c.canAttack).length : 0;
-  const playableCardText = playableCardCount === 1 ? '1 carta jogável' : `${playableCardCount} cartas jogáveis`;
-  const readyAttackerText = readyAttackerCount === 1 ? '1 atacante pronto' : `${readyAttackerCount} atacantes prontos`;
-  const actionCoach = myTurn
-    ? {
-      done: noMovesLeft,
-      label: noMovesLeft ? 'Encerrar' : `${playableCardCount} cartas · ${readyAttackerCount} ataques`,
-      aria: noMovesLeft
-        ? 'Sem ações disponíveis. Encerre o turno.'
-        : `${playableCardText}. ${readyAttackerText}.`,
-    }
-    : null;
-  const readyDamage = myTurn
-    ? me.board.filter((c) => c.canAttack).reduce((sum, c) => sum + c.attack + me.attackBonus, 0)
-    : 0;
-  const enemyBoardDamage = enemy.board.reduce((sum, c) => sum + c.attack + enemy.attackBonus, 0);
 
   // Dinâmica Yu-Gi-Oh: criaturas em campo protegem o comandante de ataques
   // e magias (apenas efeitos especiais "pierce" atravessam).
@@ -922,48 +898,6 @@ export function GameView() {
         ? 'support'
         : 'spell';
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
-  const enemyFatiguePressure = enemy.fatigue > 0 || (enemy.deckCount <= 3 && enemy.deckCount >= 0);
-  const turnCoach: { tone: CoachTone; title: string; body: string } = myTurn
-    ? noMovesLeft
-      ? {
-        tone: 'end',
-        title: 'Sem ações restantes',
-        body: 'Encerre o turno para manter o ritmo.',
-      }
-      : readyAttackerCount > 0 && !faceShielded
-        ? {
-          tone: 'lethal',
-          title: 'Alvo direto aberto',
-          body: 'O comandante inimigo está vulnerável.',
-        }
-        : readyAttackerCount > 0
-          ? {
-            tone: 'attack',
-            title: 'Ataque a mesa',
-            body: `${enemy.board.length} ${enemy.board.length === 1 ? 'criatura protege' : 'criaturas protegem'} o comandante.`,
-          }
-          : playableCardCount > 0
-            ? {
-              tone: 'play',
-              title: 'Use sua energia',
-              body: `${playableCardText}; priorize presença cedo.`,
-            }
-            : {
-              tone: 'wait',
-              title: 'Procure a próxima janela',
-              body: 'Sem ataques prontos. Avalie encerrar depois de revisar a mão.',
-            }
-    : isPracticeOpponent
-      ? {
-        tone: 'bot',
-        title: 'Treinador avaliando a mesa',
-        body: `${enemy.handCount} ${enemy.handCount === 1 ? 'carta' : 'cartas'} na mão · ${enemy.board.length} na mesa.`,
-      }
-      : {
-        tone: 'wait',
-        title: 'Planeje a resposta',
-        body: `${enemy.name} tem ${enemy.handCount} ${enemy.handCount === 1 ? 'carta' : 'cartas'} na mão.`,
-      };
 
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
@@ -1018,50 +952,14 @@ export function GameView() {
         }
       }}
     >
-      <style>{`
-        .board-divider.no-divider-line {
-          border-top: 0 !important;
-          border-bottom: 0 !important;
-          box-shadow: none !important;
-          background-image: none !important;
-        }
-
-        .board-divider.no-divider-line::before,
-        .board-divider.no-divider-line::after {
-          content: none !important;
-          display: none !important;
-        }
-      `}</style>
-      <div className="mobile-topbar">
-        <button
-          className={`btn small ghost ${sidePane === 'log' ? 'active' : ''}`}
-          onClick={() => setSidePane(sidePane === 'log' ? null : 'log')}
-          title="Eventos"
-          aria-label="Eventos da partida"
-        >
-          <IcoEvents />
-        </button>
-        <button
-          className={`btn small ghost ${sidePane === 'chat' ? 'active' : ''}`}
-          onClick={() => setSidePane(sidePane === 'chat' ? null : 'chat')}
-          title="Chat"
-          aria-label={`Chat${unreadChat > 0 ? ` (${unreadChat} não lidas)` : ''}`}
-        >
-          <IcoChat />
-          {unreadChat > 0 && sidePane !== 'chat' && <span className="unread-badge">{unreadChat}</span>}
-        </button>
-        <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar"><IcoRules /></button>
-        <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia"><IcoCodex /></button>
-        <SoundControl />
-        <button
-          className="btn small ghost danger"
-          onClick={requestSurrender}
-          title="Desistir"
-          aria-label="Desistir da partida"
-        >
-          <IcoSurrender />
-        </button>
-      </div>
+      <MobileGameToolbar
+        sidePane={sidePane}
+        unreadChat={unreadChat}
+        onPaneChange={setSidePane}
+        onShowRules={() => setShowRules(true)}
+        onShowCodex={() => setShowCodex(true)}
+        onSurrender={requestSurrender}
+      />
       <div
         className="game-board"
         onClick={(e) => {
@@ -1136,134 +1034,20 @@ export function GameView() {
           )}
         </div>
 
-        <div className="board-divider no-divider-line">
-          <div
-            className={`turn-pill ${turnOwnerIsMe ? 'mine' : ''} ${game.turnPaused ? 'paused' : ''} ${timeUrgent ? 'urgent' : ''}`}
-            style={{ '--timer-angle': `${timerPct * 3.6}deg` } as React.CSSProperties}
-            aria-label={game.turnPaused
-              ? `Cronômetro pausado em ${formatTurnClock(secondsLeft)} durante o tutorial inicial`
-              : `${turnOwnerIsMe ? 'Seu turno' : `Turno de ${game.seats[game.turnSeat].name}`}. ${formatTurnClock(secondsLeft)} restantes`}
-          >
-            <span className="turn-clock" aria-hidden="true">
-              {game.turnPaused ? <IcoPause className="ic" /> : <IcoTimer className="ic" />}
-            </span>
-            <span className="turn-time-copy">
-              <span className="turn-time-eyebrow">
-                <span className="turn-label-full">
-                  {game.status !== 'active'
-                    ? 'Partida encerrada'
-                    : game.turnPaused
-                      ? 'Tutorial inicial'
-                      : turnOwnerIsMe
-                        ? 'Seu turno'
-                        : `Turno de ${game.seats[game.turnSeat].name}`}
-                </span>
-                <span className="turn-label-compact">
-                  {game.status !== 'active' ? 'Fim' : game.turnPaused ? 'Pausa' : turnOwnerIsMe ? 'Seu turno' : 'Oponente'}
-                </span>
-              </span>
-              <strong className={timeUrgent ? 'time-urgent' : ''} role="timer">
-                {game.status !== 'active'
-                  ? 'Encerrada'
-                  : game.turnPaused
-                    ? 'Pausado'
-                    : formatTurnClock(secondsLeft)}
-              </strong>
-            </span>
-            {/* aviso único para leitor de tela ao entrar nos últimos 10s (sem repetir a cada segundo) */}
-            <span className="sr-only" role="status" aria-live="assertive">
-              {game.turnPaused ? 'Cronômetro pausado durante o tutorial inicial' : timeUrgent ? 'Tempo do seu turno acabando' : ''}
-            </span>
-            <span className="timer-track" aria-hidden="true">
-              <span
-                className={`timer-fill ${timeUrgent ? 'urgent' : ''} ${game.turnPaused ? 'paused' : ''}`}
-                style={{ width: `${timerPct}%` }}
-              />
-            </span>
-          </div>
-          <div className="pace-hud" style={PACE_HUD_STYLE} aria-label="Ritmo do turno">
-            <span className="pace-turn" style={PACE_CHIP_TIGHT_STYLE} aria-label={`Turno ${game.turnNumber}`}>
-              <span style={PACE_CHIP_TEXT_STYLE}>Turno {game.turnNumber}</span>
-            </span>
-            {me.fatigue === 0 && me.deckCount <= 3 && (
-              <span
-                className="pace-fatigue"
-                style={PACE_CHIP_STYLE}
-                aria-label={`Seu baralho está acabando. ${me.deckCount} cartas no deck antes da fadiga.`}
-              >
-                <IcoWarning className="ic" />
-                <span style={PACE_CHIP_TEXT_STYLE}>Fadiga à vista</span>
-                <strong>{me.deckCount}</strong>
-              </span>
-            )}
-            {enemyFatiguePressure && (
-              <span
-                className="pace-opportunity"
-                style={PACE_CHIP_STYLE}
-                aria-label="O oponente está perto de sofrer dano por fadiga."
-              >
-                <IcoDeath className="ic" />
-                <span style={PACE_CHIP_TEXT_STYLE}>Pressione o deck</span>
-              </span>
-            )}
-            {actionCoach && (
-              <span
-                className={`pace-action ${actionCoach.done ? 'done' : ''}`}
-                style={PACE_CHIP_STYLE}
-                aria-label={actionCoach.aria}
-              >
-                <IcoHint className="ic" />
-                <span style={PACE_CHIP_TEXT_STYLE}>{actionCoach.label}</span>
-              </span>
-            )}
-          </div>
-          <div className={`turn-coach ${turnCoach.tone}`} role="status" aria-live="polite">
-            <span className="turn-coach-icon">
-              {turnCoach.tone === 'bot'
-                ? <IcoBot />
-                : turnCoach.tone === 'attack' || turnCoach.tone === 'lethal'
-                ? <IcoAttack />
-                : turnCoach.tone === 'play'
-                  ? <IcoEnergy />
-                  : turnCoach.tone === 'end'
-                    ? <IcoCheck />
-                    : <IcoHint />}
-            </span>
-            <span className="turn-coach-copy">
-              <strong>{turnCoach.title}</strong>
-              <span>{turnCoach.body}</span>
-            </span>
-          </div>
-          {myTurn && (
-            <button
-              className={`btn end-turn ${noMovesLeft ? 'pulse' : ''}`}
-              aria-label={noMovesLeft ? 'Encerrar turno, sem ações disponíveis' : 'Encerrar turno'}
-              onClick={() => { sfx.click(); send({ t: 'game:endTurn' }); }}
-            >
-              Encerrar turno ▸
-            </button>
-          )}
-          <div className="taunt-dock">
-            {tauntOpen && (
-              <div className="taunt-wheel">
-                {TAUNTS.map((t) => (
-                  <button key={t.id} type="button" className="taunt-pick" onClick={() => sendTaunt(t.id)}>
-                    <TauntIcon id={t.icon} className="ic" /> {t.text}
-                  </button>
-                ))}
-              </div>
-            )}
-            <button
-              type="button"
-              className={`btn small taunt-toggle ${tauntOpen ? 'active' : ''}`}
-              onClick={() => setTauntOpen((o) => !o)}
-              title="Provocar o oponente"
-              aria-label="Provocar o oponente"
-            >
-              <IcoTaunt />
-            </button>
-          </div>
-        </div>
+        <TurnHud
+          game={game}
+          player={me}
+          hud={hud}
+          myTurn={myTurn}
+          turnOwnerIsMe={turnOwnerIsMe}
+          secondsLeft={secondsLeft}
+          timeUrgent={timeUrgent}
+          timerPct={timerPct}
+          tauntOpen={tauntOpen}
+          onEndTurn={() => { sfx.click(); send({ t: 'game:endTurn' }); }}
+          onToggleTaunt={() => setTauntOpen((open) => !open)}
+          onTaunt={sendTaunt}
+        />
 
         <div className={`board-row my-row ${targetingFriendly ? 'friendly-targetable' : ''} ${draggingHandTarget && targetingFriendly ? 'drop-destinations support' : ''} ${draggingCreaturePlay ? `card-drop-zone ${dragCard?.valid ? 'ready' : ''}` : ''}`}>
           {draggingHandTarget && targetingFriendly && me.board.length > 0 && (
@@ -1364,81 +1148,18 @@ export function GameView() {
         </div>
       </div>
 
-      <aside className={`game-side ${sidePane ? `open pane-${sidePane}` : ''}`}>
-        <button className="btn small ghost drawer-close" onClick={() => setSidePane(null)}>
-          ▾ Fechar {sidePane === 'log' ? 'Eventos' : sidePane === 'chat' ? 'Chat' : 'Painel'}
-        </button>
-        <div className="side-top">
-          <span>
-            <SoundControl />
-            <button className="btn small ghost" onClick={() => setShowRules(true)} title="Como jogar" aria-label="Como jogar">
-              <IcoRules />
-            </button>
-            <button className="btn small ghost" onClick={() => setShowCodex(true)} title="Arquivo de Aurélia" aria-label="Arquivo de Aurélia">
-              <IcoCodex />
-            </button>
-          </span>
-          <button
-            className="btn small ghost danger"
-            onClick={requestSurrender}
-          >
-            <IcoSurrender className="ic" /> Desistir
-          </button>
-        </div>
-        <div className="panel match-brief" aria-label="Leitura rápida da partida">
-          <h3><IcoHint className="ic" /> Leitura da mesa</h3>
-          <div className="brief-grid">
-            <span title="Suas criaturas em campo">
-              <IcoBanner className="ic" />
-              <b>{me.board.length}</b>
-              sua mesa
-            </span>
-            <span title="Criaturas inimigas em campo">
-              <IcoWarning className="ic" />
-              <b>{enemy.board.length}</b>
-              inimiga
-            </span>
-            <span title="Dano disponível para atacar neste turno">
-              <IcoAttack className="ic" />
-              <b>{readyDamage}</b>
-              dano pronto
-            </span>
-            <span title="Força total da mesa inimiga">
-              <IcoDeath className="ic" />
-              <b>{enemyBoardDamage}</b>
-              ameaça
-            </span>
-            <span title="Cartas no seu baralho">
-              <IcoDeck className="ic" />
-              <b>{me.deckCount}</b>
-              seu deck
-            </span>
-            <span title="Cartas na mão inimiga">
-              <IcoHand className="ic" />
-              <b>{enemy.handCount}</b>
-              mão inimiga
-            </span>
-          </div>
-        </div>
-        <div className="panel log-panel">
-          <h3><IcoEvents className="ic" /> Eventos</h3>
-          <ul className="game-log" role="log" aria-live="polite" aria-label="Eventos da partida">
-            {game.log.slice(-14).reverse().map((l, i) => {
-              const tone = logTone(l.text);
-              return (
-                <li key={game.log.length - i} className={`log-${tone}`}>
-                  <span className="log-mark" aria-hidden>{logIcon(tone)}</span>
-                  <span>{l.text}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-        <div className="panel side-chat">
-          <h3><IcoChat className="ic" /> Chat</h3>
-          <Chat />
-        </div>
-      </aside>
+      <GameSidePanel
+        sidePane={sidePane}
+        player={me}
+        enemy={enemy}
+        readyDamage={hud.readyDamage}
+        enemyBoardDamage={hud.enemyBoardDamage}
+        log={game.log}
+        onClose={() => setSidePane(null)}
+        onShowRules={() => setShowRules(true)}
+        onShowCodex={() => setShowCodex(true)}
+        onSurrender={requestSurrender}
+      />
 
       <GameInteractionOverlays
         dragCard={dragCard}

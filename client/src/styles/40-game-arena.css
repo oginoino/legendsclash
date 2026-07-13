@@ -857,6 +857,19 @@
   z-index: -1;
 }
 
+.board-divider.no-divider-line {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
+.board-divider.no-divider-line::before,
+.board-divider.no-divider-line::after {
+  content: none !important;
+  display: none !important;
+}
+
 .turn-coach {
   display: flex;
   align-items: center;
