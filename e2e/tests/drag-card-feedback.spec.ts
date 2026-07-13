@@ -12,6 +12,7 @@ async function turnOwner(a: Page, b: Page): Promise<Page> {
 async function summonByDrag(page: Page, screenshotPath?: string): Promise<boolean> {
   const card = page.locator('.hand .card.playable.card-creature').first();
   if (await card.count() === 0) return false;
+  await card.scrollIntoViewIfNeeded();
   const from = await card.boundingBox();
   const row = await page.locator('.my-row').boundingBox();
   if (!from || !row) return false;

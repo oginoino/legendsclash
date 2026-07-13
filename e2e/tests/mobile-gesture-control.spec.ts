@@ -83,6 +83,28 @@ async function playableCreatureOnPhone(phone: Page, desk: Page): Promise<Locator
   throw new Error('Nenhuma criatura jogável apareceu para o telefone');
 }
 
+async function cycleNoTargetCard(phone: Page): Promise<boolean> {
+  const boardHasRoom = await phone.locator('.my-row .creature').count() < 6;
+  const selectors = [
+    '.hand .card.playable.card-tactic:not(:has(.card-status-target)):not(:has(.card-status-support))',
+    '.hand .card.playable.card-spell:not(:has(.card-status-target)):not(:has(.card-status-support))',
+    '.hand .card.playable.card-artifact',
+    boardHasRoom ? '.hand .card.playable.card-creature' : '',
+  ].filter(Boolean).join(', ');
+  const card = phone.locator(selectors).first();
+  if (await card.count() === 0) return false;
+
+  await card.scrollIntoViewIfNeeded();
+  const anchor = await card.getAttribute('data-anchor');
+  if (!anchor) throw new Error('Carta sem alvo não possui data-anchor');
+  await card.click();
+  const tray = phone.locator('.hand-focus-tray');
+  await expect(tray).toBeVisible();
+  await tray.locator('.play-pill').click();
+  await expect(phone.locator(`[data-anchor="${anchor}"]`)).toHaveCount(0);
+  return true;
+}
+
 test('toque separa rolagem, arrasto, snap e cancelamento', async ({ browser }, testInfo) => {
   test.setTimeout(180_000);
   const phone = await loginAs(browser, 'Gestora', 'orb', PHONE);
@@ -103,6 +125,8 @@ test('toque separa rolagem, arrasto, snap e cancelamento', async ({ browser }, t
   const rowBox = await phone.locator('.my-row').boundingBox();
   if (!cardBox || !rowBox) throw new Error('Carta ou mesa fora da viewport mobile');
   const origin = { x: cardBox.x + cardBox.width / 2, y: cardBox.y + cardBox.height / 2 };
+  const creatureAnchor = await creature.getAttribute('data-anchor');
+  if (!creatureAnchor) throw new Error('Carta de criatura sem data-anchor');
   const handBefore = await phone.locator('.hand .card').count();
   const boardBefore = await phone.locator('.my-row .creature').count();
 
@@ -141,7 +165,7 @@ test('toque separa rolagem, arrasto, snap e cancelamento', async ({ browser }, t
   await phone.screenshot({ path: testInfo.outputPath('mobile-touch-table-snap.png') });
   await touchWindow(phone, 'pointerup', nearTable, 73);
   await expect(phone.locator('.my-row .creature')).toHaveCount(boardBefore + 1);
-  await expect(phone.locator('.hand .card')).toHaveCount(handBefore - 1);
+  await expect(phone.locator(`[data-anchor="${creatureAnchor}"]`)).toHaveCount(0);
 
   let effectApplied = false;
   let pointerId = 80;
@@ -156,6 +180,9 @@ test('toque separa rolagem, arrasto, snap e cancelamento', async ({ browser }, t
     const candidates = phone.locator(
       '.hand .card.playable:has(.card-status-target), .hand .card.playable:has(.card-status-support)',
     );
+    for (let cycle = 0; cycle < 3 && await candidates.count() === 0; cycle++) {
+      if (!await cycleNoTargetCard(phone)) break;
+    }
     for (let i = 0; i < await candidates.count() && !effectApplied; i++) {
       const card = candidates.nth(i);
       await card.scrollIntoViewIfNeeded();

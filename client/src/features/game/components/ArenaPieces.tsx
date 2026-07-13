@@ -8,7 +8,8 @@ import {
 } from '../../../icons';
 import { CardArt } from '../../../components/CardArt';
 import { creatureHint } from '../view-model';
-import type { Bubble, CombatPreview, DamageNotice, FloatFx, Ghost } from '../view-model';
+import type { Bubble, DamageNotice, FloatFx, Ghost } from '../feedback-model';
+import type { CombatPreview } from '../view-model';
 
 function ImpactRecap({ notice }: { notice: DamageNotice }) {
   const boardHits = notice.hits.filter((hit) => hit.kind === 'creature' || hit.kind === 'defeat');
