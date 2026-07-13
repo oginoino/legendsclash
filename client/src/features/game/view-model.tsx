@@ -1,6 +1,6 @@
 import type * as React from 'react';
 import { CARDS, keywordDesc, keywordLabel } from '@legendsclash/shared';
-import type { CombatAction, CreatureOnBoard } from '@legendsclash/shared';
+import type { CreatureOnBoard } from '@legendsclash/shared';
 import {
   IcoAttack, IcoBanner, IcoDeath, IcoEvents, IcoShield, IcoSparkle, IcoSurrender, IcoTimer,
 } from '../../icons';
@@ -24,33 +24,6 @@ type InspectCard = {
 type LogTone = 'turn' | 'damage' | 'summon' | 'spell' | 'fatigue' | 'shield' | 'surrender' | 'neutral';
 type CoachTone = 'wait' | 'end' | 'play' | 'attack' | 'lethal' | 'bot';
 type HandIntentTone = 'neutral' | 'good' | 'target' | 'support';
-
-/** Efeito flutuante transitório, ancorado a um elemento da arena.
- *  dmg/heal = vida; shield = dano absorvido pelo escudo; buff = empoderamento. */
-interface FloatFx {
-  id: number;
-  kind: 'dmg' | 'heal' | 'shield' | 'buff';
-  value: number;
-  anchor: string; // `face-{seat}` ou `cr-{iid}`
-  at: number;
-}
-
-/** Criatura recém-destruída, mantida em cena para a animação de morte. */
-interface Ghost {
-  id: number;
-  seatIdx: number;
-  creature: CreatureOnBoard;
-  /** Slot (0-based) que ocupava na mesa — a morte anima no lugar exato. */
-  slot: number;
-  at: number;
-}
-
-/** Revelação de carta jogada pelo oponente. */
-interface Reveal {
-  id: number;
-  cardId: string;
-  at: number;
-}
 
 /** Prévia de combate/dano calculada no hover do alvo (decisão informada). */
 interface CombatPreview {
@@ -145,49 +118,8 @@ function handIntent(defId: string, selected: boolean): { label: string; tone: Ha
   return { label: 'Usar', tone: 'neutral' };
 }
 
-const FX_TTL = 1100;
-const GHOST_TTL = 700;
-const REVEAL_TTL = 1700;
-const DAMAGE_NOTICE_TTL = 3600;
-const DAMAGE_SOURCE_TTL = 1500;
-const ENEMY_ATTACK_FX_TTL = 800;
-/** Tempo que uma provocação fica como balão sobre o comandante. */
-const BUBBLE_TTL = 4500;
 /** Cadência mínima entre provocações (anti-spam local). */
 const TAUNT_COOLDOWN_MS = 2500;
-
-/** Balão de provocação ancorado ao comandante de um assento. */
-interface Bubble {
-  id: number;
-  seatIdx: number;
-  text: string;
-  at: number;
-}
-
-interface DamageNoticeHit {
-  target: string;
-  iid?: string;
-  defId?: string;
-  amount?: number;
-  kind: 'hp' | 'shield' | 'creature' | 'defeat';
-}
-
-interface DamageNotice {
-  id: number;
-  owner: string;
-  source: string;
-  sourceDefId?: string;
-  sourceIid?: string;
-  actionLabel: string;
-  summary: string;
-  incoming: number;
-  hpDamage: number;
-  shieldDamage: number;
-  hpAfter: number;
-  hits: DamageNoticeHit[];
-  severity: 'normal' | 'heavy' | 'lethal';
-  at: number;
-}
 
 const SPELL_DMG: Record<string, number> = {
   s_faisca: 2, s_bola_de_fogo: 5, s_lanca_gelo: 3, s_julgamento: 3,
@@ -224,66 +156,6 @@ function noTargetActionLabel(defId: string): string {
   if (def.type === 'creature') return 'Invocar';
   if (def.type === 'artifact') return 'Equipar';
   return 'Usar';
-}
-
-function isDamageLogLine(text: string): boolean {
-  return /\b(causou|sofreu|atingiu|atacou|revidou|excedente|sangrou|dano)\b/i.test(text);
-}
-
-function damageSourceFromLog(text: string | undefined): string {
-  if (!text) return 'Ação inimiga';
-  if (text.startsWith('Grito de Batalha')) return 'Grito de Batalha';
-  if (text.startsWith('Estertor')) return 'Estertor';
-  const [source] = text.split(/\s+(?:causou|atingiu|atacou|revidou|sofreu)\b/i);
-  return source?.replace(/^O\s+/, '').trim() || 'Ação inimiga';
-}
-
-function sourceDefIdFromLogs(lines: string[]): string | undefined {
-  const joined = lines.join(' · ').toLocaleLowerCase('pt-BR');
-  return Object.values(CARDS)
-    .sort((a, b) => b.name.length - a.name.length)
-    .find((card) => joined.includes(card.name.toLocaleLowerCase('pt-BR')))?.id;
-}
-
-function actionLabelFor(action: CombatAction | undefined, sourceDefId: string | undefined, logs: string[]): string {
-  const hasDeathrattle = logs.some((line) => /^Estertor:/i.test(line));
-  if (action?.kind === 'attack') return hasDeathrattle ? 'Ataque + Estertor' : 'Ataque';
-  if (hasDeathrattle) return 'Estertor';
-  const def = sourceDefId ? CARDS[sourceDefId] : undefined;
-  if (def?.keywords?.includes('battlecry')) return 'Grito de batalha';
-  if (def?.type === 'spell') return 'Magia';
-  if (def?.type === 'tactic') return 'Tática';
-  if (def?.type === 'artifact') return 'Artefato';
-  return 'Efeito inimigo';
-}
-
-function consolidateDamageHits(hits: DamageNoticeHit[]): DamageNoticeHit[] {
-  const direct = hits.filter((hit) => hit.kind === 'hp' || hit.kind === 'shield');
-  const creatures = new Map<string, DamageNoticeHit>();
-  for (const hit of hits) {
-    if (hit.kind !== 'creature' && hit.kind !== 'defeat') continue;
-    const key = hit.iid ?? `${hit.defId ?? ''}:${hit.target}`;
-    const current = creatures.get(key);
-    creatures.set(key, {
-      ...current,
-      ...hit,
-      amount: hit.amount ?? current?.amount,
-      kind: hit.kind === 'defeat' || current?.kind === 'defeat' ? 'defeat' : 'creature',
-    });
-  }
-  return [...direct, ...creatures.values()];
-}
-
-function impactSummary(hpDamage: number, shieldDamage: number, hits: DamageNoticeHit[]): string {
-  if (hpDamage > 0) return `${hpDamage} de vida perdida`;
-  if (shieldDamage > 0) return `${shieldDamage} de dano bloqueado`;
-  const defeated = hits.filter((hit) => hit.kind === 'defeat');
-  if (defeated.length === 1) return `${defeated[0].target} foi abatido`;
-  if (defeated.length > 1) return `${defeated.length} criaturas foram abatidas`;
-  const boardDamage = hits
-    .filter((hit) => hit.kind === 'creature')
-    .reduce((sum, hit) => sum + (hit.amount ?? 0), 0);
-  return boardDamage > 0 ? `${boardDamage} de dano na sua mesa` : 'Seu lado sofreu o impacto';
 }
 
 /**
@@ -391,20 +263,13 @@ type AimTarget =
   | { kind: 'my-creature'; c: CreatureOnBoard };
 
 export {
-  BUBBLE_TTL,
   CAN_HOVER,
-  DAMAGE_NOTICE_TTL,
-  DAMAGE_SOURCE_TTL,
   DRAG_THRESHOLD_PX,
-  ENEMY_ATTACK_FX_TTL,
-  FX_TTL,
-  GHOST_TTL,
   PACE_CHIP_STYLE,
   PACE_CHIP_TEXT_STYLE,
   PACE_CHIP_TIGHT_STYLE,
   PACE_HUD_STYLE,
   PLAY_LIFT_PX,
-  REVEAL_TTL,
   SPELL_DMG,
   TAUNT_COOLDOWN_MS,
   TOUCH_CONFIRM_QUERY,
@@ -413,38 +278,26 @@ export {
   TOUCH_PLAY_LIFT_PX,
   TOUCH_TARGET_MAGNET_PX,
   TOUCH_VERTICAL_INTENT_PX,
-  actionLabelFor,
   arrowPath,
   arrowPoint,
-  consolidateDamageHits,
   creatureHint,
-  damageSourceFromLog,
   dupPositions,
   formatTurnClock,
   gameOverLesson,
   handIntent,
-  impactSummary,
-  isDamageLogLine,
   logIcon,
   logTone,
   noTargetActionLabel,
-  sourceDefIdFromLogs,
 };
 
 export type {
   AimTarget,
-  Bubble,
   CoachTone,
   CombatPreview,
-  DamageNotice,
-  DamageNoticeHit,
   DragCardVisual,
   DragState,
-  FloatFx,
-  Ghost,
   HandFocus,
   HoverTarget,
   InspectCard,
-  Reveal,
   Selection,
 };
