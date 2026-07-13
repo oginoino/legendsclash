@@ -4,8 +4,8 @@ import type { CreatureOnBoard } from '@legendsclash/shared';
 import { send, useAppState } from '../store';
 import { TauntIcon } from '../cosmetics';
 import {
-  IcoAttack, IcoBanner, IcoBot, IcoBuff, IcoChat, IcoCheck, IcoClose, IcoCodex, IcoDeath,
-  IcoDeck, IcoEnergy, IcoEvents, IcoHand, IcoHint, IcoPause, IcoRules, IcoSparkle,
+  IcoAttack, IcoBanner, IcoBot, IcoChat, IcoCheck, IcoCodex, IcoDeath,
+  IcoDeck, IcoEnergy, IcoEvents, IcoHand, IcoHint, IcoPause, IcoRules,
   IcoSurrender, IcoTarget, IcoTaunt, IcoTimer, IcoWarning,
 } from '../icons';
 import { CardView } from '../components/CardView';
@@ -18,6 +18,9 @@ import { SoundControl } from '../components/SoundControl';
 import { sfx } from '../sounds';
 import { triggerHaptic, usePreferences } from '../preferences';
 import { Creature, GhostCreature, HeroPlate } from '../features/game/components/ArenaPieces';
+import type { AimMode } from '../features/game/components/AimOverlay';
+import { GameInteractionOverlays } from '../features/game/components/GameInteractionOverlays';
+import type { HandConfirm, TargetHint } from '../features/game/components/GameInteractionOverlays';
 import { GameOverOverlay } from '../features/game/components/GameOverOverlay';
 import { MulliganOverlay } from '../features/game/components/MulliganOverlay';
 import { DAMAGE_SOURCE_TTL, ENEMY_ATTACK_FX_TTL } from '../features/game/feedback-model';
@@ -28,16 +31,34 @@ import { useTurnClock } from '../features/game/hooks/useTurnClock';
 import {
   CAN_HOVER, DRAG_THRESHOLD_PX,
   PACE_CHIP_STYLE, PACE_CHIP_TEXT_STYLE, PACE_CHIP_TIGHT_STYLE, PACE_HUD_STYLE,
-  PLAY_LIFT_PX, SPELL_DMG,
+  PLAY_LIFT_PX,
   TAUNT_COOLDOWN_MS, TOUCH_CONFIRM_QUERY, TOUCH_DRAG_THRESHOLD_PX, TOUCH_DROP_SLOP_PX,
   TOUCH_PLAY_LIFT_PX, TOUCH_TARGET_MAGNET_PX, TOUCH_VERTICAL_INTENT_PX,
-  arrowPath, arrowPoint, dupPositions, formatTurnClock, handIntent, logIcon, logTone,
-  noTargetActionLabel,
+  dupPositions, formatTurnClock, handIntent, logIcon, logTone,
 } from '../features/game/view-model';
 import type {
-  AimTarget, CoachTone, CombatPreview, DragCardVisual, DragState, HandFocus,
-  HoverTarget, InspectCard, Selection,
+  CoachTone, DragCardVisual, DragState, HandFocus, InspectCard,
 } from '../features/game/view-model';
+import {
+  aimTargetToHover,
+  combatPreviewFor,
+  deriveTargetingState,
+  distanceFromRect,
+  isHoverTargetValid,
+  isValidDragTarget,
+  noTargetActionLabel,
+  playDropLabel,
+  targetAnchor,
+  targetFromAnchor,
+  targetKey,
+  targetLabel,
+} from '../features/game/targeting-model';
+import type {
+  AimTarget,
+  ArrowGeometry,
+  HoverTarget,
+  Selection,
+} from '../features/game/targeting-model';
 
 export function GameView() {
   const s = useAppState();
@@ -409,48 +430,16 @@ export function GameView() {
   const enemyPos = dupPositions(enemy.board);
   const myPos = dupPositions(me.board);
 
-  // ── Prévia de combate (hover no alvo) ──────────────────────────
-  function previewFor(target: HoverTarget): CombatPreview | null {
-    if (!target || !myTurn) return null;
-    if (selectedAttacker) {
-      const power = selectedAttacker.attack + me!.attackBonus;
-      if (target.kind === 'face') {
-        if (faceShielded) return null;
-        return { targetDmg: power, lethal: power >= enemy.hp + enemy.shield, attackerIid: selectedAttacker.iid };
-      }
-      const defender = enemy.board.find((c) => c.iid === target.iid);
-      if (!defender) return null;
-      if (mustHitTaunt && !CARDS[defender.defId].keywords?.includes('taunt')) return null;
-      // Escudo Arcano (ward): o primeiro dano de qualquer lado é anulado —
-      // a prévia espelha o hurtCreature do servidor para não prometer morte.
-      const dealt = defender.ward ? 0 : power;
-      const retaliation = selectedAttacker.ward ? 0 : defender.attack + enemy.attackBonus;
-      const dies = dealt > 0 && defender.health <= dealt;
-      // dano excedente: só quando a defensora morta era a última criatura
-      const overflow = dies && enemy.board.length === 1 ? Math.max(0, power - defender.health) : 0;
-      return {
-        targetDmg: dealt,
-        targetDies: dies,
-        overflow: overflow > 0 ? overflow : undefined,
-        lethal: overflow > 0 && overflow >= enemy.hp + enemy.shield,
-        selfDmg: retaliation,
-        selfDies: retaliation > 0 && selectedAttacker.health <= retaliation,
-        attackerIid: selectedAttacker.iid,
-      };
-    }
-    if (selectedHandDef && SPELL_DMG[selectedHandDef.id] !== undefined) {
-      // Orbe de Éter: magias de dano do assento ganham +1 por orbe equipado
-      const dmg = SPELL_DMG[selectedHandDef.id] + me!.artifacts.filter((a) => a === 'a_orbe').length;
-      if (target.kind === 'face') {
-        if (faceShielded && !selectedHandDef.pierce) return null;
-        return { targetDmg: dmg, lethal: dmg >= enemy.hp + enemy.shield };
-      }
-      const victim = enemy.board.find((c) => c.iid === target.iid);
-      if (!victim) return null;
-      const dealt = victim.ward ? 0 : dmg;
-      return { targetDmg: dealt, targetDies: dealt > 0 && victim.health <= dealt };
-    }
-    return null;
+  // A regra vive no modelo puro; o componente apenas fornece o snapshot atual.
+  function previewFor(target: HoverTarget) {
+    return combatPreviewFor({
+      target,
+      myTurn,
+      attacker: selectedAttacker,
+      selectedCard: selectedHandDef,
+      player: me!,
+      enemy,
+    });
   }
   const preview = previewFor(hover);
 
@@ -654,60 +643,10 @@ export function GameView() {
 
   // ── Arrasto para mirar/jogar (mouse e toque via Pointer Events) ──
 
-  function targetFromAnchor(anchor: string | null | undefined): AimTarget | null {
-    if (!anchor || !game || !me) return null;
-    if (anchor === `face-${enemySeatIdx}`) return { kind: 'face' };
-    if (anchor.startsWith('cr-')) {
-      const iid = anchor.slice(3);
-      const ec = enemy.board.find((c) => c.iid === iid);
-      if (ec) return { kind: 'enemy-creature', c: ec };
-      const mc = me.board.find((c) => c.iid === iid);
-      if (mc) return { kind: 'my-creature', c: mc };
-    }
-    return null;
-  }
-
   /** Resolve o alvo exato sob o ponteiro pelos data-anchor presentes no DOM. */
   function resolveTargetAt(x: number, y: number): AimTarget | null {
     const anchor = document.elementFromPoint(x, y)?.closest('[data-anchor]')?.getAttribute('data-anchor');
-    return targetFromAnchor(anchor);
-  }
-
-  function aimTargetToHover(t: AimTarget | null): HoverTarget {
-    if (!t) return null;
-    if (t.kind === 'face') return { kind: 'face' };
-    return { kind: 'creature', iid: t.c.iid };
-  }
-
-  function validTargetForDrag(drag: DragState, target: AimTarget | null): boolean {
-    if (!target) return false;
-    if (drag.kind === 'creature') {
-      if (target.kind === 'my-creature') return false;
-      if (target.kind === 'face') return !faceShielded;
-      return enemyTaunts.length === 0 || CARDS[target.c.defId].keywords?.includes('taunt') === true;
-    }
-
-    const def = CARDS[drag.defId];
-    const wants = def?.target ?? 'none';
-    if (wants === 'friendly-creature') return target.kind === 'my-creature';
-    if (wants === 'enemy-creature') return target.kind === 'enemy-creature';
-    if (wants !== 'enemy-any' || target.kind === 'my-creature') return false;
-    if (target.kind === 'face') return !faceShielded || !!def.pierce;
-    return target.kind === 'enemy-creature';
-  }
-
-  function targetAnchor(target: AimTarget): string {
-    return target.kind === 'face' ? `face-${enemySeatIdx}` : `cr-${target.c.iid}`;
-  }
-
-  function targetKey(target: AimTarget): string {
-    return target.kind === 'face' ? 'face' : `${target.kind}-${target.c.iid}`;
-  }
-
-  function distanceFromRect(x: number, y: number, rect: DOMRect): number {
-    const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
-    const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
-    return Math.hypot(dx, dy);
+    return targetFromAnchor(anchor, enemySeatIdx, enemy.board, me!.board);
   }
 
   /**
@@ -726,8 +665,8 @@ export function GameView() {
     let nearest: AimTarget | null = null;
     let nearestDistance = TOUCH_TARGET_MAGNET_PX + 1;
     for (const candidate of candidates) {
-      if (!validTargetForDrag(drag, candidate)) continue;
-      const element = document.querySelector<HTMLElement>(`[data-anchor="${targetAnchor(candidate)}"]`);
+      if (!isValidDragTarget(drag, candidate, enemy.board)) continue;
+      const element = document.querySelector<HTMLElement>(`[data-anchor="${targetAnchor(candidate, enemySeatIdx)}"]`);
       if (!element) continue;
       const distance = distanceFromRect(x, y, element.getBoundingClientRect());
       if (distance < nearestDistance) {
@@ -764,23 +703,6 @@ export function GameView() {
       && x <= rect.right + TOUCH_DROP_SLOP_PX
       && y >= rect.top - TOUCH_DROP_SLOP_PX
       && y <= rect.bottom + TOUCH_DROP_SLOP_PX;
-  }
-
-  function targetLabel(target: AimTarget | null, valid: boolean, defId: string): string {
-    const def = CARDS[defId];
-    if (valid && target) {
-      if (target.kind === 'face') return 'Solte no comandante';
-      return `Solte em ${CARDS[target.c.defId].name}`;
-    }
-    if (def?.target === 'friendly-creature') return 'Escolha uma criatura aliada';
-    if (def?.target === 'enemy-creature') return 'Escolha uma criatura inimiga';
-    return 'Escolha criatura ou comandante';
-  }
-
-  function playDropLabel(defId: string, ready: boolean): string {
-    if (!ready && CARDS[defId]?.type === 'creature') return 'Leve até sua mesa';
-    const action = noTargetActionLabel(defId).toLocaleLowerCase('pt-BR');
-    return ready ? `Solte para ${action}` : `Arraste para ${action}`;
   }
 
   /** Início de gesto numa carta da mão ou criatura própria. */
@@ -874,7 +796,7 @@ export function GameView() {
     move(drag, x, y) {
       if (drag.mode === 'target') {
         const { target, magnetized } = resolveDragTargetAt(drag, x, y);
-        const valid = validTargetForDrag(drag, target);
+        const valid = isValidDragTarget(drag, target, enemy.board);
         setDragLockFeedback(drag, target, valid);
         setMouse({ x, y });
         setHover(aimTargetToHover(target));
@@ -908,7 +830,7 @@ export function GameView() {
       setDragCard(null);
       if (drag.mode === 'target') {
         const { target: t } = resolveDragTargetAt(drag, x, y);
-        const valid = validTargetForDrag(drag, t);
+        const valid = isValidDragTarget(drag, t, enemy.board);
         if (drag.kind === 'creature') {
           const attacker = me?.board.find((c) => c.iid === drag.iid);
           if (attacker && t && valid) performAttack(attacker, t);
@@ -938,14 +860,10 @@ export function GameView() {
     },
   };
 
-  const targetingFriendly = selection?.kind === 'hand' && selectedHandDef?.target === 'friendly-creature';
-  const targetingEnemyCreature = selection?.kind === 'attacker' || (
-    selection?.kind === 'hand'
-    && (selectedHandDef?.target === 'enemy-creature' || selectedHandDef?.target === 'enemy-any')
-  );
-  const targetingFace = selection?.kind === 'attacker'
-    || (selection?.kind === 'hand' && selectedHandDef?.target === 'enemy-any');
-  const targetingEnemy = targetingEnemyCreature || targetingFace;
+  const targeting = deriveTargetingState(selection, selectedHandDef);
+  const targetingFriendly = targeting.friendly;
+  const targetingEnemyCreature = targeting.enemyCreature;
+  const targetingFace = targeting.face;
 
   const fxFor = (anchor: string) => fx.filter((f) => f.anchor === anchor);
   const ghostsFor = (seatIdx: number) => ghosts.filter((g) => g.seatIdx === seatIdx);
@@ -956,24 +874,21 @@ export function GameView() {
   };
 
   // alvo válido sob o ponteiro? (trava a seta e mostra a retícula nele)
-  const hoverValid = (() => {
-    if (!hover) return false;
-    if (targetingFriendly) return hover.kind === 'creature' && me.board.some((c) => c.iid === hover.iid);
-    if (!targetingEnemy) return false;
-    if (hover.kind === 'face') return targetingFace && (!faceShielded || !!selectedHandDef?.pierce);
-    if (!targetingEnemyCreature) return false;
-    const ec = enemy.board.find((c) => c.iid === hover.iid);
-    if (!ec) return false;
-    if (mustHitTaunt && !CARDS[ec.defId].keywords?.includes('taunt')) return false;
-    return true;
-  })();
+  const hoverValid = isHoverTargetValid({
+    hover,
+    targeting,
+    selectedCard: selectedHandDef,
+    playerBoard: me.board,
+    enemyBoard: enemy.board,
+    mustHitTaunt,
+  });
   const draggingHandTarget = dragCard?.mode === 'target';
   const draggingCreaturePlay = dragCard?.mode === 'play' && CARDS[dragCard.defId]?.type === 'creature';
 
   // ── Seta de mira ────────────────────────────────────────────────
   // A ponta segue o ponteiro; sobre um alvo válido ela "trava" no centro
   // dele e troca a flecha por uma retícula pulsante (estilo Hearthstone).
-  let arrow: { x1: number; y1: number; x2: number; y2: number } | null = null;
+  let arrow: ArrowGeometry | null = null;
   let lockOn = false;
   if (selection && mouse) {
     const originKey = selection.kind === 'attacker' ? `cr-${selection.iid}` : `hand-${selection.iid}`;
@@ -999,39 +914,13 @@ export function GameView() {
   const energyWarn = now - energyWarnAt < 600;
   const faceLethal = !!preview?.lethal && hover?.kind === 'face';
   const lethalAim = !!preview?.lethal; // colore a seta também no overflow letal
-  const aimMode = lethalAim
+  const aimMode: AimMode = lethalAim
     ? 'lethal'
     : selection?.kind === 'attacker'
       ? 'attack'
       : targetingFriendly
         ? 'support'
         : 'spell';
-  const aimColor = aimMode === 'lethal'
-    ? '#e8665d'
-    : aimMode === 'attack'
-      ? '#d7a84c'
-      : aimMode === 'support'
-        ? '#4fc36b'
-        : '#9d7ce8';
-  const aimAccent = aimMode === 'attack'
-    ? '#f2d28a'
-    : aimMode === 'lethal'
-      ? '#ffd6a3'
-      : aimMode === 'support'
-        ? '#a7efb1'
-        : '#9fc3ff';
-  const aimLabel = aimMode === 'lethal'
-    ? 'LETAL'
-    : aimMode === 'attack'
-      ? 'ATAQUE'
-      : aimMode === 'support'
-        ? 'ALIADO'
-        : selectedHandDef?.type === 'tactic'
-          ? 'TÁTICA'
-          : 'MAGIA';
-  const aimMid = arrow ? arrowPoint(arrow, 0.52) : null;
-  const aimRuneA = arrow ? arrowPoint(arrow, 0.32) : null;
-  const aimRuneB = arrow ? arrowPoint(arrow, 0.72) : null;
   const unreadChat = Math.max(0, s.chat.length - chatSeen);
   const enemyFatiguePressure = enemy.fatigue > 0 || (enemy.deckCount <= 3 && enemy.deckCount >= 0);
   const turnCoach: { tone: CoachTone; title: string; body: string } = myTurn
@@ -1079,7 +968,7 @@ export function GameView() {
   // prévia de dano em TODOS os alvos válidos ao selecionar — decisão
   // informada sem depender de hover (essencial no toque)
   const staticFacePreview = targetingFace && hover?.kind !== 'face' ? previewFor({ kind: 'face' }) : null;
-  const targetHint = selection?.kind === 'attacker'
+  const targetHint: TargetHint | null = selection?.kind === 'attacker'
     ? {
       mode: 'attack',
       title: selectedAttacker ? CARDS[selectedAttacker.defId].name : 'Ataque selecionado',
@@ -1100,7 +989,7 @@ export function GameView() {
             : 'Escolha o melhor alvo usando a prévia de dano.',
       }
       : null;
-  const handConfirm = touchPlayConfirm && handFocus && focusedHandDef && myTurn
+  const handConfirm: HandConfirm | null = touchPlayConfirm && handFocus && focusedHandDef && myTurn
     ? {
       mode: 'play' as const,
       title: focusedHandDef.name,
@@ -1108,7 +997,13 @@ export function GameView() {
       actionLabel: noTargetActionLabel(handFocus.defId),
     }
     : null;
-  const touchCommand = targetHint;
+  const visibleInspect = inspect
+    && (!selection || inspect.source === 'creature')
+    && !dragCard
+    && game.status === 'active'
+    && (inspect.source === 'creature' || game.hand.some((card) => card.iid === inspect.iid))
+    ? inspect
+    : null;
 
   return (
     <div
@@ -1545,278 +1440,24 @@ export function GameView() {
         </div>
       </aside>
 
-      {dragCard && (
-        <div
-          className={[
-            'drag-card-layer',
-            `drag-${dragCard.mode}`,
-            `input-${dragCard.pointerType}`,
-            dragCard.valid ? 'valid' : '',
-            dragCard.magnetized ? 'magnetized' : '',
-            CARDS[dragCard.defId]?.target === 'friendly-creature' ? 'support' : '',
-            dragCard.y < 240 ? 'place-below' : 'place-above',
-          ].filter(Boolean).join(' ')}
-          style={{
-            left: `clamp(74px, ${dragCard.x}px, calc(100vw - 74px))`,
-            top: dragCard.y,
-          }}
-          aria-hidden="true"
-        >
-          <CardView
-            defId={dragCard.defId}
-            as="div"
-            className="drag-card-preview"
-            imageLoading="eager"
-            imagePriority="high"
-          />
-          <span className="drag-card-label">
-            {dragCard.mode === 'play'
-              ? <IcoCheck className="ic" />
-              : CARDS[dragCard.defId]?.target === 'friendly-creature'
-                ? <IcoBuff className="ic" />
-                : <IcoTarget className="ic" />}
-            <strong>{dragCard.label}</strong>
-          </span>
-        </div>
-      )}
-
-      {targetHint && (
-        <div className={`target-hint ${targetHint.mode}`}>
-          <span className="target-hint-icon">
-            {targetHint.mode === 'attack' ? <IcoAttack /> : targetHint.mode === 'support' ? <IcoBuff /> : <IcoSparkle />}
-          </span>
-          <span className="target-hint-text">
-            <strong>{targetHint.title}</strong>
-            <span>{targetHint.body}</span>
-          </span>
-          <button className="btn small hint-cancel" onClick={clearAim}><IcoClose className="ic" /> Cancelar</button>
-        </div>
-      )}
-
-      {touchCommand && (
-        <div className={`touch-command ${touchCommand.mode}`} role="status" aria-live="polite">
-          <span className="touch-command-icon">
-            {touchCommand.mode === 'attack'
-              ? <IcoAttack />
-              : touchCommand.mode === 'support'
-                ? <IcoBuff />
-                : <IcoSparkle />}
-          </span>
-          <span className="touch-command-text">
-            <strong>{touchCommand.title}</strong>
-            <span>{touchCommand.body}</span>
-          </span>
-          <button className="btn small cancel-pill" onClick={clearAim} aria-label="Cancelar mira">
-            <IcoClose className="ic" /> Cancelar
-          </button>
-        </div>
-      )}
-
-      {handConfirm && handFocus && (
-        <div className="hand-focus-tray" role="dialog" aria-live="polite" aria-label={`Carta focada: ${handConfirm.title}`}>
-          <div className="hand-focus-card" aria-hidden="true">
-            <CardView
-              defId={handFocus.defId}
-              as="div"
-              selected
-              className="focus-preview-card"
-              imageLoading="eager"
-              imagePriority="high"
-              statusLabel="Pronta"
-              statusTone="good"
-            />
-          </div>
-          <div className="hand-focus-panel">
-            <span className="touch-command-icon">
-              <IcoHand />
-            </span>
-            <span className="touch-command-text">
-              <strong>{handConfirm.title}</strong>
-              <span>{handConfirm.body}</span>
-            </span>
-            <div className="hand-focus-buttons">
-              <button
-                className="btn small play-pill"
-                onClick={confirmFocusedHandPlay}
-                aria-label={`${handConfirm.actionLabel} ${handConfirm.title}`}
-              >
-                <IcoCheck className="ic" /> {handConfirm.actionLabel}
-              </button>
-              <button className="btn small cancel-pill" onClick={clearAim} aria-label="Fechar carta focada">
-                <IcoClose className="ic" /> Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {arrow && (
-        <svg
-          className={`aim-arrow aim-${aimMode} ${lockOn ? 'locked' : ''}`}
-          width="100%"
-          height="100%"
-          style={{
-            ['--aim' as string]: aimColor,
-            ['--aim-2' as string]: aimAccent,
-            filter: `drop-shadow(0 0 3px ${aimColor}66)`,
-          } as React.CSSProperties}
-        >
-          <defs>
-            <linearGradient id="aim-gradient" gradientUnits="userSpaceOnUse" x1={arrow.x1} y1={arrow.y1} x2={arrow.x2} y2={arrow.y2}>
-              <stop offset="0%" stopColor={aimAccent} stopOpacity="0.62" />
-              <stop offset="54%" stopColor={aimColor} stopOpacity="0.82" />
-              <stop offset="100%" stopColor={lethalAim ? '#f4aaa0' : aimAccent} stopOpacity="0.68" />
-            </linearGradient>
-            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="6.7" refY="5" orient="auto">
-              <path
-                d="M1,1 L9,5 L1,9 L3.2,5 Z"
-                fill={lethalAim ? '#f1a097' : aimAccent}
-                fillOpacity="0.78"
-                stroke={aimColor}
-                strokeOpacity="0.7"
-                strokeWidth="0.65"
-              />
-            </marker>
-          </defs>
-
-          <g className="aim-origin" opacity="0.72">
-            <circle cx={arrow.x1} cy={arrow.y1} r="14" fill="none" stroke={aimAccent} strokeOpacity="0.16" strokeWidth="6" />
-            <circle cx={arrow.x1} cy={arrow.y1} r="7.5" fill="none" stroke={aimColor} strokeOpacity="0.42" strokeWidth="1.4" />
-          </g>
-
-          <path
-            className="aim-aura"
-            d={arrowPath(arrow)}
-            stroke="url(#aim-gradient)"
-            strokeOpacity="0.07"
-            strokeWidth="15"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <path
-            className="aim-trail"
-            d={arrowPath(arrow)}
-            stroke="url(#aim-gradient)"
-            strokeOpacity="0.15"
-            strokeWidth="9"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <path
-            className="aim-rail"
-            d={arrowPath(arrow)}
-            stroke="url(#aim-gradient)"
-            strokeOpacity="0.44"
-            strokeWidth="5.25"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <path
-            className="aim-flow"
-            d={arrowPath(arrow)}
-            stroke="url(#aim-gradient)"
-            strokeOpacity="0.82"
-            strokeWidth="2.75"
-            strokeLinecap="round"
-            fill="none"
-            markerEnd={lockOn ? undefined : 'url(#arrowhead)'}
-            style={{ strokeDasharray: 'none', strokeDashoffset: 0 }}
-          />
-          <path
-            className="aim-core"
-            d={arrowPath(arrow)}
-            stroke={lethalAim ? '#fff2cb' : '#fff9e6'}
-            strokeOpacity="0.34"
-            strokeWidth="0.95"
-            strokeLinecap="round"
-            fill="none"
-            style={{ strokeDasharray: 'none', strokeDashoffset: 0 }}
-          />
-
-          {aimRuneA && (
-            <g className="aim-rune" transform={`translate(${aimRuneA.x} ${aimRuneA.y}) rotate(45)`} opacity="0.56">
-              <rect x="-3.25" y="-3.25" width="6.5" height="6.5" rx="1.15" fill={aimColor} fillOpacity="0.12" stroke={aimAccent} strokeOpacity="0.55" strokeWidth="1" />
-              <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.2s" repeatCount="indefinite" additive="sum" />
-            </g>
-          )}
-          {aimRuneB && (
-            <g className="aim-rune delay" transform={`translate(${aimRuneB.x} ${aimRuneB.y}) rotate(45)`} opacity="0.44">
-              <rect x="-2.6" y="-2.6" width="5.2" height="5.2" rx="1" fill={aimAccent} fillOpacity="0.12" stroke={aimColor} strokeOpacity="0.48" strokeWidth="0.9" />
-              <animateTransform attributeName="transform" type="scale" values="1;1.06;1" dur="2.6s" repeatCount="indefinite" additive="sum" />
-            </g>
-          )}
-
-          {/* retícula de "travado no alvo" */}
-          {lockOn && (
-            <g className={`aim-reticle ${lethalAim ? 'lethal' : ''}`} opacity="0.9">
-              <circle className="reticle-aura" cx={arrow.x2} cy={arrow.y2} r="25" fill={aimColor} fillOpacity="0.055" />
-              <circle className="reticle-ring" cx={arrow.x2} cy={arrow.y2} r="19" fill="none" stroke="url(#aim-gradient)" strokeOpacity="0.72" strokeWidth="1.75" />
-              <circle className="reticle-ping" cx={arrow.x2} cy={arrow.y2} r="19" fill="none" stroke={aimColor} strokeOpacity="0.38" strokeWidth="1.5">
-                <animate attributeName="r" values="19;25" dur="1.65s" repeatCount="indefinite" />
-                <animate attributeName="stroke-opacity" values="0.38;0" dur="1.65s" repeatCount="indefinite" />
-              </circle>
-              <rect className="reticle-gem" x={arrow.x2 - 3.5} y={arrow.y2 - 3.5} width="7" height="7" rx="1.2" fill={aimAccent} fillOpacity="0.18" stroke={aimColor} strokeOpacity="0.62" strokeWidth="1" transform={`rotate(45 ${arrow.x2} ${arrow.y2})`} />
-              <g stroke={aimColor} strokeOpacity="0.55" strokeWidth="1.6" strokeLinecap="round">
-                <line x1={arrow.x2 - 25} y1={arrow.y2} x2={arrow.x2 - 17} y2={arrow.y2} />
-                <line x1={arrow.x2 + 17} y1={arrow.y2} x2={arrow.x2 + 25} y2={arrow.y2} />
-                <line x1={arrow.x2} y1={arrow.y2 - 25} x2={arrow.x2} y2={arrow.y2 - 17} />
-                <line x1={arrow.x2} y1={arrow.y2 + 17} x2={arrow.x2} y2={arrow.y2 + 25} />
-              </g>
-            </g>
-          )}
-        </svg>
-      )}
-      {arrow && aimMid && (
-        <div
-          className={`aim-callout aim-${aimMode} ${lockOn ? 'locked' : ''}`}
-          style={{
-            left: aimMid.x,
-            top: aimMid.y,
-            ['--aim' as string]: aimColor,
-            ['--aim-2' as string]: aimAccent,
-          } as React.CSSProperties}
-        >
-          {aimLabel}
-        </div>
-      )}
-
-      <div className="reveal-stack">
-        {reveals.map((r) => (
-          <div key={r.id} className="card-reveal">
-            <span className="reveal-label">Oponente jogou</span>
-            <CardView defId={r.cardId} />
-          </div>
-        ))}
-      </div>
-
-      {inspect
-        && (!selection || inspect.source === 'creature')
-        && !dragCard
-        && game.status === 'active'
-        && (inspect.source === 'creature' || game.hand.some((c) => c.iid === inspect.iid)) && (
-          <div
-            className={`card-inspect ${inspect.source === 'creature' ? 'board-inspect' : ''}`}
-            style={{
-              left: Math.min(
-                Math.max(inspect.x, inspect.source === 'creature' ? 160 : 130),
-                window.innerWidth - (inspect.source === 'creature' ? 160 : 130),
-              ),
-              top: inspect.source === 'creature'
-                ? Math.min(Math.max(inspect.y, 460), window.innerHeight - 12)
-                : inspect.y,
-            }}
-          >
-            <CardView defId={inspect.defId} />
-          </div>
-      )}
-
-      {banner && !s.gameOver && <div className="turn-banner" key={banner.at} role="status" aria-live="assertive">{banner.text}</div>}
-      {teach && (
-        <div className="teach-toast" key={teach.id} role="status" aria-live="polite">
-          <span>{teach.text}</span>
-          <button className="btn small ghost" onClick={dismissTeach} aria-label="Fechar dica"><IcoClose /></button>
-        </div>
-      )}
+      <GameInteractionOverlays
+        dragCard={dragCard}
+        targetHint={targetHint}
+        handConfirm={handConfirm}
+        handFocus={handFocus}
+        onClearAim={clearAim}
+        onConfirmFocusedHandPlay={confirmFocusedHandPlay}
+        arrow={arrow}
+        lockOn={lockOn}
+        aimMode={aimMode}
+        tacticAim={selectedHandDef?.type === 'tactic'}
+        reveals={reveals}
+        inspect={visibleInspect}
+        banner={banner}
+        hideBanner={!!s.gameOver}
+        teach={teach}
+        onDismissTeach={dismissTeach}
+      />
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView onClose={() => setShowCodex(false)} />}
       {tutorialVisible && <Tutorial paused={game.turnPaused} onClose={finishTutorial} />}

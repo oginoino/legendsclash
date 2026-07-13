@@ -5,14 +5,8 @@ import {
   IcoAttack, IcoBanner, IcoDeath, IcoEvents, IcoShield, IcoSparkle, IcoSurrender, IcoTimer,
 } from '../../icons';
 
-type Selection =
-  | { kind: 'hand'; iid: string }
-  | { kind: 'attacker'; iid: string }
-  | null;
-
 type HandFocus = { iid: string; defId: string } | null;
 
-type HoverTarget = { kind: 'face' } | { kind: 'creature'; iid: string } | null;
 type InspectCard = {
   iid: string;
   defId: string;
@@ -24,17 +18,6 @@ type InspectCard = {
 type LogTone = 'turn' | 'damage' | 'summon' | 'spell' | 'fatigue' | 'shield' | 'surrender' | 'neutral';
 type CoachTone = 'wait' | 'end' | 'play' | 'attack' | 'lethal' | 'bot';
 type HandIntentTone = 'neutral' | 'good' | 'target' | 'support';
-
-/** Prévia de combate/dano calculada no hover do alvo (decisão informada). */
-interface CombatPreview {
-  targetDmg: number;
-  targetDies?: boolean;
-  lethal?: boolean; // venceria a partida
-  overflow?: number; // dano excedente que atravessa para o comandante
-  selfDmg?: number; // retaliação no atacante
-  selfDies?: boolean;
-  attackerIid?: string;
-}
 
 /**
  * Posição (1-based) de cada criatura que tem uma cópia idêntica na mesma
@@ -121,10 +104,6 @@ function handIntent(defId: string, selected: boolean): { label: string; tone: Ha
 /** Cadência mínima entre provocações (anti-spam local). */
 const TAUNT_COOLDOWN_MS = 2500;
 
-const SPELL_DMG: Record<string, number> = {
-  s_faisca: 2, s_bola_de_fogo: 5, s_lanca_gelo: 3, s_julgamento: 3,
-};
-
 /** Movimento mínimo (px) para mouse virar arrasto em vez de clique. */
 const DRAG_THRESHOLD_PX = 8;
 /** O dedo oscila mais que o mouse: uma margem maior preserva o tap intencional. */
@@ -149,14 +128,6 @@ const TOUCH_CONFIRM_QUERY = '(hover: none), (pointer: coarse)';
 /** Elevação mínima (px) para "soltar pra jogar" uma carta sem alvo. */
 const PLAY_LIFT_PX = 48;
 const TOUCH_PLAY_LIFT_PX = 56;
-
-function noTargetActionLabel(defId: string): string {
-  const def = CARDS[defId];
-  if (!def) return 'Usar';
-  if (def.type === 'creature') return 'Invocar';
-  if (def.type === 'artifact') return 'Equipar';
-  return 'Usar';
-}
 
 /**
  * Layout estável para o HUD de ritmo do turno.
@@ -208,23 +179,6 @@ const PACE_CHIP_TEXT_STYLE: React.CSSProperties = {
 };
 
 
-/** Curva da seta de mira: arco quadrático do atacante/carta até o alvo. */
-function arrowPath(a: { x1: number; y1: number; x2: number; y2: number }): string {
-  const cx = (a.x1 + a.x2) / 2;
-  const cy = Math.min(a.y1, a.y2) - 60;
-  return `M ${a.x1} ${a.y1} Q ${cx} ${cy} ${a.x2} ${a.y2}`;
-}
-
-function arrowPoint(a: { x1: number; y1: number; x2: number; y2: number }, t: number): { x: number; y: number } {
-  const cx = (a.x1 + a.x2) / 2;
-  const cy = Math.min(a.y1, a.y2) - 60;
-  const mt = 1 - t;
-  return {
-    x: mt * mt * a.x1 + 2 * mt * t * cx + t * t * a.x2,
-    y: mt * mt * a.y1 + 2 * mt * t * cy + t * t * a.y2,
-  };
-}
-
 /**
  * Gesto de arrasto em andamento (mouse ou dedo — Pointer Events unificam).
  * `pending` ainda pode virar clique; `pan` pertence à rolagem da mão;
@@ -256,12 +210,6 @@ interface DragCardVisual {
   magnetized: boolean;
 }
 
-/** Alvo sob o cursor/dedo, resolvido pelos data-anchor já presentes no DOM. */
-type AimTarget =
-  | { kind: 'face' }
-  | { kind: 'enemy-creature'; c: CreatureOnBoard }
-  | { kind: 'my-creature'; c: CreatureOnBoard };
-
 export {
   CAN_HOVER,
   DRAG_THRESHOLD_PX,
@@ -270,7 +218,6 @@ export {
   PACE_CHIP_TIGHT_STYLE,
   PACE_HUD_STYLE,
   PLAY_LIFT_PX,
-  SPELL_DMG,
   TAUNT_COOLDOWN_MS,
   TOUCH_CONFIRM_QUERY,
   TOUCH_DRAG_THRESHOLD_PX,
@@ -278,8 +225,6 @@ export {
   TOUCH_PLAY_LIFT_PX,
   TOUCH_TARGET_MAGNET_PX,
   TOUCH_VERTICAL_INTENT_PX,
-  arrowPath,
-  arrowPoint,
   creatureHint,
   dupPositions,
   formatTurnClock,
@@ -287,17 +232,12 @@ export {
   handIntent,
   logIcon,
   logTone,
-  noTargetActionLabel,
 };
 
 export type {
-  AimTarget,
   CoachTone,
-  CombatPreview,
   DragCardVisual,
   DragState,
   HandFocus,
-  HoverTarget,
   InspectCard,
-  Selection,
 };
