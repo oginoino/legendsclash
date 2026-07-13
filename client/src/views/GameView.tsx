@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARDS, MAX_BOARD } from '@legendsclash/shared';
 import type { CreatureOnBoard } from '@legendsclash/shared';
 import { send, useAppState } from '../store';
@@ -21,21 +21,30 @@ import type { HandConfirm, TargetHint } from '../features/game/components/GameIn
 import { GameOverOverlay } from '../features/game/components/GameOverOverlay';
 import { MulliganOverlay } from '../features/game/components/MulliganOverlay';
 import { TurnHud } from '../features/game/components/TurnHud';
+import {
+  PLAY_LIFT_PX,
+  TOUCH_DROP_SLOP_PX,
+  TOUCH_PLAY_LIFT_PX,
+  TOUCH_TARGET_MAGNET_PX,
+} from '../features/game/drag-gesture-model';
+import type {
+  DragCardVisual,
+  DragOrigin,
+  DragState,
+} from '../features/game/drag-gesture-model';
 import { DAMAGE_SOURCE_TTL, ENEMY_ATTACK_FX_TTL } from '../features/game/feedback-model';
 import type { Bubble } from '../features/game/feedback-model';
 import { deriveGameHud } from '../features/game/hud-model';
+import { useCardInspection } from '../features/game/hooks/useCardInspection';
 import { useCardImagePreload } from '../features/game/hooks/useCardImagePreload';
+import { useDragGesture } from '../features/game/hooks/useDragGesture';
 import { useGameFeedback } from '../features/game/hooks/useGameFeedback';
+import { useHandFocus } from '../features/game/hooks/useHandFocus';
 import { useTurnClock } from '../features/game/hooks/useTurnClock';
 import {
-  CAN_HOVER, DRAG_THRESHOLD_PX,
-  PLAY_LIFT_PX,
-  TAUNT_COOLDOWN_MS, TOUCH_CONFIRM_QUERY, TOUCH_DRAG_THRESHOLD_PX, TOUCH_DROP_SLOP_PX,
-  TOUCH_PLAY_LIFT_PX, TOUCH_TARGET_MAGNET_PX, TOUCH_VERTICAL_INTENT_PX,
+  CAN_HOVER,
+  TAUNT_COOLDOWN_MS,
   dupPositions, handIntent,
-} from '../features/game/view-model';
-import type {
-  DragCardVisual, DragState, HandFocus, InspectCard,
 } from '../features/game/view-model';
 import {
   aimTargetToHover,
@@ -77,32 +86,18 @@ export function GameView() {
   });
   // Copia elevada da carta arrastada. Fica fora do overflow da mao e acima da arena.
   const [dragCard, setDragCard] = useState<DragCardVisual | null>(null);
-  // inspeção no hover (desktop): carta ampliada flutuando acima da mão —
-  // a mão é um scroll container, então escalar a carta no lugar seria cortado
-  const [inspect, setInspect] = useState<InspectCard | null>(null);
   // gaveta lateral no mobile: log/chat viram bottom-sheet com badge de não lidas
   const [sidePane, setSidePane] = useState<SidePane>(null);
   const [chatSeen, setChatSeen] = useState(0);
   const [confirmSurrenderOpen, setConfirmSurrenderOpen] = useState(false);
-  const [handFocus, setHandFocus] = useState<HandFocus>(null);
-  const [touchPlayConfirm, setTouchPlayConfirm] = useState(() => (
-    typeof window !== 'undefined' && window.matchMedia(TOUCH_CONFIRM_QUERY).matches
-  ));
   const tauntCooldownRef = useRef(0);
-  const inspectTimerRef = useRef<number | null>(null);
-  const handRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<DragState | null>(null);
-  const cancelDragRef = useRef<() => void>(() => undefined);
-  // após um arrasto real, o clique sintético do mouse não deve disparar ações
-  const suppressClickRef = useRef(false);
-  // entrega aos listeners de window (registrados uma vez) o fechamento mais
-  // recente do componente — estado fresco do jogo a cada render
-  const dragApiRef = useRef<{
-    begin: (drag: DragState) => void;
-    move: (drag: DragState, x: number, y: number) => void;
-    finish: (drag: DragState, x: number, y: number) => void;
-    cancel: (drag: DragState) => void;
-  } | null>(null);
+  const { clearInspect, inspect, showInspect } = useCardInspection();
+  const {
+    cancelDrag,
+    consumeSyntheticClick,
+    dragApiRef,
+    dragRef,
+  } = useDragGesture(() => setMouse(null));
 
   const game = s.game;
   const me = useMemo(
@@ -117,6 +112,12 @@ export function GameView() {
     timerPct,
     turnOwnerIsMe,
   } = useTurnClock(game, !!me);
+  const {
+    handFocus,
+    handRef,
+    setHandFocus,
+    touchPlayConfirm,
+  } = useHandFocus(game, myTurn);
   const {
     attackFx,
     banner,
@@ -144,35 +145,10 @@ export function GameView() {
 
   const firstMatch = !!s.profile && s.profile.wins + s.profile.losses === 0;
   const tutorialVisible = firstMatch && !tutorialDismissed && !s.gameOver;
-  const handSignature = game?.hand.map((c) => c.iid).join('|') ?? '';
 
   function finishTutorial() {
     try { localStorage.setItem(tutorialStorageKey, '1'); } catch { /* armazenamento opcional */ }
     setTutorialDismissed(true);
-  }
-
-  function clearInspect(source?: InspectCard['source']) {
-    if (inspectTimerRef.current) {
-      window.clearTimeout(inspectTimerRef.current);
-      inspectTimerRef.current = null;
-    }
-    setInspect((cur) => (!source || cur?.source === source ? null : cur));
-  }
-
-  function showInspect(next: InspectCard, ttlMs?: number) {
-    if (inspectTimerRef.current) {
-      window.clearTimeout(inspectTimerRef.current);
-      inspectTimerRef.current = null;
-    }
-    setInspect(next);
-    if (ttlMs) {
-      inspectTimerRef.current = window.setTimeout(() => {
-        setInspect((cur) => (
-          cur?.iid === next.iid && cur.source === next.source ? null : cur
-        ));
-        inspectTimerRef.current = null;
-      }, ttlMs);
-    }
   }
 
   useEffect(() => {
@@ -200,180 +176,23 @@ export function GameView() {
     return () => window.removeEventListener('beforeunload', protectActiveMatch);
   }, [game?.matchId, game?.status, s.gameOver?.matchId]);
 
-  useEffect(() => () => {
-    if (inspectTimerRef.current) window.clearTimeout(inspectTimerRef.current);
-  }, []);
   // cancela a seleção com Esc ou clique com o botão direito
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        cancelDragRef.current();
+        cancelDrag();
         clearAim();
         setTauntOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  // Arrasto para mirar/jogar: listeners na window unificam mouse e toque
-  // (no toque o pointer é capturado pelo elemento de origem; na window os
-  // eventos chegam igual e o alvo real vem de elementFromPoint).
-  useEffect(() => {
-    const releaseCapture = (drag: DragState) => {
-      if (drag.pointerId < 0 || !drag.captureEl) return;
-      try {
-        if (drag.captureEl.hasPointerCapture(drag.pointerId)) {
-          drag.captureEl.releasePointerCapture(drag.pointerId);
-        }
-      } catch { /* o navegador pode liberar a captura antes do pointercancel */ }
-    };
-    const suppressSyntheticClick = () => {
-      suppressClickRef.current = true;
-      setTimeout(() => { suppressClickRef.current = false; }, 400);
-    };
-    const cancelActiveDrag = () => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      dragRef.current = null;
-      releaseCapture(drag);
-      dragApiRef.current?.cancel(drag);
-    };
-    cancelDragRef.current = cancelActiveDrag;
-
-    const moveDrag = (drag: DragState, x: number, y: number) => {
-      if (!dragApiRef.current) return;
-      if (drag.mode === 'pending') {
-        const dx = x - drag.startX;
-        const dy = y - drag.startY;
-        const threshold = drag.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD_PX : DRAG_THRESHOLD_PX;
-        if (Math.hypot(dx, dy) < threshold) return;
-
-        if (drag.pointerType === 'touch') {
-          const horizontalIntent = Math.abs(dx) > Math.abs(dy) + 6;
-          const upwardIntent = -dy >= TOUCH_VERTICAL_INTENT_PX;
-          if (horizontalIntent || !upwardIntent) {
-            drag.mode = 'pan';
-            return;
-          }
-        }
-
-        dragApiRef.current.begin(drag);
-        const activeMode = drag.mode as DragState['mode'];
-        if ((activeMode === 'target' || activeMode === 'lift') && drag.pointerId >= 0 && drag.captureEl) {
-          try { drag.captureEl.setPointerCapture(drag.pointerId); } catch { /* captura é melhoria progressiva */ }
-        }
-      }
-      if (drag.mode === 'pan' || drag.mode === 'dead') return;
-      dragApiRef.current.move(drag, x, y);
-    };
-    const finishDrag = (drag: DragState, x: number, y: number) => {
-      if (!dragApiRef.current) return;
-      dragRef.current = null;
-      releaseCapture(drag);
-      if (drag.mode === 'pending') {
-        if (drag.pointerType === 'touch') setMouse(null);
-        return; // foi um toque/clique: a ação nativa decide
-      }
-      // Navegadores podem sintetizar click após arrasto/pan: nunca o converte
-      // numa segunda ação ou abertura involuntária da carta.
-      suppressSyntheticClick();
-      if (drag.mode === 'pan' || drag.mode === 'dead') {
-        dragApiRef.current.cancel(drag);
-        return;
-      }
-      dragApiRef.current.finish(drag, x, y);
-    };
-    const onMove = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
-      moveDrag(drag, e.clientX, e.clientY);
-      if (drag.pointerType === 'touch' && (drag.mode === 'target' || drag.mode === 'lift')) {
-        e.preventDefault();
-      }
-    };
-    const onUp = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) {
-        // tap sem arrasto no toque: a seta não pode ficar congelada na tela
-        if (e.pointerType === 'touch') setMouse(null);
-        return;
-      }
-      finishDrag(drag, e.clientX, e.clientY);
-    };
-    const onCancel = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag || e.pointerId !== drag.pointerId || !dragApiRef.current) return;
-      cancelActiveDrag();
-    };
-    const onMouseMove = (e: MouseEvent) => {
-      const drag = dragRef.current;
-      // Fallback apenas para navegadores sem Pointer Events. Num mouse moderno,
-      // pointermove e mousemove chegam juntos e processar ambos gera jitter.
-      if (!drag || drag.pointerId !== -1) return;
-      moveDrag(drag, e.clientX, e.clientY);
-    };
-    const onMouseUp = (e: MouseEvent) => {
-      const drag = dragRef.current;
-      if (!drag || drag.pointerId !== -1) return;
-      finishDrag(drag, e.clientX, e.clientY);
-    };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') cancelActiveDrag();
-    };
-    window.addEventListener('pointermove', onMove, { passive: false });
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onCancel);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('blur', cancelActiveDrag);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onCancel);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      window.removeEventListener('blur', cancelActiveDrag);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      cancelDragRef.current = () => undefined;
-    };
-  }, []);
+  }, [cancelDrag]);
 
   // gaveta de chat aberta = mensagens consideradas lidas (badge zera)
   useEffect(() => {
     if (sidePane === 'chat') setChatSeen(s.chat.length);
   }, [sidePane, s.chat.length]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia(TOUCH_CONFIRM_QUERY);
-    const update = () => setTouchPlayConfirm(mq.matches);
-    update();
-    mq.addEventListener?.('change', update);
-    return () => mq.removeEventListener?.('change', update);
-  }, []);
-
-  useEffect(() => {
-    if (!handFocus) return;
-    if (!game || !myTurn || !game.hand.some((c) => c.iid === handFocus.iid)) {
-      setHandFocus(null);
-    }
-  }, [game, handFocus, myTurn]);
-
-  useLayoutEffect(() => {
-    if (!handSignature) return;
-    const el = handRef.current;
-    if (!el) return;
-    const first = el.querySelector<HTMLElement>('.card:first-child');
-    if (!first) return;
-    const handRect = el.getBoundingClientRect();
-    const firstRect = first.getBoundingClientRect();
-    const minLeft = handRect.left + 10;
-    if (firstRect.left < minLeft) {
-      el.scrollLeft = Math.max(0, el.scrollLeft - (minLeft - firstRect.left));
-    }
-  }, [handSignature]);
 
   if (!game || !me) return null;
 
@@ -682,10 +501,10 @@ export function GameView() {
   }
 
   /** Início de gesto numa carta da mão ou criatura própria. */
-  function onTargetPointerDown(e: React.PointerEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
+  function onTargetPointerDown(e: React.PointerEvent, origin: DragOrigin) {
     if (!myTurn || !e.isPrimary || e.button !== 0) return;
     if ((e.target as Element).closest('.creature-info')) return;
-    if (dragRef.current) cancelDragRef.current();
+    if (dragRef.current) cancelDrag();
     dragRef.current = {
       pointerId: e.pointerId,
       pointerType: e.pointerType,
@@ -697,7 +516,7 @@ export function GameView() {
     };
   }
 
-  function onTargetMouseDown(e: React.MouseEvent, origin: { kind: 'hand' | 'creature'; iid: string; defId: string }) {
+  function onTargetMouseDown(e: React.MouseEvent, origin: DragOrigin) {
     if (!myTurn || e.button !== 0 || dragRef.current) return;
     if ((e.target as Element).closest('.creature-info')) return;
     dragRef.current = {
@@ -944,13 +763,7 @@ export function GameView() {
       className={`game-screen ${selection ? 'is-aiming' : ''} ${dragCard ? 'dragging-hand-card' : ''} ${handFocus ? 'has-hand-focus' : ''}`}
       onPointerMove={selection ? (e) => setMouse({ x: e.clientX, y: e.clientY }) : undefined}
       onContextMenu={selection ? (e) => { e.preventDefault(); clearAim(); } : undefined}
-      onClickCapture={(e) => {
-        if (suppressClickRef.current) {
-          suppressClickRef.current = false;
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }}
+      onClickCapture={consumeSyntheticClick}
     >
       <MobileGameToolbar
         sidePane={sidePane}
