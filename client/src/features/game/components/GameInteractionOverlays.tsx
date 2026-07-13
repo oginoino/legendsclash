@@ -10,24 +10,11 @@ import {
   IcoTarget,
 } from '../../../icons';
 import { AimOverlay } from './AimOverlay';
-import type { AimMode } from './AimOverlay';
+import type { ArrowGeometry } from '../aim-geometry-model';
 import type { DragCardVisual } from '../drag-gesture-model';
 import type { Reveal } from '../feedback-model';
-import type { ArrowGeometry } from '../targeting-model';
+import type { AimMode, HandConfirm, TargetHint } from '../presentation-model';
 import type { HandFocus, InspectCard } from '../view-model';
-
-export interface TargetHint {
-  mode: 'attack' | 'support' | 'spell';
-  title: string;
-  body: string;
-}
-
-export interface HandConfirm {
-  mode: 'play';
-  title: string;
-  body: string;
-  actionLabel: string;
-}
 
 interface GameInteractionOverlaysProps {
   dragCard: DragCardVisual | null;
