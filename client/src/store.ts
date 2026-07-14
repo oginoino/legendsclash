@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { ClientMsg, ServerMsg } from '@legendsclash/shared';
+import { accountApi } from './api/account-api';
+import type { SessionResponse } from './api/account-api';
 import { createRealtimeConnection } from './network/realtime-connection';
 import { appStateReducer, createInitialAppState } from './state/app-state';
 import type { AppState, AppStateAction } from './state/app-state';
@@ -231,25 +233,7 @@ function joinPendingRoom(): void {
 
 // ─── Autenticação (convidado ou e-mail+senha; o servidor media o Supabase) ──
 
-async function postJson(
-  path: string,
-  body: unknown,
-  token?: string,
-): Promise<Record<string, any>> {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? 'Falha na requisição.');
-  return data;
-}
-
-function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
+function adoptSession(body: SessionResponse): { needsProfile: boolean } {
   // troca de identidade (ex.: convidado virou conta): derruba a conexão antiga
   realtimeConnection.disconnect();
   localStorage.setItem('lc_token', body.token);
@@ -264,7 +248,7 @@ function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
 
 /** Jogar sem cadastro: sessão de convidado com nome e avatar. */
 export async function loginAsGuest(name: string, avatar: string): Promise<void> {
-  await adoptSession(await postJson('/api/auth/guest', { name, avatar }));
+  await adoptSession(await accountApi.loginAsGuest(name, avatar));
 }
 
 export async function registerAccount(
@@ -273,7 +257,7 @@ export async function registerAccount(
 ): Promise<{ needsProfile: boolean }> {
   // a sessão de convidado vai junto: a conta nova herda o progresso (promoção)
   return adoptSession(
-    await postJson('/api/auth/register', { email, password }, state.token ?? undefined),
+    await accountApi.registerAccount(email, password, state.token ?? undefined),
   );
 }
 
@@ -281,13 +265,13 @@ export async function loginAccount(
   email: string,
   password: string,
 ): Promise<{ needsProfile: boolean }> {
-  return adoptSession(await postJson('/api/auth/login', { email, password }));
+  return adoptSession(await accountApi.loginAccount(email, password));
 }
 
 /** Esqueci minha senha: dispara o link mágico. Resposta sempre genérica; em
  *  modo local o servidor devolve o link (devLink) para facilitar dev/testes. */
 export async function requestPasswordReset(email: string): Promise<{ devLink?: string }> {
-  return postJson('/api/auth/forgot', { email });
+  return accountApi.requestPasswordReset(email);
 }
 
 /** Conclui a redefinição com o token do link e já entra com a senha nova. */
@@ -295,7 +279,7 @@ export async function resetPassword(
   token: string,
   password: string,
 ): Promise<{ needsProfile: boolean }> {
-  return adoptSession(await postJson('/api/auth/reset', { token, password }));
+  return adoptSession(await accountApi.resetPassword(token, password));
 }
 
 export function clearResetToken(): void {
@@ -313,7 +297,7 @@ export function closeAccountPrompt(): void {
 
 export async function completeProfile(name: string, avatar: string): Promise<void> {
   if (!state.token) throw new Error('Sessão expirada. Entre novamente.');
-  const body = await postJson('/api/auth/profile', { name, avatar }, state.token);
+  const body = await accountApi.completeProfile(name, avatar, state.token);
   setState({ profile: body.profile });
   joinPendingRoom(); // convite por link esperava o nome
 }
@@ -340,37 +324,23 @@ export function updateProfile(patch: {
 export async function uploadAvatarPhoto(dataUrl: string): Promise<void> {
   const token = state.token;
   if (!token) throw new Error('Sessão expirada. Entre novamente.');
-  const res = await fetch('/api/avatar/upload', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ data: dataUrl }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error ?? 'Falha ao enviar a foto.');
-  if (body?.profile) setState({ profile: body.profile });
+  const body = await accountApi.uploadAvatarPhoto(dataUrl, token);
+  if (body.profile) setState({ profile: body.profile });
 }
 
 /** Remove a foto de perfil, voltando ao ícone escolhido. */
 export async function removeAvatarPhoto(): Promise<void> {
   const token = state.token;
   if (!token) throw new Error('Sessão expirada. Entre novamente.');
-  const res = await fetch('/api/avatar/remove', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}` },
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error ?? 'Falha ao remover a foto.');
-  if (body?.profile) setState({ profile: body.profile });
+  const body = await accountApi.removeAvatarPhoto(token);
+  if (body.profile) setState({ profile: body.profile });
 }
 
 export function logout(): void {
   const token = state.token;
   if (token) {
     // revoga a sessão no servidor; falha de rede não impede o logout local
-    void fetch('/api/auth/logout', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-    }).catch(() => {});
+    void accountApi.revokeSession(token).catch(() => {});
   }
   localStorage.removeItem('lc_token');
   rememberActiveMatch(null);
