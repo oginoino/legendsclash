@@ -12,6 +12,7 @@ import { applyElo, leagueOf } from './elo.js';
 import { RateLimiter } from './ratelimit.js';
 import { ApplicationError } from './application/application-error.js';
 import { ChatCoordinator } from './application/chat/chat-coordinator.js';
+import { MatchRegistry } from './application/matches/match-registry.js';
 import { SocialCoordinator } from './application/social/social-coordinator.js';
 
 /**
@@ -45,8 +46,7 @@ export class App {
   private socketUser = new WeakMap<WebSocket, string>();
   private queue = new MatchmakingQueue();
   private rooms = new RoomManager();
-  private matches = new Map<string, Match>(); // userId → partida ativa
-  private practiceMatches = new Set<string>(); // ids de partidas de treino (sem MMR)
+  private matches = new MatchRegistry();
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
   private userIp = new Map<string, string>(); // userId → IP da conexão ativa
   // Teto geral de mensagens. Chat e ações sociais mantêm limites específicos
@@ -386,7 +386,7 @@ export class App {
       [], // sem bots numa partida ranqueada
       content, // conteúdo variável (Fase 6) — vazio quando as flags estão off
     );
-    for (const u of users) this.matches.set(u.id, match);
+    this.matches.register(match, users.map((user) => user.id));
     match.start();
     // telemetria: ordem de assentos + condições de conteúdo p/ winrate-por-condição
     this.store.recordEvent('match_start', {
@@ -403,14 +403,7 @@ export class App {
 
   /** Partidas ativas, deduplicadas, em formato persistível. Treino não restaura. */
   exportMatches(): MatchSnapshot[] {
-    const seen = new Set<string>();
-    const out: MatchSnapshot[] = [];
-    for (const match of this.matches.values()) {
-      if (match.finished || this.practiceMatches.has(match.id) || seen.has(match.id)) continue;
-      seen.add(match.id);
-      out.push(match.toSnapshot());
-    }
-    return out;
+    return this.matches.exportSnapshots();
   }
 
   /**
@@ -429,7 +422,7 @@ export class App {
           () => this.broadcastMatch(match),
           (result) => this.finishMatch(match, result),
         );
-        for (const id of ids) this.matches.set(id, match);
+        this.matches.register(match, ids);
         restored++;
       } catch (err) {
         console.error('[runtime] partida descartada na restauração:', err);
@@ -472,8 +465,8 @@ export class App {
       [bot.id],
       this.matchContentFor([user.id]), // treino respeita as flags de conteúdo
     );
-    this.matches.set(user.id, match); // só o humano é registrado (o bot não tem socket)
-    this.practiceMatches.add(match.id);
+    // só o humano é registrado (o bot não tem socket)
+    this.matches.register(match, [user.id], 'practice');
     match.start();
   }
 
@@ -489,8 +482,7 @@ export class App {
       mvp![id] = result.mvp[seat] ?? null;
     });
     this.broadcastMatch(match); // estado final
-    for (const pid of ids) this.matches.delete(pid);
-    this.practiceMatches.delete(match.id);
+    this.matches.unregister(match);
     if (humanId) {
       this.sendTo(humanId, {
         t: 'game:over',
@@ -604,8 +596,8 @@ export class App {
 
     this.social.recordOpponents(ids); // habilita revanche/perfil/amizade pós-partida
     this.broadcastMatch(match); // estado final
+    this.matches.unregister(match);
     for (const pid of ids) {
-      this.matches.delete(pid);
       this.sendTo(pid, {
         t: 'game:over',
         result: {
@@ -687,12 +679,7 @@ export class App {
 
   dispose(): void {
     clearInterval(this.queueTimer);
-    const seen = new Set<string>();
-    for (const match of this.matches.values()) {
-      if (seen.has(match.id)) continue;
-      seen.add(match.id);
-      match.dispose();
-    }
+    this.matches.dispose();
   }
 }
 
