@@ -4,13 +4,13 @@ import { FACTION_TILTS } from '@legendsclash/shared';
 import { contentFlags } from './content.js';
 import type { ClientMsg, ServerMsg, LeaderboardEntry, Profile } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
-import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
 import { Match, GameError, type MatchSnapshot } from './game/engine.js';
 import { leagueOf } from './elo.js';
 import { RateLimiter } from './ratelimit.js';
 import { ApplicationError } from './application/application-error.js';
 import { ChatCoordinator } from './application/chat/chat-coordinator.js';
+import { MatchmakingCoordinator } from './application/lobby/matchmaking-coordinator.js';
 import { MatchFactory } from './application/matches/match-factory.js';
 import { MatchFinalizer } from './application/matches/match-finalizer.js';
 import { MatchRegistry } from './application/matches/match-registry.js';
@@ -20,8 +20,6 @@ import { SocialCoordinator } from './application/social/social-coordinator.js';
  * Orquestra sessões WebSocket: autenticação, fila, salas, chat e partidas.
  * O estado de jogo vive exclusivamente aqui (servidor autoritativo).
  */
-
-const QUEUE_TICK_MS = 2000;
 
 /**
  * IP do cliente para a guarda anti alt-farm. Atrás do Caddy (produção) o IP real
@@ -45,7 +43,6 @@ function displayName(u: UserRecord): string {
 export class App {
   private sockets = new Map<string, WebSocket>(); // userId → conexão ativa
   private socketUser = new WeakMap<WebSocket, string>();
-  private queue = new MatchmakingQueue();
   private rooms = new RoomManager();
   private matches = new MatchRegistry();
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
@@ -54,10 +51,10 @@ export class App {
   // dentro dos coordenadores responsáveis por essas regras.
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
   private readonly chat: ChatCoordinator;
+  private readonly matchmaking: MatchmakingCoordinator;
   private readonly matchFactory: MatchFactory;
   private readonly matchFinalizer: MatchFinalizer;
   private readonly social: SocialCoordinator;
-  private queueTimer: NodeJS.Timeout;
   /** Avisa o snapshot de runtime quando o conjunto de partidas muda. */
   onMatchesChanged: (() => void) | null = null;
 
@@ -89,7 +86,14 @@ export class App {
       onRankedFinish: (match, result) => this.matchFinalizer.finishRanked(match, result),
       onPracticeFinish: (match, result) => this.matchFinalizer.finishPractice(match, result),
     });
-    this.queueTimer = setInterval(() => this.tickQueue(), QUEUE_TICK_MS);
+    this.matchmaking = new MatchmakingCoordinator({
+      store,
+      isInMatch: (userId) => this.matches.has(userId),
+      isInRoom: (userId) => !!this.rooms.roomOf(userId),
+      originFor: (userId) => this.userIp.get(userId),
+      startMatch: (users) => this.startMatch(users),
+      sendTo: (userId, message) => this.sendTo(userId, message),
+    });
   }
 
   // ─── Conexão e autenticação ─────────────────────────────────────
@@ -136,8 +140,8 @@ export class App {
 
     switch (msg.t) {
       case 'profile:update': return this.profileUpdate(user, msg);
-      case 'queue:join': return this.queueJoin(user);
-      case 'queue:leave': return this.queueLeave(user);
+      case 'queue:join': return this.matchmaking.join(user);
+      case 'queue:leave': return this.matchmaking.leave(user);
       case 'practice:start': return this.startPractice(user);
       case 'room:create': return this.roomCreate(user);
       case 'room:join': return this.roomJoin(user, msg.code);
@@ -205,7 +209,7 @@ export class App {
     // Verdade completa pós-(re)conexão: sem isso, quem reconecta após um
     // restart do servidor fica preso numa batalha/sala/fila fantasma.
     this.send(ws, { t: 'game:state', view: null });
-    this.send(ws, { t: 'queue:status', inQueue: false, size: this.queue.size });
+    this.send(ws, { t: 'queue:status', inQueue: false, size: this.matchmaking.size });
     const room = this.rooms.roomOf(user.id);
     this.send(ws, { t: 'room:state', room: room ? this.rooms.toState(room) : null });
   }
@@ -216,9 +220,7 @@ export class App {
     if (this.sockets.get(userId) !== ws) return; // conexão antiga substituída
 
     this.sockets.delete(userId);
-    const wasQueued = this.queue.has(userId);
-    this.queue.leave(userId);
-    if (wasQueued) this.store.recordEvent('queue_abandon', { userId });
+    this.matchmaking.disconnect(userId);
     // libera os baldes de rate-limit (reconexão recomeça com balde cheio)
     this.msgLimiter.forget(userId);
     this.chat.forget(userId);
@@ -276,52 +278,6 @@ export class App {
     return profile;
   }
 
-  // ─── Fila / matchmaking ─────────────────────────────────────────
-
-  private queueJoin(user: UserRecord): void {
-    if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
-    if (this.rooms.roomOf(user.id)) throw new KnownError('Saia da sala antes de entrar na fila.');
-    this.queue.join(user.id, user.mmr);
-    this.store.recordEvent('queue_join', { userId: user.id, props: { mmr: user.mmr } });
-    this.broadcastQueue(); // o recém-chegado e quem já esperava veem o novo estado
-  }
-
-  private queueLeave(user: UserRecord): void {
-    const wasQueued = this.queue.has(user.id);
-    this.queue.leave(user.id);
-    if (wasQueued) this.store.recordEvent('queue_leave', { userId: user.id });
-    this.sendTo(user.id, { t: 'queue:status', inQueue: false, size: this.queue.size });
-    this.broadcastQueue(); // quem continua pode ter ficado sozinho
-  }
-
-  private tickQueue(): void {
-    // anti alt-farm: não pareia dois da mesma origem (IP conhecido e igual)
-    const sameOrigin = (a: { userId: string }, b: { userId: string }): boolean => {
-      const ia = this.userIp.get(a.userId);
-      return !!ia && ia === this.userIp.get(b.userId);
-    };
-    for (const [a, b] of this.queue.tick(undefined, sameOrigin)) {
-      const ua = this.store.userById(a.userId);
-      const ub = this.store.userById(b.userId);
-      if (!ua || !ub) continue;
-      this.startMatch([ua, ub]);
-    }
-    this.broadcastQueue(); // remanescentes (ex.: ímpar sozinho) recebem waitingAlone
-  }
-
-  /**
-   * Difunde o estado da fila a todos que aguardam: tamanho e se estão sozinhos.
-   * waitingAlone vira a rota de escape da 1ª sessão — em vez de um spinner sem
-   * fim, o cliente sugere criar uma sala e convidar um amigo.
-   */
-  private broadcastQueue(): void {
-    const size = this.queue.size;
-    const waitingAlone = size === 1;
-    for (const uid of this.queue.userIds()) {
-      this.sendTo(uid, { t: 'queue:status', inQueue: true, size, waitingAlone });
-    }
-  }
-
   // ─── Salas (lobby + convite por link) ───────────────────────────
 
   private asRoomPlayer(u: UserRecord): RoomPlayer {
@@ -330,7 +286,7 @@ export class App {
 
   private roomCreate(user: UserRecord): void {
     if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
-    this.queue.leave(user.id);
+    this.matchmaking.remove(user.id);
     this.rooms.leave(user.id);
     const room = this.rooms.create(this.asRoomPlayer(user));
     this.broadcastRoom(room.code);
@@ -338,7 +294,7 @@ export class App {
 
   private roomJoin(user: UserRecord, code: string): void {
     if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
-    this.queue.leave(user.id);
+    this.matchmaking.remove(user.id);
     try {
       const room = this.rooms.join(code, this.asRoomPlayer(user));
       this.broadcastRoom(room.code);
@@ -429,7 +385,7 @@ export class App {
 
   private startPractice(user: UserRecord): void {
     if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
-    this.queue.leave(user.id);
+    this.matchmaking.remove(user.id);
     this.rooms.leave(user.id);
     const match = this.matchFactory.createPractice(user);
     // só o humano é registrado (o bot não tem socket)
@@ -494,7 +450,7 @@ export class App {
   }
 
   dispose(): void {
-    clearInterval(this.queueTimer);
+    this.matchmaking.dispose();
     this.matches.dispose();
   }
 }
