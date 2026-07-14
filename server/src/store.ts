@@ -12,6 +12,32 @@ import {
   normalizeIconId,
 } from '@legendsclash/shared';
 import { BASE_MMR, leagueOf } from './elo.js';
+import type {
+  DbShape,
+  EventRecord,
+  Persistence,
+  RankingSnapshot,
+  ReportRecord,
+  SessionRecord,
+  UserRecord,
+} from './persistence/contracts.js';
+import {
+  eventRowFromRecord,
+  matchHistoryFromRow,
+  matchHistoryRowFromEntry,
+  playerRowFromUser,
+  reportRowFromRecord,
+  sessionFromRow,
+  sessionRowFromRecord,
+  userFromPlayerRow,
+} from './persistence/supabase-mappers.js';
+
+export type {
+  EventRecord,
+  ReportRecord,
+  SessionRecord,
+  UserRecord,
+} from './persistence/contracts.js';
 
 /** Dia epoch UTC (base do cálculo da sequência diária). */
 export function epochDay(ts: number): number {
@@ -46,106 +72,6 @@ export function advanceStreak(
  *   as variáveis não estão configuradas, ou forçado com LC_LOCAL=1 (útil para
  *   desenvolver sem tocar o banco de produção mesmo com .env preenchido).
  */
-
-export interface UserRecord {
-  id: string;
-  /** Vazio em convidados. */
-  email: string;
-  /** Vazio = onboarding pendente: o jogador ainda não escolheu nome/avatar. */
-  name: string;
-  avatar: string;
-  /** Retrato do comandante na arena e cor de destaque (personalização). */
-  commander: string;
-  accent: string;
-  /** Foto de perfil (URL no Storage ou data-URL no modo local); null = sem foto. */
-  photo: string | null;
-  /** Moldura decorativa (id em FRAMES). */
-  frame: string;
-  /** Estilo de cor do realce (id em ACCENT_STYLES). */
-  accentStyle: string;
-  /** Capa pública do perfil/card social (id em PROFILE_COVERS). */
-  profileCover: string;
-  /** Tradição pública e inclinação de deck; vazio = neutro. */
-  faction: string;
-  /** Vínculo com auth.users do Supabase (login por senha). Null em convidados/contas legadas/modo local. */
-  authUserId: string | null;
-  /**
-   * Convidado: existe só em memória (nunca persiste, não entra no ranking,
-   * não acumula histórico). Some quando a sessão expira ou no restart.
-   */
-  guest: boolean;
-  mmr: number;
-  /** Liga persistida no Supabase; no modo local pode ser derivada do MMR. */
-  league?: League;
-  wins: number;
-  losses: number;
-  muted: string[];
-  /** Amigos adicionados (ids) — continuidade social pós-partida. */
-  friends: string[];
-  history: MatchHistoryEntry[];
-  createdAt: number;
-  /** Sequência de dias consecutivos com partida (gancho de retorno). */
-  streak: number;
-  /** Último dia (epoch UTC) com partida — base do cálculo da sequência. */
-  lastPlayDay: number;
-}
-
-/** Sessão de login: o banco guarda só o sha-256 do token entregue ao cliente. */
-export interface SessionRecord {
-  tokenHash: string;
-  playerId: string;
-  createdAt: number;
-  expiresAt: number;
-  lastSeenAt: number;
-}
-
-export interface ReportRecord {
-  reporterId: string;
-  reportedId: string;
-  reason: string;
-  context: string; // últimas mensagens do denunciado na sala/partida
-  at: number;
-}
-
-/** Evento de telemetria de produto (funil). Append-only; consultado via SQL. */
-export interface EventRecord {
-  type: string;
-  userId: string | null; // ator (null em eventos de partida sem ator único)
-  matchId: string | null;
-  props: Record<string, unknown>;
-  at: number;
-}
-
-interface DbShape {
-  users: UserRecord[];
-  reports: ReportRecord[];
-  sessions: SessionRecord[];
-  events: EventRecord[];
-}
-
-interface Persistence {
-  load(): Promise<DbShape>;
-  /** Leitura fresca do ranking quando o backend suporta consulta persistida. */
-  loadRanking?(userId: string, limit: number, span: number): Promise<RankingSnapshot>;
-  /** Write-through assíncrono: erros são logados, nunca derrubam a partida. */
-  saveUser(user: UserRecord): void;
-  saveMatch(userId: string, entry: MatchHistoryEntry): void;
-  saveReport(report: ReportRecord): void;
-  saveSession(session: SessionRecord): void;
-  deleteSession(tokenHash: string): void;
-  saveEvent(event: EventRecord): void;
-  /**
-   * Sobe a foto de perfil e devolve a URL pública. Em prod vai ao Supabase
-   * Storage; no modo local devolve a própria data-URL (sem storage externo).
-   */
-  uploadAvatar(userId: string, bytes: Buffer, contentType: string): Promise<string>;
-}
-
-interface RankingSnapshot {
-  entries: UserRecord[];
-  myRank?: number;
-  around?: UserRecord[];
-}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DB_PATH = join(__dirname, '..', 'data', 'db.json');
@@ -218,12 +144,6 @@ class JsonPersistence implements Persistence {
 
 const HISTORY_LIMIT = 50;
 
-function coerceLeague(value: unknown, mmr: number): League {
-  return value === 'Bronze' || value === 'Prata' || value === 'Ouro'
-    ? value
-    : leagueOf(mmr) as League;
-}
-
 class SupabasePersistence implements Persistence {
   private client: SupabaseClient;
 
@@ -266,30 +186,15 @@ class SupabasePersistence implements Persistence {
     for (const row of history ?? []) {
       const list = byPlayer.get(row.player_id) ?? [];
       if (list.length < HISTORY_LIMIT) {
-        list.push({
-          matchId: row.match_id,
-          opponentId: row.opponent_id,
-          opponentName: row.opponent_name,
-          won: row.won,
-          reason: row.reason,
-          mmrDelta: row.mmr_delta,
-          turns: row.turns,
-          durationMs: row.duration_ms,
-          endedAt: new Date(row.ended_at).getTime(),
-        });
+        list.push(matchHistoryFromRow(row));
       }
       byPlayer.set(row.player_id, list);
     }
 
-    const users: UserRecord[] = (players ?? []).map((p) => this.userFromPlayerRow(p, byPlayer.get(p.id) ?? []));
-
-    const sessionRecords: SessionRecord[] = (sessions ?? []).map((s) => ({
-      tokenHash: s.token_hash,
-      playerId: s.player_id,
-      createdAt: new Date(s.created_at).getTime(),
-      expiresAt: new Date(s.expires_at).getTime(),
-      lastSeenAt: new Date(s.last_seen_at).getTime(),
-    }));
+    const users: UserRecord[] = (players ?? []).map((row) => (
+      userFromPlayerRow(row, byPlayer.get(row.id) ?? [])
+    ));
+    const sessionRecords: SessionRecord[] = (sessions ?? []).map(sessionFromRow);
 
     console.log(`[store] Supabase conectado: ${users.length} jogadores, ${sessionRecords.length} sessões ativas`);
     // denúncias e eventos são write-only para o servidor do jogo (análise por SQL)
@@ -307,7 +212,7 @@ class SupabasePersistence implements Persistence {
       .order('created_at', { ascending: true });
     if (error) throw new Error(`[store] falha ao carregar ranking: ${error.message}`);
 
-    const ranked = (data ?? []).map((p) => this.userFromPlayerRow(p));
+    const ranked = (data ?? []).map((row) => userFromPlayerRow(row));
     const idx = ranked.findIndex((u) => u.id === userId);
     return {
       entries: ranked.slice(0, limit),
@@ -316,59 +221,10 @@ class SupabasePersistence implements Persistence {
     };
   }
 
-  private userFromPlayerRow(p: Record<string, any>, history: MatchHistoryEntry[] = []): UserRecord {
-    return {
-      id: p.id,
-      email: p.email,
-      name: p.name,
-      avatar: normalizeIconId(p.avatar),
-      commander: normalizeIconId(p.commander ?? p.avatar),
-      accent: p.accent ?? DEFAULT_ACCENT,
-      photo: p.photo ?? null,
-      frame: p.frame ?? DEFAULT_FRAME,
-      accentStyle: p.accent_style ?? DEFAULT_ACCENT_STYLE,
-      profileCover: p.profile_cover ?? DEFAULT_PROFILE_COVER,
-      faction: typeof p.faction === 'string' && (p.faction === '' || FACTION_TILTS[p.faction]) ? p.faction : '',
-      authUserId: p.auth_user_id ?? null,
-      guest: false,
-      mmr: p.mmr,
-      league: coerceLeague(p.league, p.mmr),
-      wins: p.wins,
-      losses: p.losses,
-      muted: p.muted ?? [],
-      friends: p.friends ?? [],
-      history,
-      createdAt: new Date(p.created_at).getTime(),
-      streak: p.streak ?? 0,
-      lastPlayDay: p.last_play_day ?? 0,
-    };
-  }
-
   saveUser(user: UserRecord): void {
     void this.client
       .from('players')
-      .upsert({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar,
-        commander: user.commander,
-        accent: user.accent,
-        photo: user.photo,
-        frame: user.frame,
-        accent_style: user.accentStyle,
-        profile_cover: user.profileCover,
-        faction: user.faction,
-        auth_user_id: user.authUserId,
-        mmr: user.mmr,
-        wins: user.wins,
-        losses: user.losses,
-        muted: user.muted,
-        friends: user.friends,
-        created_at: new Date(user.createdAt).toISOString(),
-        streak: user.streak,
-        last_play_day: user.lastPlayDay,
-      })
+      .upsert(playerRowFromUser(user))
       .then(({ error }) => {
         if (error) console.error('[store] upsert player falhou:', error.message);
       });
@@ -377,18 +233,7 @@ class SupabasePersistence implements Persistence {
   saveMatch(userId: string, entry: MatchHistoryEntry): void {
     void this.client
       .from('match_history')
-      .insert({
-        match_id: entry.matchId,
-        player_id: userId,
-        opponent_id: entry.opponentId,
-        opponent_name: entry.opponentName,
-        won: entry.won,
-        reason: entry.reason,
-        mmr_delta: entry.mmrDelta,
-        turns: entry.turns,
-        duration_ms: entry.durationMs,
-        ended_at: new Date(entry.endedAt).toISOString(),
-      })
+      .insert(matchHistoryRowFromEntry(userId, entry))
       .then(({ error }) => {
         if (error) console.error('[store] insert match_history falhou:', error.message);
       });
@@ -397,13 +242,7 @@ class SupabasePersistence implements Persistence {
   saveReport(report: ReportRecord): void {
     void this.client
       .from('reports')
-      .insert({
-        reporter_id: report.reporterId,
-        reported_id: report.reportedId,
-        reason: report.reason,
-        context: report.context,
-        created_at: new Date(report.at).toISOString(),
-      })
+      .insert(reportRowFromRecord(report))
       .then(({ error }) => {
         if (error) console.error('[store] insert report falhou:', error.message);
       });
@@ -412,13 +251,7 @@ class SupabasePersistence implements Persistence {
   saveSession(session: SessionRecord): void {
     void this.client
       .from('sessions')
-      .upsert({
-        token_hash: session.tokenHash,
-        player_id: session.playerId,
-        created_at: new Date(session.createdAt).toISOString(),
-        expires_at: new Date(session.expiresAt).toISOString(),
-        last_seen_at: new Date(session.lastSeenAt).toISOString(),
-      })
+      .upsert(sessionRowFromRecord(session))
       .then(({ error }) => {
         if (error) console.error('[store] upsert session falhou:', error.message);
       });
@@ -437,13 +270,7 @@ class SupabasePersistence implements Persistence {
   saveEvent(event: EventRecord): void {
     void this.client
       .from('events')
-      .insert({
-        type: event.type,
-        user_id: event.userId,
-        match_id: event.matchId,
-        props: event.props,
-        created_at: new Date(event.at).toISOString(),
-      })
+      .insert(eventRowFromRecord(event))
       .then(({ error }) => {
         if (error) console.error('[store] insert event falhou:', error.message);
       });
