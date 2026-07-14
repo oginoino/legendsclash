@@ -7,6 +7,7 @@ import {
 import type { ReportRecord, UserRecord } from '../../store.js';
 import { RateLimiter } from '../../ratelimit.js';
 import { filterText, MAX_CHAT_LENGTH } from '../../wordfilter.js';
+import { ApplicationError } from '../application-error.js';
 
 const REPORT_FLAG_THRESHOLD = 3;
 
@@ -26,7 +27,7 @@ export interface ChatCoordinatorDependencies {
 }
 
 /** Validação esperada de chat que deve ser devolvida ao cliente. */
-export class ChatError extends Error {}
+export class ChatError extends ApplicationError {}
 
 /**
  * Coordena chat efêmero, provocações e moderação sem conhecer WebSocket,

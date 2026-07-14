@@ -10,7 +10,9 @@ import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
 import { Match, GameError, type EngineResult, type MatchPlayer, type MatchContent, type MatchSnapshot } from './game/engine.js';
 import { applyElo, leagueOf } from './elo.js';
 import { RateLimiter } from './ratelimit.js';
-import { ChatCoordinator, ChatError } from './application/chat/chat-coordinator.js';
+import { ApplicationError } from './application/application-error.js';
+import { ChatCoordinator } from './application/chat/chat-coordinator.js';
+import { SocialCoordinator } from './application/social/social-coordinator.js';
 
 /**
  * Orquestra sessões WebSocket: autenticação, fila, salas, chat e partidas.
@@ -47,13 +49,11 @@ export class App {
   private practiceMatches = new Set<string>(); // ids de partidas de treino (sem MMR)
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
   private userIp = new Map<string, string>(); // userId → IP da conexão ativa
-  private recentOpponents = new Map<string, string[]>(); // userId → oponentes recentes (revanche/perfil/amigo)
-  private pendingRematch = new Map<string, { opponentId: string; at: number }>(); // quem pediu revanche → com quem
-  // Rate-limits gerais e sociais. Chat e provocação mantêm os próprios baldes
-  // dentro do coordenador responsável por essas regras.
+  // Teto geral de mensagens. Chat e ações sociais mantêm limites específicos
+  // dentro dos coordenadores responsáveis por essas regras.
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
-  private socialLimiter = new RateLimiter(4, 0.5); // revanche/amigo/perfil: anti-enumeração
   private readonly chat: ChatCoordinator;
+  private readonly social: SocialCoordinator;
   private queueTimer: NodeJS.Timeout;
   /** Avisa o snapshot de runtime quando o conjunto de partidas muda. */
   onMatchesChanged: (() => void) | null = null;
@@ -61,7 +61,15 @@ export class App {
   constructor(private store: Store) {
     this.chat = new ChatCoordinator({
       store,
-      recipientsFor: (userId) => this.chatRecipients(userId),
+      recipientsFor: (userId) => this.interactionParticipants(userId),
+      sendTo: (userId, message) => this.sendTo(userId, message),
+    });
+    this.social = new SocialCoordinator({
+      store,
+      participantsFor: (userId) => this.interactionParticipants(userId),
+      isOnline: (userId) => this.sockets.has(userId),
+      isInMatch: (userId) => this.matches.has(userId),
+      startMatch: (users) => this.startMatch(users),
       sendTo: (userId, message) => this.sendTo(userId, message),
     });
     this.queueTimer = setInterval(() => this.tickQueue(), QUEUE_TICK_MS);
@@ -86,7 +94,7 @@ export class App {
           ? err.message
           : 'Erro interno.';
         this.send(ws, { t: 'error', message });
-        if (!(err instanceof GameError) && !(err instanceof KnownError) && !(err instanceof ChatError)) {
+        if (!(err instanceof GameError) && !(err instanceof ApplicationError)) {
           console.error(err);
         }
       }
@@ -140,11 +148,11 @@ export class App {
       case 'history:get':
         // convidado vê o histórico da sessão (em memória); conta, o persistido
         return this.sendTo(user.id, { t: 'history', entries: user.history });
-      case 'rematch:request': return this.rematchRequest(user);
-      case 'rematch:decline': return this.rematchDecline(user);
-      case 'friend:add': return this.friendSet(user, msg.playerId, true);
-      case 'friend:remove': return this.friendSet(user, msg.playerId, false);
-      case 'profile:get': return this.profileGet(user, msg.playerId);
+      case 'rematch:request': return this.social.requestRematch(user);
+      case 'rematch:decline': return this.social.declineRematch(user);
+      case 'friend:add': return this.social.setFriend(user, msg.playerId, true);
+      case 'friend:remove': return this.social.setFriend(user, msg.playerId, false);
+      case 'profile:get': return this.social.getProfile(user, msg.playerId);
       case 'faction:pick': return this.factionPick(user, msg.factionId);
     }
   }
@@ -197,13 +205,8 @@ export class App {
     // libera os baldes de rate-limit (reconexão recomeça com balde cheio)
     this.msgLimiter.forget(userId);
     this.chat.forget(userId);
-    this.socialLimiter.forget(userId);
+    this.social.forget(userId);
     this.userIp.delete(userId);
-    // descarta ofertas de revanche pendentes (minhas e as direcionadas a mim)
-    this.pendingRematch.delete(userId);
-    for (const [requesterId, req] of this.pendingRematch) {
-      if (req.opponentId === userId) this.pendingRematch.delete(requesterId);
-    }
 
     const match = this.matches.get(userId);
     if (match && !match.finished) {
@@ -599,7 +602,7 @@ export class App {
       mvp![id] = result.mvp[seat] ?? null;
     });
 
-    this.recordRecentOpponents(ids); // habilita revanche/perfil/amizade pós-partida
+    this.social.recordOpponents(ids); // habilita revanche/perfil/amizade pós-partida
     this.broadcastMatch(match); // estado final
     for (const pid of ids) {
       this.matches.delete(pid);
@@ -617,79 +620,13 @@ export class App {
     this.onMatchesChanged?.();
   }
 
-  // A política de chat vive no coordenador; App só resolve o contexto atual.
-  private chatRecipients(userId: string): string[] {
+  // Os coordenadores recebem apenas os participantes do contexto atual.
+  private interactionParticipants(userId: string): string[] {
     const match = this.matches.get(userId);
     if (match) return match.playerIds();
     const room = this.rooms.roomOf(userId);
     if (room) return room.members.map((m) => m.id);
     return [];
-  }
-
-  // ─── Continuidade social: revanche, amigos e card de perfil ─────
-  // Tudo gateado por `knows` (só quem você encontrou) + rate-limit anti-enumeração.
-
-  /** Registra os oponentes recentes de cada jogador (revanche/perfil/amizade). */
-  private recordRecentOpponents(ids: string[]): void {
-    for (const id of ids) {
-      const others = ids.filter((o) => o !== id);
-      const list = [...others, ...(this.recentOpponents.get(id) ?? [])];
-      this.recentOpponents.set(id, [...new Set(list)].slice(0, 10));
-    }
-  }
-
-  /** Relação válida: na mesma sala/partida agora, oponente recente ou já amigo. */
-  private knows(userId: string, otherId: string): boolean {
-    if (userId === otherId) return false;
-    if (this.chatRecipients(userId).includes(otherId)) return true;
-    if ((this.recentOpponents.get(userId) ?? []).includes(otherId)) return true;
-    const u = this.store.userById(userId);
-    return !!u && u.friends.includes(otherId);
-  }
-
-  private rematchRequest(user: UserRecord): void {
-    if (!this.socialLimiter.take(user.id)) return;
-    if (this.matches.has(user.id)) throw new KnownError('Termine a partida atual primeiro.');
-    const oppId = (this.recentOpponents.get(user.id) ?? [])[0];
-    const opp = oppId ? this.store.userById(oppId) : undefined;
-    // oponente precisa estar online e livre para a revanche valer
-    if (!opp || !this.sockets.has(opp.id) || this.matches.has(opp.id)) {
-      return this.sendTo(user.id, { t: 'rematch:state', status: 'unavailable' });
-    }
-    // o outro já pediu revanche comigo? então os dois querem — começa a partida
-    const theirs = this.pendingRematch.get(opp.id);
-    if (theirs && theirs.opponentId === user.id) {
-      this.pendingRematch.delete(opp.id);
-      this.pendingRematch.delete(user.id);
-      this.startMatch([user, opp]);
-      return;
-    }
-    this.pendingRematch.set(user.id, { opponentId: opp.id, at: Date.now() });
-    this.sendTo(user.id, { t: 'rematch:state', status: 'sent' });
-    this.sendTo(opp.id, {
-      t: 'rematch:state', status: 'incoming',
-      from: { id: user.id, name: displayName(user), avatar: user.avatar, photo: user.photo },
-    });
-  }
-
-  private rematchDecline(user: UserRecord): void {
-    // descarta um pedido recebido e avisa quem o enviou
-    for (const [requesterId, req] of this.pendingRematch) {
-      if (req.opponentId === user.id) {
-        this.pendingRematch.delete(requesterId);
-        this.sendTo(requesterId, { t: 'rematch:state', status: 'declined' });
-      }
-    }
-  }
-
-  private friendSet(user: UserRecord, friendId: string, add: boolean): void {
-    if (!this.socialLimiter.take(user.id)) return;
-    // só dá para adicionar quem você encontrou (remover é sempre permitido)
-    if (add && !this.knows(user.id, friendId)) {
-      throw new KnownError('Só dá para adicionar quem você enfrentou.');
-    }
-    this.store.setFriend(user.id, friendId, add);
-    this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(user) });
   }
 
   private factionPick(user: UserRecord, factionId: string): void {
@@ -713,17 +650,6 @@ export class App {
     }
     if (contentFlags.comeback) content.comeback = true;
     return content;
-  }
-
-  private profileGet(user: UserRecord, targetId: string): void {
-    if (!this.socialLimiter.take(user.id)) return;
-    const target = this.store.userById(targetId);
-    if (!target) throw new KnownError('Jogador não encontrado.');
-    const appearsInRanking = !target.guest && target.wins + target.losses > 0;
-    if (!this.knows(user.id, targetId) && !appearsInRanking) {
-      throw new KnownError('Perfil ainda não está disponível publicamente.');
-    }
-    this.sendTo(user.id, { t: 'profile:view', profile: this.store.publicProfileOf(target) });
   }
 
   // ─── Ranking ────────────────────────────────────────────────────
@@ -771,4 +697,4 @@ export class App {
 }
 
 /** Erros esperados de fluxo (não são bugs — não vão para o console). */
-class KnownError extends Error {}
+class KnownError extends ApplicationError {}
