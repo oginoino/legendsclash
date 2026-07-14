@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
 import { achievementsOf, FACTION_TILTS } from '@legendsclash/shared';
@@ -7,11 +6,12 @@ import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry,
 import { Store, type UserRecord } from './store.js';
 import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
-import { Match, GameError, type EngineResult, type MatchPlayer, type MatchContent, type MatchSnapshot } from './game/engine.js';
+import { Match, GameError, type EngineResult, type MatchSnapshot } from './game/engine.js';
 import { applyElo, leagueOf } from './elo.js';
 import { RateLimiter } from './ratelimit.js';
 import { ApplicationError } from './application/application-error.js';
 import { ChatCoordinator } from './application/chat/chat-coordinator.js';
+import { MatchFactory } from './application/matches/match-factory.js';
 import { MatchRegistry } from './application/matches/match-registry.js';
 import { SocialCoordinator } from './application/social/social-coordinator.js';
 
@@ -53,6 +53,7 @@ export class App {
   // dentro dos coordenadores responsáveis por essas regras.
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
   private readonly chat: ChatCoordinator;
+  private readonly matchFactory: MatchFactory;
   private readonly social: SocialCoordinator;
   private queueTimer: NodeJS.Timeout;
   /** Avisa o snapshot de runtime quando o conjunto de partidas muda. */
@@ -63,6 +64,12 @@ export class App {
       store,
       recipientsFor: (userId) => this.interactionParticipants(userId),
       sendTo: (userId, message) => this.sendTo(userId, message),
+    });
+    this.matchFactory = new MatchFactory({
+      flags: contentFlags,
+      onUpdate: (match) => this.broadcastMatch(match),
+      onRankedFinish: (match, result) => this.finishMatch(match, result),
+      onPracticeFinish: (match, result) => this.finishPracticeMatch(match, result),
     });
     this.social = new SocialCoordinator({
       store,
@@ -361,31 +368,7 @@ export class App {
   // ─── Partidas ───────────────────────────────────────────────────
 
   private startMatch(users: UserRecord[]): void {
-    const players: MatchPlayer[] = users.map((u) => ({
-      id: u.id, name: displayName(u), avatar: u.avatar,
-      commander: u.commander, accent: u.accent,
-      photo: u.photo, frame: u.frame, accentStyle: u.accentStyle, mmr: u.mmr,
-      tutorialEligible: u.wins + u.losses === 0,
-    }));
-    // Sorteia a ordem dos assentos: sem isso, o seat 0 (que joga primeiro) seria
-    // sempre o de menor MMR do par, porque o matchmaking ordena a fila por MMR —
-    // a vantagem de iniciativa ficaria correlacionada ao rating. Fisher–Yates com
-    // aleatoriedade do servidor (mesma garantia anti-cheat do embaralhamento de deck).
-    for (let i = players.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      [players[i], players[j]] = [players[j], players[i]];
-    }
-    const content = this.matchContentFor(users.map((u) => u.id));
-    let match: Match;
-    match = new Match(
-      players,
-      () => this.broadcastMatch(match),
-      (result) => this.finishMatch(match, result),
-      undefined, // turnSeconds: usa o padrão (TURN_SECONDS)
-      true, // habilita a fase de mulligan (troca de mão) antes do turno 1
-      [], // sem bots numa partida ranqueada
-      content, // conteúdo variável (Fase 6) — vazio quando as flags estão off
-    );
+    const { match, players, content } = this.matchFactory.createRanked(users);
     this.matches.register(match, users.map((user) => user.id));
     match.start();
     // telemetria: ordem de assentos + condições de conteúdo p/ winrate-por-condição
@@ -416,12 +399,7 @@ export class App {
       try {
         const ids = snap.seats.map((s) => s.player.id);
         if (ids.some((id) => !this.store.userById(id) || this.matches.has(id))) continue;
-        let match: Match;
-        match = Match.restore(
-          snap,
-          () => this.broadcastMatch(match),
-          (result) => this.finishMatch(match, result),
-        );
+        const match = this.matchFactory.restoreRanked(snap);
         this.matches.register(match, ids);
         restored++;
       } catch (err) {
@@ -443,28 +421,7 @@ export class App {
     if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
     this.queue.leave(user.id);
     this.rooms.leave(user.id);
-    const bot: MatchPlayer = {
-      id: 'bot:' + randomInt(1_000_000_000), name: 'Treinador IA', avatar: 'robot',
-      commander: 'robot', accent: '#3fd3c6', photo: null, frame: 'none',
-      accentStyle: 'aurora', mmr: user.mmr,
-    };
-    const human: MatchPlayer = {
-      id: user.id, name: displayName(user), avatar: user.avatar,
-      commander: user.commander, accent: user.accent,
-      photo: user.photo, frame: user.frame, accentStyle: user.accentStyle, mmr: user.mmr,
-      tutorialEligible: user.wins + user.losses === 0,
-    };
-    // humano no assento 0 (age primeiro) — aprendizado mais gentil
-    let match: Match;
-    match = new Match(
-      [human, bot],
-      () => this.broadcastMatch(match),
-      (result) => this.finishPracticeMatch(match, result),
-      undefined,
-      true, // mulligan (o bot auto-confirma)
-      [bot.id],
-      this.matchContentFor([user.id]), // treino respeita as flags de conteúdo
-    );
+    const match = this.matchFactory.createPractice(user);
     // só o humano é registrado (o bot não tem socket)
     this.matches.register(match, [user.id], 'practice');
     match.start();
@@ -627,21 +584,6 @@ export class App {
     const updated = this.store.setFaction(user.id, factionId);
     if (!updated) throw new KnownError('Perfil não encontrado.');
     this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(updated) });
-  }
-
-  /** Monta o conteúdo variável da partida a partir das flags + escolhas (Fase 6). */
-  private matchContentFor(ids: string[]): MatchContent {
-    const content: MatchContent = {};
-    if (contentFlags.factions) {
-      const factions: Record<string, string> = {};
-      for (const id of ids) {
-        const f = this.store.userById(id)?.faction;
-        if (f) factions[id] = f;
-      }
-      if (Object.keys(factions).length) content.factions = factions;
-    }
-    if (contentFlags.comeback) content.comeback = true;
-    return content;
   }
 
   // ─── Ranking ────────────────────────────────────────────────────
