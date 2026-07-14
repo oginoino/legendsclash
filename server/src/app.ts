@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
-import { TAUNTS, achievementsOf, FACTION_TILTS } from '@legendsclash/shared';
+import { achievementsOf, FACTION_TILTS } from '@legendsclash/shared';
 import { contentFlags } from './content.js';
 import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry, MatchResult, Profile } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
@@ -9,8 +9,8 @@ import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
 import { Match, GameError, type EngineResult, type MatchPlayer, type MatchContent, type MatchSnapshot } from './game/engine.js';
 import { applyElo, leagueOf } from './elo.js';
-import { filterText, MAX_CHAT_LENGTH } from './wordfilter.js';
 import { RateLimiter } from './ratelimit.js';
+import { ChatCoordinator, ChatError } from './application/chat/chat-coordinator.js';
 
 /**
  * Orquestra sessões WebSocket: autenticação, fila, salas, chat e partidas.
@@ -18,8 +18,6 @@ import { RateLimiter } from './ratelimit.js';
  */
 
 const QUEUE_TICK_MS = 2000;
-/** Nº de denunciantes distintos por alvo que sinaliza revisão (moderação). */
-const REPORT_FLAG_THRESHOLD = 3;
 
 /**
  * IP do cliente para a guarda anti alt-farm. Atrás do Caddy (produção) o IP real
@@ -47,23 +45,25 @@ export class App {
   private rooms = new RoomManager();
   private matches = new Map<string, Match>(); // userId → partida ativa
   private practiceMatches = new Set<string>(); // ids de partidas de treino (sem MMR)
-  private recentChat = new Map<string, string[]>(); // userId → últimas mensagens (contexto de report)
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
   private userIp = new Map<string, string>(); // userId → IP da conexão ativa
-  private reportsByTarget = new Map<string, Set<string>>(); // denunciado → denunciantes distintos
   private recentOpponents = new Map<string, string[]>(); // userId → oponentes recentes (revanche/perfil/amigo)
   private pendingRematch = new Map<string, { opponentId: string; at: number }>(); // quem pediu revanche → com quem
-  // Rate-limits por usuário (token bucket): defesa autoritativa contra flood/DoS
-  // e spam de provocação — os cooldowns do cliente são só UX.
+  // Rate-limits gerais e sociais. Chat e provocação mantêm os próprios baldes
+  // dentro do coordenador responsável por essas regras.
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
-  private chatLimiter = new RateLimiter(5, 1); // chat livre: ~1 msg/s, burst 5
-  private tauntLimiter = new RateLimiter(1, 0.4); // provocação: ~1 a cada 2,5 s
   private socialLimiter = new RateLimiter(4, 0.5); // revanche/amigo/perfil: anti-enumeração
+  private readonly chat: ChatCoordinator;
   private queueTimer: NodeJS.Timeout;
   /** Avisa o snapshot de runtime quando o conjunto de partidas muda. */
   onMatchesChanged: (() => void) | null = null;
 
   constructor(private store: Store) {
+    this.chat = new ChatCoordinator({
+      store,
+      recipientsFor: (userId) => this.chatRecipients(userId),
+      sendTo: (userId, message) => this.sendTo(userId, message),
+    });
     this.queueTimer = setInterval(() => this.tickQueue(), QUEUE_TICK_MS);
   }
 
@@ -86,7 +86,9 @@ export class App {
           ? err.message
           : 'Erro interno.';
         this.send(ws, { t: 'error', message });
-        if (!(err instanceof GameError) && !(err instanceof KnownError)) console.error(err);
+        if (!(err instanceof GameError) && !(err instanceof KnownError) && !(err instanceof ChatError)) {
+          console.error(err);
+        }
       }
     });
     ws.on('close', () => this.handleClose(ws));
@@ -116,11 +118,11 @@ export class App {
       case 'room:join': return this.roomJoin(user, msg.code);
       case 'room:leave': return this.roomLeave(user);
       case 'room:start': return this.roomStart(user);
-      case 'chat:send': return this.chatSend(user, msg.text);
-      case 'chat:taunt': return this.tauntSend(user, msg.id);
-      case 'chat:mute': return this.chatMute(user, msg.playerId, true);
-      case 'chat:unmute': return this.chatMute(user, msg.playerId, false);
-      case 'chat:report': return this.chatReport(user, msg.playerId, msg.reason);
+      case 'chat:send': return this.chat.send(user, msg.text);
+      case 'chat:taunt': return this.chat.sendTaunt(user, msg.id);
+      case 'chat:mute': return this.chat.setMuted(user, msg.playerId, true);
+      case 'chat:unmute': return this.chat.setMuted(user, msg.playerId, false);
+      case 'chat:report': return this.chat.report(user, msg.playerId, msg.reason);
       case 'game:mulligan': return this.withMatch(user, (m) => m.mulligan(user.id, msg.iids));
       case 'game:tutorial': {
         // Sinal de UI idempotente: ao desmontar/reconectar a partida pode ja ter acabado.
@@ -194,8 +196,7 @@ export class App {
     if (wasQueued) this.store.recordEvent('queue_abandon', { userId });
     // libera os baldes de rate-limit (reconexão recomeça com balde cheio)
     this.msgLimiter.forget(userId);
-    this.chatLimiter.forget(userId);
-    this.tauntLimiter.forget(userId);
+    this.chat.forget(userId);
     this.socialLimiter.forget(userId);
     this.userIp.delete(userId);
     // descarta ofertas de revanche pendentes (minhas e as direcionadas a mim)
@@ -616,88 +617,13 @@ export class App {
     this.onMatchesChanged?.();
   }
 
-  // ─── Chat (filtro, mute e report — slide "MVP — 90 dias") ───────
-
-  private chatSend(user: UserRecord, rawText: string): void {
-    // chat é restrito à sala/partida (efêmero) — convidados participam normalmente
-    const text = filterText(String(rawText).slice(0, MAX_CHAT_LENGTH).trim());
-    if (!text) return;
-    // flood: acima do limite, descarta em silêncio (o cliente também throttla)
-    if (!this.chatLimiter.take(user.id)) return;
-    this.deliverChat(user, text);
-  }
-
-  /**
-   * Provocação tipada: só aceita ids do catálogo TAUNTS e aplica o cooldown no
-   * servidor. O cooldown do cliente (GameView) é só UX — um socket cru o ignora,
-   * então o limite que conta vive aqui.
-   */
-  private tauntSend(user: UserRecord, id: string): void {
-    const taunt = TAUNTS.find((t) => t.id === id);
-    if (!taunt) throw new KnownError('Provocação inválida.');
-    if (!this.tauntLimiter.take(user.id)) return; // dentro do cooldown: descarta
-    this.deliverChat(user, taunt.text);
-  }
-
-  /** Entrega uma mensagem ao chat da sala/partida, respeitando mute do destinatário. */
-  private deliverChat(user: UserRecord, text: string): void {
-    const recent = this.recentChat.get(user.id) ?? [];
-    recent.push(text);
-    this.recentChat.set(user.id, recent.slice(-10));
-
-    const recipients = this.chatRecipients(user.id);
-    if (!recipients.length) throw new KnownError('Você não está em uma sala ou partida.');
-
-    const message = {
-      from: { id: user.id, name: displayName(user), avatar: user.avatar, photo: user.photo },
-      text,
-      at: Date.now(),
-    };
-    for (const rid of recipients) {
-      const r = this.store.userById(rid);
-      if (r?.muted.includes(user.id)) continue; // silenciado pelo destinatário
-      this.sendTo(rid, { t: 'chat:message', message });
-    }
-  }
-
+  // A política de chat vive no coordenador; App só resolve o contexto atual.
   private chatRecipients(userId: string): string[] {
     const match = this.matches.get(userId);
     if (match) return match.playerIds();
     const room = this.rooms.roomOf(userId);
     if (room) return room.members.map((m) => m.id);
     return [];
-  }
-
-  private chatMute(user: UserRecord, targetId: string, muted: boolean): void {
-    if (targetId === user.id) return; // silenciar a si mesmo não faz sentido
-    this.store.setMuted(user.id, targetId, muted);
-    this.sendTo(user.id, { t: 'profile', profile: this.store.profileOf(user) });
-  }
-
-  private chatReport(user: UserRecord, targetId: string, reason: string): void {
-    // valida o alvo: sem auto-denúncia e só quem está na mesma sala/partida
-    // (evita poluição da base e report-bombing de ids arbitrários)
-    if (targetId === user.id) throw new KnownError('Você não pode se denunciar.');
-    if (!this.chatRecipients(user.id).includes(targetId)) {
-      throw new KnownError('Só dá para denunciar quem está na sua sala ou partida.');
-    }
-    // alívio imediato: silencia o denunciado para o denunciante (atalho do mute)
-    this.store.setMuted(user.id, targetId, true);
-    this.store.addReport({
-      reporterId: user.id,
-      reportedId: targetId,
-      reason: String(reason).slice(0, 500),
-      context: (this.recentChat.get(targetId) ?? []).join(' | '),
-      at: Date.now(),
-    });
-    // sinal de volume: denunciantes DISTINTOS por alvo (fecha o ciclo da denúncia)
-    const reporters = this.reportsByTarget.get(targetId) ?? new Set<string>();
-    reporters.add(user.id);
-    this.reportsByTarget.set(targetId, reporters);
-    if (reporters.size >= REPORT_FLAG_THRESHOLD) {
-      console.warn(`[moderação] ${targetId} acumulou ${reporters.size} denunciantes distintos — revisar`);
-    }
-    this.sendTo(user.id, { t: 'chat:report:ok' });
   }
 
   // ─── Continuidade social: revanche, amigos e card de perfil ─────
