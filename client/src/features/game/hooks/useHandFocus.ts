@@ -3,6 +3,15 @@ import type { GameView } from '@legendsclash/shared';
 import type { HandFocus } from '../view-model';
 
 const TOUCH_CONFIRM_QUERY = '(hover: none), (pointer: coarse)';
+/** Cobre os 350ms de `card-deal`, quando a geometria ainda é intermediária. */
+const HAND_LAYOUT_SETTLE_MS = 400;
+
+function revealFirstCard(hand: HTMLDivElement) {
+  const firstCard = hand.querySelector<HTMLElement>('.card:first-child');
+  if (!firstCard) return;
+  const minLeft = hand.getBoundingClientRect().left + 10;
+  if (firstCard.getBoundingClientRect().left < minLeft) hand.scrollLeft = 0;
+}
 
 export function useHandFocus(game: GameView | null, myTurn: boolean) {
   const [handFocus, setHandFocus] = useState<HandFocus>(null);
@@ -32,14 +41,21 @@ export function useHandFocus(game: GameView | null, myTurn: boolean) {
     if (!handSignature) return;
     const hand = handRef.current;
     if (!hand) return;
-    const firstCard = hand.querySelector<HTMLElement>('.card:first-child');
-    if (!firstCard) return;
-    const handRect = hand.getBoundingClientRect();
-    const firstCardRect = firstCard.getBoundingClientRect();
-    const minLeft = handRect.left + 10;
-    if (firstCardRect.left < minLeft) {
-      hand.scrollLeft = Math.max(0, hand.scrollLeft - (minLeft - firstCardRect.left));
-    }
+    const scrollSnapType = hand.style.scrollSnapType;
+    hand.style.scrollSnapType = 'none';
+    revealFirstCard(hand);
+    const frame = window.requestAnimationFrame(() => {
+      revealFirstCard(hand);
+    });
+    const settle = window.setTimeout(() => {
+      revealFirstCard(hand);
+      hand.style.scrollSnapType = scrollSnapType;
+    }, HAND_LAYOUT_SETTLE_MS);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
+      hand.style.scrollSnapType = scrollSnapType;
+    };
   }, [handSignature]);
 
   return { handFocus, handRef, setHandFocus, touchPlayConfirm };

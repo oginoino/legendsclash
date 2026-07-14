@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CARDS, MAX_BOARD } from '@legendsclash/shared';
 import { send, useAppState } from '../store';
-import {
-  IcoCheck, IcoSurrender, IcoTarget,
-} from '../icons';
-import { CardView } from '../components/CardView';
+import { IcoSurrender } from '../icons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { RulesModal } from '../components/RulesModal';
 import { Tutorial } from '../components/Tutorial';
@@ -13,16 +9,20 @@ import { sfx } from '../sounds';
 import { usePreferences } from '../preferences';
 import { createGameActionController } from '../features/game/action-controller';
 import { resolveAimArrow } from '../features/game/aim-geometry-model';
-import { Creature, GhostCreature, HeroPlate } from '../features/game/components/ArenaPieces';
+import { HeroPlate } from '../features/game/components/ArenaPieces';
+import {
+  EnemyBoardRow,
+  PlayerBoardRow,
+} from '../features/game/components/ArenaBoardRows';
 import { GameSidePanel, MobileGameToolbar } from '../features/game/components/GameChrome';
 import type { SidePane } from '../features/game/components/GameChrome';
 import { GameInteractionOverlays } from '../features/game/components/GameInteractionOverlays';
 import { GameOverOverlay } from '../features/game/components/GameOverOverlay';
 import { MulliganOverlay } from '../features/game/components/MulliganOverlay';
+import { PlayerHand } from '../features/game/components/PlayerHand';
 import { TurnHud } from '../features/game/components/TurnHud';
 import { createGameDragController } from '../features/game/drag-controller';
 import type { DragCardVisual } from '../features/game/drag-gesture-model';
-import { DAMAGE_SOURCE_TTL, ENEMY_ATTACK_FX_TTL } from '../features/game/feedback-model';
 import type { Bubble } from '../features/game/feedback-model';
 import { deriveGameHud } from '../features/game/hud-model';
 import { useCardInspection } from '../features/game/hooks/useCardInspection';
@@ -38,9 +38,8 @@ import {
   visibleInspection,
 } from '../features/game/presentation-model';
 import {
-  CAN_HOVER,
   TAUNT_COOLDOWN_MS,
-  dupPositions, handIntent,
+  dupPositions,
 } from '../features/game/view-model';
 import {
   combatPreviewFor,
@@ -306,7 +305,6 @@ export function GameView() {
   const targetingFace = targeting.face;
 
   const fxFor = (anchor: string) => fx.filter((f) => f.anchor === anchor);
-  const ghostsFor = (seatIdx: number) => ghosts.filter((g) => g.seatIdx === seatIdx);
   const bubbleFor = (seatIdx: number): Bubble | null => {
     let latest: Bubble | null = null;
     for (const b of bubbles) if (b.seatIdx === seatIdx && (!latest || b.at >= latest.at)) latest = b;
@@ -323,7 +321,6 @@ export function GameView() {
     mustHitTaunt,
   });
   const draggingHandTarget = dragCard?.mode === 'target';
-  const draggingCreaturePlay = dragCard?.mode === 'play' && CARDS[dragCard.defId]?.type === 'creature';
 
   const { arrow, lockOn } = resolveAimArrow({
     enemySeatIdx,
@@ -413,51 +410,32 @@ export function GameView() {
           bubble={bubbleFor(enemySeatIdx)}
         />
 
-        <div className={`board-row enemy-row ${targetingEnemyCreature ? 'targetable' : ''} ${draggingHandTarget && targetingEnemyCreature ? 'drop-destinations enemy' : ''}`}>
-          {draggingHandTarget && targetingEnemyCreature && enemy.board.length > 0 && (
-            <span className="drop-zone-label enemy"><IcoTarget className="ic" /> Destinos possíveis</span>
-          )}
-          {enemy.board.map((c, i) => {
-            const isTaunt = CARDS[c.defId].keywords?.includes('taunt');
-            const blocked = !!mustHitTaunt && !isTaunt;
-            const hovered = hover?.kind === 'creature' && hover.iid === c.iid;
-            // chip estático em cada alvo válido enquanto algo está selecionado
-            const staticPv = !hovered && targetingEnemyCreature && !blocked
-              ? previewFor({ kind: 'creature', iid: c.iid })
-              : null;
-            return (
-              <Creature
-                key={c.iid}
-                c={c}
-                bonus={enemy.attackBonus}
-                lunging={attackFx?.iid === c.iid && now - attackFx.at < ENEMY_ATTACK_FX_TTL}
-                sourceActive={damageNotice?.sourceIid === c.iid && now - damageNotice.at < DAMAGE_SOURCE_TTL}
-                blocked={blocked}
-                dropTarget={!!draggingHandTarget && !!targetingEnemyCreature && !blocked}
-                dropHovered={!!draggingHandTarget && hoverValid && hovered}
-                dropTone="enemy"
-                posIndex={enemyPos.get(c.iid)}
-                preview={hovered ? preview : staticPv}
-                previewDim={!hovered && !!staticPv}
-                onHover={(on) => setHover(on ? { kind: 'creature', iid: c.iid } : null)}
-                fx={fxFor(`cr-${c.iid}`)}
-                onClick={() => clickEnemyCreature(c)}
-                onInspect={(e) => showInspect({
-                  iid: c.iid,
-                  defId: c.defId,
-                  x: e.clientX,
-                  y: e.clientY - 12,
-                  source: 'creature',
-                }, 3200)}
-                style={{ order: i * 2 }}
-              />
-            );
-          })}
-          {ghostsFor(enemySeatIdx).map((g) => <GhostCreature key={g.id} g={g} />)}
-          {enemy.board.length === 0 && ghostsFor(enemySeatIdx).length === 0 && (
-            <div className="board-empty">mesa vazia</div>
-          )}
-        </div>
+        <EnemyBoardRow
+          enemy={enemy}
+          enemySeatIdx={enemySeatIdx}
+          targeting={targetingEnemyCreature}
+          draggingTarget={!!draggingHandTarget}
+          mustHitTaunt={mustHitTaunt}
+          hover={hover}
+          hoverValid={hoverValid}
+          attackFx={attackFx}
+          damageNotice={damageNotice}
+          now={now}
+          positions={enemyPos}
+          preview={preview}
+          previewFor={previewFor}
+          effectsFor={fxFor}
+          ghosts={ghosts}
+          onHover={setHover}
+          onCreatureClick={clickEnemyCreature}
+          onInspect={(creature, event) => showInspect({
+            iid: creature.iid,
+            defId: creature.defId,
+            x: event.clientX,
+            y: event.clientY - 12,
+            source: 'creature',
+          }, 3200)}
+        />
 
         <TurnHud
           game={game}
@@ -474,47 +452,33 @@ export function GameView() {
           onTaunt={sendTaunt}
         />
 
-        <div className={`board-row my-row ${targetingFriendly ? 'friendly-targetable' : ''} ${draggingHandTarget && targetingFriendly ? 'drop-destinations support' : ''} ${draggingCreaturePlay ? `card-drop-zone ${dragCard?.valid ? 'ready' : ''}` : ''}`}>
-          {draggingHandTarget && targetingFriendly && me.board.length > 0 && (
-            <span className="drop-zone-label support"><IcoTarget className="ic" /> Criaturas aliadas</span>
-          )}
-          {draggingCreaturePlay && (
-            <span className="drop-zone-label play"><IcoCheck className="ic" /> {me.board.length >= MAX_BOARD ? 'Mesa cheia' : 'Solte para invocar'}</span>
-          )}
-          {me.board.map((c, i) => (
-            <Creature
-              key={c.iid}
-              c={c}
-              bonus={me.attackBonus}
-              mine
-              selected={selection?.kind === 'attacker' && selection.iid === c.iid}
-              buffTarget={targetingFriendly}
-              dropTarget={!!draggingHandTarget && !!targetingFriendly}
-              dropHovered={!!draggingHandTarget && hoverValid && hover?.kind === 'creature' && hover.iid === c.iid}
-              dropTone="support"
-              lunging={attackFx?.iid === c.iid && now - attackFx.at < 500}
-              warn={cantAttackWarn?.iid === c.iid && now - cantAttackWarn.at < 600}
-              posIndex={myPos.get(c.iid)}
-              retaliation={preview?.attackerIid === c.iid ? preview : null}
-              fx={fxFor(`cr-${c.iid}`)}
-              onClick={() => clickMyCreature(c)}
-              onPointerDown={(e) => onTargetPointerDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
-              onMouseDown={(e) => onTargetMouseDown(e, { kind: 'creature', iid: c.iid, defId: c.defId })}
-              onInspect={(e) => showInspect({
-                iid: c.iid,
-                defId: c.defId,
-                x: e.clientX,
-                y: e.clientY - 12,
-                source: 'creature',
-              }, 3200)}
-              style={{ order: i * 2 }}
-            />
-          ))}
-          {ghostsFor(game.yourSeat).map((g) => <GhostCreature key={g.id} g={g} />)}
-          {me.board.length === 0 && ghostsFor(game.yourSeat).length === 0 && (
-            <div className="board-empty">invoque criaturas aqui</div>
-          )}
-        </div>
+        <PlayerBoardRow
+          player={me}
+          playerSeatIdx={game.yourSeat}
+          targetingFriendly={targetingFriendly}
+          draggingTarget={!!draggingHandTarget}
+          dragCard={dragCard}
+          selection={selection}
+          hover={hover}
+          hoverValid={hoverValid}
+          attackFx={attackFx}
+          cantAttackWarn={cantAttackWarn}
+          now={now}
+          positions={myPos}
+          preview={preview}
+          effectsFor={fxFor}
+          ghosts={ghosts}
+          onCreatureClick={clickMyCreature}
+          onPointerDown={onTargetPointerDown}
+          onMouseDown={onTargetMouseDown}
+          onInspect={(creature, event) => showInspect({
+            iid: creature.iid,
+            defId: creature.defId,
+            x: event.clientX,
+            y: event.clientY - 12,
+            source: 'creature',
+          }, 3200)}
+        />
 
         <HeroPlate
           seat={me}
@@ -526,51 +490,21 @@ export function GameView() {
           impact={damageNotice}
         />
 
-        <div className="hand" ref={handRef}>
-          {game.hand.map((c, i) => {
-            const off = i - (game.hand.length - 1) / 2;
-            const isSelected = selection?.kind === 'hand' && selection.iid === c.iid;
-            const isFocused = handFocus?.iid === c.iid;
-            const affordable = CARDS[c.defId].cost <= me.energy;
-            const dragging = dragCard?.iid === c.iid;
-            const intent = affordable && myTurn ? handIntent(c.defId, isSelected) : null;
-            return (
-              <CardView
-                key={c.iid}
-                defId={c.defId}
-                anchorId={`hand-${c.iid}`}
-                playable={myTurn && affordable}
-                selected={isSelected || isFocused}
-                lifting={dragging}
-                className={[
-                  myTurn && !affordable ? 'unaffordable' : '',
-                  dragging ? 'drag-origin' : '',
-                ].filter(Boolean).join(' ') || undefined}
-                statusLabel={myTurn && !affordable ? `Falta ${CARDS[c.defId].cost - me.energy}` : isFocused ? 'Pronta' : intent?.label}
-                statusTone={myTurn && !affordable ? 'warn' : isFocused ? 'good' : intent?.tone}
-                onClick={() => clickHandCard(c.iid, c.defId)}
-                onPointerDown={myTurn ? (e) => onTargetPointerDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
-                onMouseDown={myTurn ? (e) => onTargetMouseDown(e, { kind: 'hand', iid: c.iid, defId: c.defId }) : undefined}
-                onMouseEnter={(e) => {
-                  if (myTurn && affordable) setHoverCost(CARDS[c.defId].cost);
-                  if (!CAN_HOVER) return;
-                  const r = e.currentTarget.getBoundingClientRect();
-                  showInspect({
-                    iid: c.iid,
-                    defId: c.defId,
-                    x: r.left + r.width / 2,
-                    y: r.top - 10,
-                    source: 'hand',
-                  });
-                }}
-                onMouseLeave={() => { setHoverCost(0); clearInspect('hand'); }}
-                style={isSelected && !dragging ? undefined : {
-                  transform: `rotate(${off * 2.5}deg) translateY(${Math.abs(off) * 5}px)`,
-                }}
-              />
-            );
-          })}
-        </div>
+        <PlayerHand
+          cards={game.hand}
+          energy={me.energy}
+          myTurn={myTurn}
+          selection={selection}
+          handFocus={handFocus}
+          dragCard={dragCard}
+          handRef={handRef}
+          onCardClick={clickHandCard}
+          onPointerDown={onTargetPointerDown}
+          onMouseDown={onTargetMouseDown}
+          onHoverCostChange={setHoverCost}
+          onInspect={showInspect}
+          onClearInspect={() => clearInspect('hand')}
+        />
       </div>
 
       <GameSidePanel
