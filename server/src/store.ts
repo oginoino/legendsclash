@@ -1,6 +1,3 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
@@ -31,6 +28,7 @@ import {
   sessionRowFromRecord,
   userFromPlayerRow,
 } from './persistence/supabase-mappers.js';
+import { JsonPersistence } from './persistence/json-persistence.js';
 
 export type {
   EventRecord,
@@ -72,73 +70,6 @@ export function advanceStreak(
  *   as variáveis não estão configuradas, ou forçado com LC_LOCAL=1 (útil para
  *   desenvolver sem tocar o banco de produção mesmo com .env preenchido).
  */
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_DB_PATH = join(__dirname, '..', 'data', 'db.json');
-
-// ─── Fallback local: snapshot JSON com escrita debounced ─────────
-
-class JsonPersistence implements Persistence {
-  private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
-  private saveTimer: NodeJS.Timeout | null = null;
-
-  constructor(private path: string = DEFAULT_DB_PATH) {}
-
-  async load(): Promise<DbShape> {
-    if (existsSync(this.path)) {
-      this.db = JSON.parse(readFileSync(this.path, 'utf8'));
-    }
-    // Shape legado: preenche os campos novos e descarta o token eterno.
-    this.db.sessions ??= [];
-    this.db.events ??= [];
-    for (const u of this.db.users) {
-      u.authUserId ??= null;
-      u.commander ??= u.avatar; // contas anteriores: retrato = avatar do perfil
-      u.accent ??= DEFAULT_ACCENT;
-      // emoji legado → id de ícone estável (cosméticos v2)
-      u.avatar = normalizeIconId(u.avatar);
-      u.commander = normalizeIconId(u.commander);
-      u.photo ??= null;
-      u.frame ??= DEFAULT_FRAME;
-      u.accentStyle ??= DEFAULT_ACCENT_STYLE;
-      u.profileCover ??= DEFAULT_PROFILE_COVER;
-      u.faction ??= '';
-      u.guest = false; // só contas persistem; convidados vivem em memória
-      u.league ??= leagueOf(u.mmr) as League;
-      u.streak ??= 0;
-      u.lastPlayDay ??= 0;
-      u.friends ??= [];
-      delete (u as { token?: string }).token;
-    }
-    // o Store muta este mesmo objeto; o snapshot sempre grava o estado atual
-    return this.db;
-  }
-
-  saveUser(): void { this.scheduleSave(); }
-  saveMatch(): void { this.scheduleSave(); }
-  saveReport(): void { this.scheduleSave(); }
-  saveSession(): void { this.scheduleSave(); }
-  deleteSession(): void { this.scheduleSave(); }
-  saveEvent(): void { this.scheduleSave(); }
-
-  /** Sem storage externo no modo local: a própria data-URL vira a "URL". */
-  async uploadAvatar(_userId: string, bytes: Buffer, contentType: string): Promise<string> {
-    return `data:${contentType};base64,${bytes.toString('base64')}`;
-  }
-
-  private scheduleSave(): void {
-    if (this.saveTimer) return;
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = null;
-      try {
-        mkdirSync(dirname(this.path), { recursive: true });
-        writeFileSync(this.path, JSON.stringify(this.db, null, 2));
-      } catch (err) {
-        console.error('[store] falha ao salvar snapshot:', err);
-      }
-    }, 500);
-  }
-}
 
 // ─── PostgreSQL no Supabase ──────────────────────────────────────
 
