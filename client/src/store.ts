@@ -161,8 +161,9 @@ function handleServerMsg(msg: ServerMsg): void {
       const legacyFaction = state.faction;
       const faction = persistedFaction || legacyFaction;
       try { localStorage.setItem('lc_faction', faction); } catch { /* ignore */ }
-      setState({
-        connected: true, profile: msg.profile,
+      dispatch({
+        type: 'server/hello',
+        profile: msg.profile,
         factionsEnabled: !!msg.content?.factions,
         cosmeticsEnabled: !!msg.content?.cosmetics,
         faction,
@@ -182,66 +183,63 @@ function handleServerMsg(msg: ServerMsg): void {
       break;
     case 'profile':
       try { localStorage.setItem('lc_faction', msg.profile.faction ?? ''); } catch { /* ignore */ }
-      setState({ profile: msg.profile, faction: msg.profile.faction ?? '' });
+      dispatch({ type: 'server/profile', profile: msg.profile, faction: msg.profile.faction ?? '' });
       break;
     case 'queue:status':
-      setState({ inQueue: msg.inQueue, queueSize: msg.size, waitingAlone: !!msg.waitingAlone });
+      dispatch({
+        type: 'server/queue-status', inQueue: msg.inQueue,
+        queueSize: msg.size, waitingAlone: !!msg.waitingAlone,
+      });
       break;
     case 'room:state':
-      setState({
-        room: msg.room,
-        chat: msg.room && state.room?.code === msg.room.code ? state.chat : [],
-      });
+      dispatch({ type: 'server/room-state', room: msg.room });
       break;
     case 'game:state': {
       if (!msg.view) {
         // verdade do servidor: não há partida. Destrava a batalha fantasma
         // que sobra quando o servidor reinicia no meio do jogo — exceto se a
         // tela de resultado está aberta (o jogador fecha quando quiser).
+        const interrupted = !!state.game && !state.gameOver;
         rememberActiveMatch(null);
-        if (state.game && !state.gameOver) {
-          setState({ game: null, chat: [], recoveringGame: false });
-          showToast('A partida anterior foi encerrada no servidor.');
-        } else setState({ recoveringGame: false });
+        dispatch({ type: 'server/game-state', game: null });
+        if (interrupted) showToast('A partida anterior foi encerrada no servidor.');
         break;
       }
-      const entering = !state.game || state.game.matchId !== msg.view.matchId;
       rememberActiveMatch(msg.view.status === 'finished' ? null : msg.view.matchId);
-      setState({
-        game: msg.view,
-        recoveringGame: false,
-        inQueue: false,
-        room: null,
-        ...(entering ? { chat: [], gameOver: null, rematch: null } : {}),
-      });
+      dispatch({ type: 'server/game-state', game: msg.view });
       break;
     }
     case 'game:over':
       rememberActiveMatch(null);
-      setState({ gameOver: msg.result, recoveringGame: false });
+      dispatch({ type: 'server/game-over', result: msg.result });
       send({ t: 'leaderboard:get' });
       send({ t: 'history:get' });
       break;
     case 'chat:message':
-      setState({ chat: [...state.chat, msg.message].slice(-100) });
+      dispatch({ type: 'server/chat-message', message: msg.message });
       break;
     case 'chat:report:ok':
-      setState({ reportSent: true });
+      dispatch({ type: 'server/report-sent' });
       showToast('Denúncia registrada. Obrigado por ajudar a manter a comunidade saudável.');
       break;
     case 'leaderboard':
-      setState({ leaderboard: msg.entries, myRank: msg.myRank ?? null, around: msg.around ?? [] });
+      dispatch({
+        type: 'server/leaderboard', entries: msg.entries,
+        myRank: msg.myRank ?? null, around: msg.around ?? [],
+      });
       break;
     case 'history':
-      setState({ history: msg.entries });
+      dispatch({ type: 'server/history', entries: msg.entries });
       break;
     case 'rematch:state':
-      setState({ rematch: { status: msg.status, from: msg.from } });
+      dispatch({
+        type: 'server/rematch', rematch: { status: msg.status, from: msg.from },
+      });
       if (msg.status === 'unavailable') showToast('Oponente indisponível para a revanche.');
       if (msg.status === 'declined') showToast('O oponente recusou a revanche.');
       break;
     case 'profile:view':
-      setState({ viewedProfile: msg.profile });
+      dispatch({ type: 'server/profile-view', profile: msg.profile });
       break;
   }
 }
