@@ -4,13 +4,13 @@ import { FACTION_TILTS } from '@legendsclash/shared';
 import { contentFlags } from './content.js';
 import type { ClientMsg, ServerMsg, LeaderboardEntry, Profile } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
-import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
 import { Match, GameError, type MatchSnapshot } from './game/engine.js';
 import { leagueOf } from './elo.js';
 import { RateLimiter } from './ratelimit.js';
 import { ApplicationError } from './application/application-error.js';
 import { ChatCoordinator } from './application/chat/chat-coordinator.js';
 import { MatchmakingCoordinator } from './application/lobby/matchmaking-coordinator.js';
+import { RoomCoordinator } from './application/lobby/room-coordinator.js';
 import { MatchFactory } from './application/matches/match-factory.js';
 import { MatchFinalizer } from './application/matches/match-finalizer.js';
 import { MatchRegistry } from './application/matches/match-registry.js';
@@ -43,7 +43,6 @@ function displayName(u: UserRecord): string {
 export class App {
   private sockets = new Map<string, WebSocket>(); // userId → conexão ativa
   private socketUser = new WeakMap<WebSocket, string>();
-  private rooms = new RoomManager();
   private matches = new MatchRegistry();
   private socketIp = new WeakMap<WebSocket, string>(); // conexão → IP (anti alt-farm)
   private userIp = new Map<string, string>(); // userId → IP da conexão ativa
@@ -52,6 +51,7 @@ export class App {
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
   private readonly chat: ChatCoordinator;
   private readonly matchmaking: MatchmakingCoordinator;
+  private readonly rooms: RoomCoordinator;
   private readonly matchFactory: MatchFactory;
   private readonly matchFinalizer: MatchFinalizer;
   private readonly social: SocialCoordinator;
@@ -89,8 +89,15 @@ export class App {
     this.matchmaking = new MatchmakingCoordinator({
       store,
       isInMatch: (userId) => this.matches.has(userId),
-      isInRoom: (userId) => !!this.rooms.roomOf(userId),
+      isInRoom: (userId) => this.rooms.has(userId),
       originFor: (userId) => this.userIp.get(userId),
+      startMatch: (users) => this.startMatch(users),
+      sendTo: (userId, message) => this.sendTo(userId, message),
+    });
+    this.rooms = new RoomCoordinator({
+      store,
+      isInMatch: (userId) => this.matches.has(userId),
+      removeFromQueue: (userId) => this.matchmaking.remove(userId),
       startMatch: (users) => this.startMatch(users),
       sendTo: (userId, message) => this.sendTo(userId, message),
     });
@@ -143,10 +150,10 @@ export class App {
       case 'queue:join': return this.matchmaking.join(user);
       case 'queue:leave': return this.matchmaking.leave(user);
       case 'practice:start': return this.startPractice(user);
-      case 'room:create': return this.roomCreate(user);
-      case 'room:join': return this.roomJoin(user, msg.code);
-      case 'room:leave': return this.roomLeave(user);
-      case 'room:start': return this.roomStart(user);
+      case 'room:create': return this.rooms.create(user);
+      case 'room:join': return this.rooms.join(user, msg.code);
+      case 'room:leave': return this.rooms.leave(user);
+      case 'room:start': return this.rooms.start(user);
       case 'chat:send': return this.chat.send(user, msg.text);
       case 'chat:taunt': return this.chat.sendTaunt(user, msg.id);
       case 'chat:mute': return this.chat.setMuted(user, msg.playerId, true);
@@ -210,8 +217,7 @@ export class App {
     // restart do servidor fica preso numa batalha/sala/fila fantasma.
     this.send(ws, { t: 'game:state', view: null });
     this.send(ws, { t: 'queue:status', inQueue: false, size: this.matchmaking.size });
-    const room = this.rooms.roomOf(user.id);
-    this.send(ws, { t: 'room:state', room: room ? this.rooms.toState(room) : null });
+    this.rooms.sync(user.id);
   }
 
   private handleClose(ws: WebSocket): void {
@@ -235,8 +241,7 @@ export class App {
       match.handleDisconnect(userId);
       return; // permanece na partida durante a janela de reconexão
     }
-    const room = this.rooms.leave(userId);
-    if (room) this.broadcastRoom(room.code);
+    this.rooms.disconnect(userId);
   }
 
   // ─── Personalização (perfil + comandante) ───────────────────────
@@ -276,59 +281,6 @@ export class App {
       this.broadcastMatch(match);
     }
     return profile;
-  }
-
-  // ─── Salas (lobby + convite por link) ───────────────────────────
-
-  private asRoomPlayer(u: UserRecord): RoomPlayer {
-    return { id: u.id, name: displayName(u), avatar: u.avatar, photo: u.photo, mmr: u.mmr };
-  }
-
-  private roomCreate(user: UserRecord): void {
-    if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
-    this.matchmaking.remove(user.id);
-    this.rooms.leave(user.id);
-    const room = this.rooms.create(this.asRoomPlayer(user));
-    this.broadcastRoom(room.code);
-  }
-
-  private roomJoin(user: UserRecord, code: string): void {
-    if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
-    this.matchmaking.remove(user.id);
-    try {
-      const room = this.rooms.join(code, this.asRoomPlayer(user));
-      this.broadcastRoom(room.code);
-    } catch (err) {
-      throw new KnownError((err as Error).message);
-    }
-  }
-
-  private roomLeave(user: UserRecord): void {
-    const room = this.rooms.leave(user.id);
-    this.sendTo(user.id, { t: 'room:state', room: null });
-    if (room) this.broadcastRoom(room.code);
-  }
-
-  private roomStart(user: UserRecord): void {
-    const room = this.rooms.roomOf(user.id);
-    if (!room) throw new KnownError('Você não está em uma sala.');
-    if (room.hostId !== user.id) throw new KnownError('Apenas o anfitrião pode iniciar.');
-    if (room.members.length < ROOM_SEATS) {
-      throw new KnownError('Aguarde os assentos serem preenchidos.');
-    }
-    const players = room.members
-      .map((m) => this.store.userById(m.id))
-      .filter((u): u is UserRecord => !!u);
-    this.rooms.dissolve(room.code);
-    for (const p of players) this.sendTo(p.id, { t: 'room:state', room: null });
-    this.startMatch(players);
-  }
-
-  private broadcastRoom(code: string): void {
-    const room = this.rooms.get(code);
-    if (!room) return;
-    const state = this.rooms.toState(room);
-    for (const m of room.members) this.sendTo(m.id, { t: 'room:state', room: state });
   }
 
   // ─── Partidas ───────────────────────────────────────────────────
@@ -386,7 +338,7 @@ export class App {
   private startPractice(user: UserRecord): void {
     if (this.matches.has(user.id)) throw new KnownError('Você já está em uma partida.');
     this.matchmaking.remove(user.id);
-    this.rooms.leave(user.id);
+    this.rooms.remove(user.id);
     const match = this.matchFactory.createPractice(user);
     // só o humano é registrado (o bot não tem socket)
     this.matches.register(match, [user.id], 'practice');
@@ -403,9 +355,7 @@ export class App {
   private interactionParticipants(userId: string): string[] {
     const match = this.matches.get(userId);
     if (match) return match.playerIds();
-    const room = this.rooms.roomOf(userId);
-    if (room) return room.members.map((m) => m.id);
-    return [];
+    return this.rooms.participantsFor(userId);
   }
 
   private factionPick(user: UserRecord, factionId: string): void {
