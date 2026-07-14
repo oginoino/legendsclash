@@ -1,59 +1,9 @@
 import { useSyncExternalStore } from 'react';
-import type {
-  ChatMessage, ClientMsg, GameView, LeaderboardEntry, MatchHistoryEntry,
-  MatchResult, Profile, PublicProfile, RoomState, ServerMsg,
-} from '@legendsclash/shared';
+import type { ClientMsg, ServerMsg } from '@legendsclash/shared';
+import { appStateReducer, createInitialAppState } from './state/app-state';
+import type { AppState, AppStateAction } from './state/app-state';
 
-/** Estado da oferta de revanche (pós-partida). */
-export interface RematchState {
-  status: 'sent' | 'incoming' | 'unavailable' | 'declined';
-  from?: { id: string; name: string; avatar: string };
-}
-
-/**
- * Estado do cliente + conexão WebSocket. O cliente é uma casca de
- * apresentação: envia intenções e renderiza o estado autoritativo do
- * servidor — nenhuma regra de jogo é avaliada aqui.
- */
-
-export interface AppState {
-  token: string | null;
-  profile: Profile | null;
-  connected: boolean;
-  inQueue: boolean;
-  queueSize: number;
-  /** Você é o único na fila — a UI sugere convidar um amigo. */
-  waitingAlone: boolean;
-  room: RoomState | null;
-  game: GameView | null;
-  gameOver: MatchResult | null;
-  chat: ChatMessage[];
-  leaderboard: LeaderboardEntry[];
-  /** Posição do jogador no ranking e vizinhos por MMR (alvo de subida). */
-  myRank: number | null;
-  around: LeaderboardEntry[];
-  history: MatchHistoryEntry[];
-  toast: string | null;
-  reportSent: boolean;
-  /** Convidado pediu a tela de conta (criar/entrar) sem perder a sessão atual. */
-  accountPrompt: boolean;
-  /** Conexão assumida por outra aba/dispositivo — não reconectar sozinho. */
-  replaced: boolean;
-  /** Token do link mágico de redefinição (abre a tela de nova senha). */
-  resetToken: string | null;
-  /** Estado da revanche pós-partida (oferta enviada/recebida/indisponível). */
-  rematch: RematchState | null;
-  /** Card de perfil de um oponente aberto (clique no nome). */
-  viewedProfile: PublicProfile | null;
-  /** Fase 6: o servidor habilitou a escolha de facção (dark launch). */
-  factionsEnabled: boolean;
-  /** Personalização v2 ligada no servidor: foto, molduras e estilos de cor. */
-  cosmeticsEnabled: boolean;
-  /** Facção escolhida pelo jogador (''=neutro). */
-  faction: string;
-  /** Esta aba recarregou durante uma partida e aguarda a verdade do servidor. */
-  recoveringGame: boolean;
-}
+export type { AppState, RematchState } from './state/app-state';
 
 const ACTIVE_MATCH_KEY = 'lc_active_match';
 
@@ -82,39 +32,22 @@ function readResetToken(): string | null {
 
 const initialToken = localStorage.getItem('lc_token');
 
-let state: AppState = {
+let state = createInitialAppState({
   token: initialToken,
-  profile: null,
-  connected: false,
-  inQueue: false,
-  queueSize: 0,
-  waitingAlone: false,
-  room: null,
-  game: null,
-  gameOver: null,
-  chat: [],
-  leaderboard: [],
-  myRank: null,
-  around: [],
-  history: [],
-  toast: null,
-  reportSent: false,
-  accountPrompt: false,
-  replaced: false,
   resetToken: readResetToken(),
-  rematch: null,
-  viewedProfile: null,
-  factionsEnabled: false,
-  cosmeticsEnabled: false,
   faction: localStorage.getItem('lc_faction') ?? '',
   recoveringGame: !!initialToken && activeMatchTicket() != null,
-};
+});
 
 const listeners = new Set<() => void>();
 
-function setState(patch: Partial<AppState>): void {
-  state = { ...state, ...patch };
+function dispatch(action: AppStateAction): void {
+  state = appStateReducer(state, action);
   for (const l of listeners) l();
+}
+
+function setState(patch: Partial<AppState>): void {
+  dispatch({ type: 'patch', patch });
 }
 
 export function useAppState(): AppState {
@@ -377,10 +310,10 @@ function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
   ws = null;
   oldWs?.close();
   localStorage.setItem('lc_token', body.token);
-  setState({
-    token: body.token, profile: body.profile, accountPrompt: false,
-    connected: false, room: null, game: null, gameOver: null, chat: [],
-    history: [], inQueue: false, replaced: false,
+  dispatch({
+    type: 'session/adopt',
+    token: body.token,
+    profile: body.profile,
   });
   connect();
   return { needsProfile: !!body.needsProfile };
@@ -500,11 +433,7 @@ export function logout(): void {
   rememberActiveMatch(null);
   const socket = ws;
   ws = null; // impede reconexão automática
-  setState({
-    token: null, profile: null, connected: false, room: null,
-    game: null, gameOver: null, chat: [], inQueue: false,
-    history: [], accountPrompt: false, replaced: false, recoveringGame: false,
-  });
+  dispatch({ type: 'session/logout' });
   socket?.close();
 }
 
@@ -514,7 +443,7 @@ export function dismissGameOver(): void {
   const won = !!over && over.winnerId === state.profile?.id;
   const isPractice = !!over && Object.keys(over.mmr).length === 0; // treino não conta
   const streak = state.profile?.streak ?? 0;
-  setState({ game: null, gameOver: null, chat: [], rematch: null });
+  dispatch({ type: 'game/dismiss-result' });
   if (won && !isPractice && streak >= 2) showToast(`Vitória! ${streak} dias de sequência.`);
   else if (won && !isPractice) showToast('Vitória registrada!');
 }
