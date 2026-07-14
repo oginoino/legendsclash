@@ -1,17 +1,18 @@
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
-import { achievementsOf, FACTION_TILTS } from '@legendsclash/shared';
+import { FACTION_TILTS } from '@legendsclash/shared';
 import { contentFlags } from './content.js';
-import type { ClientMsg, ServerMsg, MatchHistoryEntry, League, LeaderboardEntry, MatchResult, Profile } from '@legendsclash/shared';
+import type { ClientMsg, ServerMsg, LeaderboardEntry, Profile } from '@legendsclash/shared';
 import { Store, type UserRecord } from './store.js';
 import { MatchmakingQueue } from './matchmaking.js';
 import { RoomManager, ROOM_SEATS, type RoomPlayer } from './rooms.js';
-import { Match, GameError, type EngineResult, type MatchSnapshot } from './game/engine.js';
-import { applyElo, leagueOf } from './elo.js';
+import { Match, GameError, type MatchSnapshot } from './game/engine.js';
+import { leagueOf } from './elo.js';
 import { RateLimiter } from './ratelimit.js';
 import { ApplicationError } from './application/application-error.js';
 import { ChatCoordinator } from './application/chat/chat-coordinator.js';
 import { MatchFactory } from './application/matches/match-factory.js';
+import { MatchFinalizer } from './application/matches/match-finalizer.js';
 import { MatchRegistry } from './application/matches/match-registry.js';
 import { SocialCoordinator } from './application/social/social-coordinator.js';
 
@@ -54,6 +55,7 @@ export class App {
   private msgLimiter = new RateLimiter(50, 30); // teto geral por usuário (~30 msg/s, burst 50)
   private readonly chat: ChatCoordinator;
   private readonly matchFactory: MatchFactory;
+  private readonly matchFinalizer: MatchFinalizer;
   private readonly social: SocialCoordinator;
   private queueTimer: NodeJS.Timeout;
   /** Avisa o snapshot de runtime quando o conjunto de partidas muda. */
@@ -65,12 +67,6 @@ export class App {
       recipientsFor: (userId) => this.interactionParticipants(userId),
       sendTo: (userId, message) => this.sendTo(userId, message),
     });
-    this.matchFactory = new MatchFactory({
-      flags: contentFlags,
-      onUpdate: (match) => this.broadcastMatch(match),
-      onRankedFinish: (match, result) => this.finishMatch(match, result),
-      onPracticeFinish: (match, result) => this.finishPracticeMatch(match, result),
-    });
     this.social = new SocialCoordinator({
       store,
       participantsFor: (userId) => this.interactionParticipants(userId),
@@ -78,6 +74,20 @@ export class App {
       isInMatch: (userId) => this.matches.has(userId),
       startMatch: (users) => this.startMatch(users),
       sendTo: (userId, message) => this.sendTo(userId, message),
+    });
+    this.matchFinalizer = new MatchFinalizer({
+      store,
+      broadcastMatch: (match) => this.broadcastMatch(match),
+      unregisterMatch: (match) => this.matches.unregister(match),
+      recordOpponents: (playerIds) => this.social.recordOpponents(playerIds),
+      sendTo: (playerId, message) => this.sendTo(playerId, message),
+      onMatchesChanged: () => this.onMatchesChanged?.(),
+    });
+    this.matchFactory = new MatchFactory({
+      flags: contentFlags,
+      onUpdate: (match) => this.broadcastMatch(match),
+      onRankedFinish: (match, result) => this.matchFinalizer.finishRanked(match, result),
+      onPracticeFinish: (match, result) => this.matchFinalizer.finishPractice(match, result),
     });
     this.queueTimer = setInterval(() => this.tickQueue(), QUEUE_TICK_MS);
   }
@@ -427,146 +437,10 @@ export class App {
     match.start();
   }
 
-  /** Fim de partida de treino: entrega o recap mas NÃO toca Elo/histórico/streak/eventos. */
-  private finishPracticeMatch(match: Match, result: EngineResult): void {
-    const ids = match.playerIds();
-    const winnerId = ids[result.winnerSeat];
-    const humanId = ids.find((id) => this.store.userById(id)); // o bot não tem registro
-    const stats: MatchResult['stats'] = {};
-    const mvp: MatchResult['mvp'] = {};
-    ids.forEach((id, seat) => {
-      if (result.stats[seat]) stats![id] = result.stats[seat];
-      mvp![id] = result.mvp[seat] ?? null;
-    });
-    this.broadcastMatch(match); // estado final
-    this.matches.unregister(match);
-    if (humanId) {
-      this.sendTo(humanId, {
-        t: 'game:over',
-        result: {
-          matchId: match.id, winnerId, reason: result.reason,
-          turns: result.turns, durationMs: result.durationMs,
-          mmr: {}, stats, mvp, // mmr vazio = partida de treino (não conta)
-        },
-      });
-    }
-    match.dispose();
-    this.onMatchesChanged?.();
-  }
-
   private broadcastMatch(match: Match): void {
     for (const pid of match.playerIds()) {
       this.sendTo(pid, { t: 'game:state', view: match.viewFor(pid) });
     }
-  }
-
-  private finishMatch(match: Match, result: EngineResult): void {
-    const ids = match.playerIds();
-    const winnerId = ids[result.winnerSeat];
-    const winner = this.store.userById(winnerId)!;
-    const loserIds = ids.filter((id) => id !== winnerId);
-    const winnerBefore = winner.mmr;
-
-    // Quem concluiu a 1ª partida — capturado ANTES de recordMatch incrementar V/D.
-    const firstTimers = ids.filter((id) => {
-      const u = this.store.userById(id);
-      return !!u && u.wins + u.losses === 0;
-    });
-    // Conquistas ANTES da partida, para detectar as recém-obtidas (celebração).
-    const achBefore: Record<string, string[]> = {};
-    for (const id of ids) {
-      const u = this.store.userById(id);
-      achBefore[id] = u ? achievementsOf(u.wins, u.wins + u.losses) : [];
-    }
-
-    const entryFor = (won: boolean, opp: UserRecord, delta: number): MatchHistoryEntry => ({
-      matchId: match.id,
-      opponentName: displayName(opp),
-      opponentId: opp.id,
-      won,
-      reason: result.reason,
-      mmrDelta: delta,
-      turns: result.turns,
-      durationMs: result.durationMs,
-      endedAt: Date.now(),
-    });
-
-    // Elo é pareado contra o rating do vencedor ANTES da partida; o vencedor
-    // acumula o ganho de cada perdedor. Em 1v1 (N=2) é idêntico ao Elo clássico;
-    // em N>2 (arquitetura N-player) nenhum perdedor fica sem registro de derrota
-    // nem ajuste de MMR — antes só um perdedor era contabilizado.
-    const mmr: Record<string, { before: number; after: number; delta: number; league: League }> = {};
-    let winnerGain = 0;
-    let toughestLoser = this.store.userById(loserIds[0])!;
-    for (const loserId of loserIds) {
-      const loser = this.store.userById(loserId);
-      if (!loser) continue;
-      const loserBefore = loser.mmr;
-      const after = applyElo(winnerBefore, loserBefore);
-      const loserDelta = after.loser - loserBefore;
-      winnerGain += after.winner - winnerBefore;
-      if (loserBefore >= toughestLoser.mmr) toughestLoser = loser;
-      this.store.recordMatch(loserId, entryFor(false, winner, loserDelta), after.loser, false);
-      mmr[loserId] = {
-        before: loserBefore, after: after.loser,
-        delta: loserDelta, league: leagueOf(after.loser),
-      };
-    }
-
-    const winnerAfter = winnerBefore + winnerGain;
-    this.store.recordMatch(winnerId, entryFor(true, toughestLoser, winnerGain), winnerAfter, true);
-    mmr[winnerId] = {
-      before: winnerBefore, after: winnerAfter,
-      delta: winnerGain, league: leagueOf(winnerAfter),
-    };
-
-    this.store.recordEvent('match_end', {
-      matchId: match.id,
-      props: {
-        winnerId, winnerSeat: result.winnerSeat, reason: result.reason,
-        turns: result.turns, durationMs: result.durationMs,
-        deltas: Object.fromEntries(Object.entries(mmr).map(([id, m]) => [id, m.delta])),
-      },
-    });
-    for (const id of firstTimers) {
-      this.store.recordEvent('first_match_completed', {
-        userId: id, matchId: match.id, props: { won: id === winnerId },
-      });
-    }
-
-    // conquistas recém-obtidas nesta partida (celebração no fim)
-    const unlocked: Record<string, string[]> = {};
-    for (const id of ids) {
-      const u = this.store.userById(id);
-      if (!u) continue;
-      const fresh = achievementsOf(u.wins, u.wins + u.losses).filter((a) => !achBefore[id].includes(a));
-      if (fresh.length) unlocked[id] = fresh;
-    }
-
-    // recap por jogador: do índice de assento (engine) para o id do jogador
-    const stats: MatchResult['stats'] = {};
-    const mvp: MatchResult['mvp'] = {};
-    ids.forEach((id, seat) => {
-      if (result.stats[seat]) stats![id] = result.stats[seat];
-      mvp![id] = result.mvp[seat] ?? null;
-    });
-
-    this.social.recordOpponents(ids); // habilita revanche/perfil/amizade pós-partida
-    this.broadcastMatch(match); // estado final
-    this.matches.unregister(match);
-    for (const pid of ids) {
-      this.sendTo(pid, {
-        t: 'game:over',
-        result: {
-          matchId: match.id, winnerId, reason: result.reason,
-          turns: result.turns, durationMs: result.durationMs, mmr, unlocked, stats, mvp,
-        },
-      });
-      const u = this.store.userById(pid);
-      if (u) this.sendTo(pid, { t: 'profile', profile: this.store.profileOf(u) });
-    }
-    match.dispose();
-    this.onMatchesChanged?.();
   }
 
   // Os coordenadores recebem apenas os participantes do contexto atual.
