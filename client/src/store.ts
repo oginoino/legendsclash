@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { ClientMsg, ServerMsg } from '@legendsclash/shared';
+import { createRealtimeConnection } from './network/realtime-connection';
 import { appStateReducer, createInitialAppState } from './state/app-state';
 import type { AppState, AppStateAction } from './state/app-state';
 
@@ -62,10 +63,7 @@ export function useAppState(): AppState {
 
 // ─── WebSocket ──────────────────────────────────────────────────
 
-let ws: WebSocket | null = null;
-let reconnectDelay = 1000;
 let toastTimer: number | undefined;
-let lastServerMsgAt = 0; // última mensagem (de qualquer tipo) vinda do servidor
 
 function showToast(message: string): void {
   clearTimeout(toastTimer);
@@ -73,85 +71,34 @@ function showToast(message: string): void {
   toastTimer = window.setTimeout(() => setState({ toast: null }), 4000);
 }
 
+const realtimeConnection = createRealtimeConnection({
+  getSession: () => ({
+    token: state.token,
+    resetToken: state.resetToken,
+    replaced: state.replaced,
+  }),
+  onOpen: () => {
+    setState({ replaced: false });
+    if (state.token) send({ t: 'hello', token: state.token });
+  },
+  onMessage: handleServerMsg,
+  onClosed: () => setState({ connected: false }),
+  // outra aba/dispositivo assumiu; reconectar geraria disputa entre conexões.
+  onReplaced: () => setState({ replaced: true }),
+});
+
 export function send(msg: ClientMsg): void {
-  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  realtimeConnection.send(msg);
 }
 
 export function connect(): void {
-  // durante a redefinição de senha não reabrimos a sessão antiga: o reset emite
-  // uma sessão nova (adoptSession) e conecta por conta própria.
-  if (!state.token || state.resetToken || (ws && ws.readyState <= WebSocket.OPEN)) return;
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const socket = new WebSocket(`${proto}://${location.host}/ws`);
-  ws = socket;
-
-  socket.onopen = () => {
-    reconnectDelay = 1000;
-    lastServerMsgAt = Date.now();
-    setState({ replaced: false });
-    send({ t: 'hello', token: state.token! });
-  };
-
-  socket.onmessage = (ev) => {
-    lastServerMsgAt = Date.now();
-    handleServerMsg(JSON.parse(ev.data) as ServerMsg);
-  };
-
-  socket.onclose = (ev) => {
-    if (ws !== socket) return; // conexão substituída (ex.: convidado virou conta)
-    ws = null;
-    setState({ connected: false });
-    if (ev.code === 4001) {
-      // outra aba/dispositivo assumiu — reconectar aqui geraria um cabo de
-      // guerra infinito entre as duas conexões
-      setState({ replaced: true });
-      return;
-    }
-    if (state.token) {
-      // reconexão automática — a janela anti-abandono do servidor é de 2 min
-      setTimeout(connect, reconnectDelay);
-      reconnectDelay = Math.min(15_000, reconnectDelay * 2);
-    }
-  };
+  realtimeConnection.connect();
 }
-
-// ─── Vivacidade da conexão ──────────────────────────────────────
-// NATs, proxies e redes móveis derrubam conexões ociosas sem avisar: o socket
-// fica "aberto" porém morto e a batalha congela sem nem disparar onclose.
-// Quieto demais → ping; mudo demais → fecha (e a reconexão automática assume).
-
-const PING_IDLE_MS = 25_000;
-const DEAD_AFTER_MS = 65_000;
-
-window.setInterval(() => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const quiet = Date.now() - lastServerMsgAt;
-  if (quiet > DEAD_AFTER_MS) ws.close();
-  else if (quiet > PING_IDLE_MS) send({ t: 'ping' });
-}, 10_000);
-
-/** Rede/aba voltou: reconecta já, sem esperar o backoff. */
-function reconnectNow(): void {
-  if (!state.token || state.replaced) return;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    // socket aberto mas mudo há tempo demais (aba dormiu?) — está morto
-    if (Date.now() - lastServerMsgAt > DEAD_AFTER_MS) ws.close();
-    return;
-  }
-  reconnectDelay = 1000;
-  connect();
-}
-
-window.addEventListener('online', reconnectNow);
-window.addEventListener('focus', reconnectNow);
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') reconnectNow();
-});
 
 /** Retoma a conexão nesta aba (substitui a aba que tinha assumido). */
 export function resumeHere(): void {
   setState({ replaced: false });
-  reconnectNow();
+  realtimeConnection.reconnectNow();
 }
 
 function handleServerMsg(msg: ServerMsg): void {
@@ -304,9 +251,7 @@ async function postJson(
 
 function adoptSession(body: Record<string, any>): { needsProfile: boolean } {
   // troca de identidade (ex.: convidado virou conta): derruba a conexão antiga
-  const oldWs = ws;
-  ws = null;
-  oldWs?.close();
+  realtimeConnection.disconnect();
   localStorage.setItem('lc_token', body.token);
   dispatch({
     type: 'session/adopt',
@@ -429,10 +374,8 @@ export function logout(): void {
   }
   localStorage.removeItem('lc_token');
   rememberActiveMatch(null);
-  const socket = ws;
-  ws = null; // impede reconexão automática
+  realtimeConnection.disconnect();
   dispatch({ type: 'session/logout' });
-  socket?.close();
 }
 
 export function dismissGameOver(): void {
