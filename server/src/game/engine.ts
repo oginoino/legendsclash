@@ -11,6 +11,7 @@ import { BotTurnController } from './bot/bot-turn-controller.js';
 import { CombatResolver } from './combat/combat-resolver.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
+import { TurnClock } from './timing/turn-clock.js';
 import type {
   CardInstance,
   Creature,
@@ -98,14 +99,9 @@ export class Match {
   readonly seats: Seat[];
   private turnSeat = 0;
   private turnNumber = 0;
-  private turnEndsAt = 0;
-  private turnTimer: NodeJS.Timeout | null = null;
-  private turnTimeLeftMs = 0;
-  private turnPaused = false;
-  private tutorialOpenPlayerIds = new Set<string>();
-  private mulliganTimer: NodeJS.Timeout | null = null;
   private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
+  private readonly clock: TurnClock;
   private readonly cardEffects: CardEffects;
   private readonly combat: CombatResolver;
   private readonly bot: BotTurnController;
@@ -139,8 +135,6 @@ export class Match {
       this.status = restored.status;
       this.turnSeat = restored.turnSeat;
       this.turnNumber = restored.turnNumber;
-      this.turnTimeLeftMs = restored.turnTimeLeftMs ?? this.turnSeconds * 1000;
-      this.tutorialOpenPlayerIds = new Set(restored.tutorialOpenPlayerIds ?? []);
       this.log = [...restored.log];
       this.plays = [...restored.plays];
       this.actions = [...(restored.actions ?? [])];
@@ -174,6 +168,7 @@ export class Match {
         creatureLog: new Map(snap?.creatureLog ?? []),
       };
     });
+    this.clock = new TurnClock(restored?.tutorialOpenPlayerIds);
     this.cardEffects = new CardEffects({
       seats: this.seats,
       draw: (seat) => this.draw(seat),
@@ -230,9 +225,7 @@ export class Match {
   }
 
   private armMulliganTimer(ms = MULLIGAN_SECONDS * 1000): void {
-    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
-    this.turnEndsAt = Date.now() + ms;
-    this.mulliganTimer = setTimeout(() => this.forceFinishMulligan(), ms);
+    this.clock.arm(ms, () => this.forceFinishMulligan());
   }
 
   // ─── Mulligan (troca da mão inicial, antes do turno 1) ──────────
@@ -272,8 +265,7 @@ export class Match {
   }
 
   private finishMulligan(): void {
-    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
-    this.mulliganTimer = null;
+    this.clock.clear();
     this.status = 'active';
     this.beginTurn(0);
     this.onUpdate();
@@ -326,44 +318,12 @@ export class Match {
   }
 
   private armTurnTimer(ms = this.turnSeconds * 1000): void {
-    this.clearTurnTimer();
-    this.turnTimeLeftMs = Math.max(0, ms);
-    if (this.tutorialOpenPlayerIds.size > 0) {
-      this.turnPaused = true;
-      this.turnEndsAt = 0;
-      return;
-    }
-    this.turnPaused = false;
-    this.turnEndsAt = Date.now() + this.turnTimeLeftMs;
-    this.turnTimer = setTimeout(() => {
+    this.clock.arm(ms, () => {
       if (this.status !== 'active') return;
-      this.turnTimeLeftMs = 0;
       this.addLog(`${this.seats[this.turnSeat].player.name} ficou sem tempo — turno encerrado`);
       this.advanceTurn();
       this.onUpdate();
-    }, this.turnTimeLeftMs);
-  }
-
-  private clearTurnTimer(): void {
-    if (this.turnTimer) clearTimeout(this.turnTimer);
-    this.turnTimer = null;
-  }
-
-  private currentTurnTimeLeftMs(): number {
-    return this.turnPaused
-      ? this.turnTimeLeftMs
-      : Math.max(0, this.turnEndsAt - Date.now());
-  }
-
-  private syncTutorialPause(): void {
-    if (this.tutorialOpenPlayerIds.size > 0 && !this.turnPaused) {
-      this.turnTimeLeftMs = Math.max(0, this.turnEndsAt - Date.now());
-      this.clearTurnTimer();
-      this.turnPaused = true;
-      this.turnEndsAt = 0;
-    } else if (this.tutorialOpenPlayerIds.size === 0 && this.turnPaused) {
-      this.armTurnTimer(this.turnTimeLeftMs);
-    }
+    });
   }
 
   /**
@@ -377,14 +337,8 @@ export class Match {
     const player = this.seats[idx].player;
     if (open && (this.turnNumber !== 1 || player.tutorialEligible !== true)) return;
 
-    const changed = open
-      ? !this.tutorialOpenPlayerIds.has(playerId)
-      : this.tutorialOpenPlayerIds.has(playerId);
+    const changed = this.clock.setPausedBy(playerId, open);
     if (!changed) return;
-    if (open) this.tutorialOpenPlayerIds.add(playerId);
-    else this.tutorialOpenPlayerIds.delete(playerId);
-
-    this.syncTutorialPause();
     this.onUpdate();
   }
 
@@ -428,7 +382,7 @@ export class Match {
     const idx = this.seatOf(playerId);
     if (idx < 0) throw new GameError('Você não está nesta partida.');
     if (idx !== this.turnSeat) throw new GameError('Não é o seu turno.');
-    if (this.turnPaused) throw new GameError('A partida está pausada durante o tutorial inicial.');
+    if (this.clock.paused) throw new GameError('A partida está pausada durante o tutorial inicial.');
     return { seat: this.seats[idx], idx };
   }
 
@@ -573,7 +527,7 @@ export class Match {
     if (idx < 0 || this.status === 'finished') return;
     const seat = this.seats[idx];
     // Uma aba fechada nunca pode manter o onboarding dos demais congelado.
-    if (this.tutorialOpenPlayerIds.delete(playerId)) this.syncTutorialPause();
+    this.clock.setPausedBy(playerId, false);
     this.addLog(`${seat.player.name} desconectou — ${RECONNECT_GRACE_MS / 60000} min para reconectar`);
     this.armReconnectTimer(seat, RECONNECT_GRACE_MS);
     this.onUpdate();
@@ -619,8 +573,8 @@ export class Match {
       turnSeat: this.turnSeat,
       turnNumber: this.turnNumber,
       turnSeconds: this.turnSeconds,
-      turnTimeLeftMs: this.currentTurnTimeLeftMs(),
-      tutorialOpenPlayerIds: [...this.tutorialOpenPlayerIds],
+      turnTimeLeftMs: this.clock.view().timeLeftMs,
+      tutorialOpenPlayerIds: this.clock.pausedBy,
       useMulligan: this.useMulligan,
       botIds: [...this.botIds],
       content: {
@@ -750,10 +704,8 @@ export class Match {
     if (alive.length > 1) return;
 
     this.status = 'finished';
-    this.clearTurnTimer();
+    this.clock.clear();
     this.bot.clear();
-    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
-    this.mulliganTimer = null;
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
       seat.reconnectTimer = null;
@@ -826,14 +778,15 @@ export class Match {
     }));
     const hand: CardInHand[] =
       yourSeat >= 0 ? this.seats[yourSeat].hand.map((c) => ({ iid: c.iid, defId: c.defId })) : [];
+    const clock = this.clock.view();
     return {
       matchId: this.id,
       yourSeat,
       turnSeat: this.turnSeat,
       turnNumber: this.turnNumber,
-      turnEndsAt: this.turnEndsAt,
-      turnPaused: this.turnPaused,
-      turnTimeLeftMs: this.currentTurnTimeLeftMs(),
+      turnEndsAt: clock.endsAt,
+      turnPaused: clock.paused,
+      turnTimeLeftMs: clock.timeLeftMs,
       seats,
       hand,
       status: this.status,
@@ -866,8 +819,7 @@ export class Match {
 
   /** Encerramento administrativo (ex.: desligamento do servidor). */
   dispose(): void {
-    this.clearTurnTimer();
-    if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
+    this.clock.clear();
     this.bot.clear();
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
