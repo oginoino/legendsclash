@@ -1,12 +1,13 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import {
-  CARDS, deckComposition, MAX_BOARD, MAX_ENERGY, MAX_HAND,
+  CARDS, MAX_BOARD, MAX_ENERGY, MAX_HAND,
   RECONNECT_GRACE_MS, STARTING_HAND, STARTING_HP, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
   CombatAction, GameLogEntry, GameView, MatchEndReason, MatchMvp, Target,
 } from '@legendsclash/shared';
 import { BotTurnController } from './bot/bot-turn-controller.js';
+import { cardInstances } from './cards/card-instance-factory.js';
 import { CombatResolver } from './combat/combat-resolver.js';
 import { ReconnectController } from './connection/reconnect-controller.js';
 import { CardEffects } from './effects/card-effects.js';
@@ -19,7 +20,6 @@ import {
 import { TurnClock } from './timing/turn-clock.js';
 import { createGameView } from './view/game-view-mapper.js';
 import type {
-  CardInstance,
   Creature,
   EngineResult,
   MatchContent,
@@ -64,41 +64,6 @@ const MAX_TURNS = 40;
 const MAX_ARTIFACT_SHIELD = 10;
 /** Folga mínima quando o prazo de reconexão vence durante o restart/deploy. */
 const RESTORE_MIN_GRACE_MS = 15_000;
-
-let nextIid = 1;
-function newIid(): string {
-  return 'i' + nextIid++;
-}
-
-function observeIid(iid: string): void {
-  const n = /^i(\d+)$/.exec(iid)?.[1];
-  if (!n) return;
-  nextIid = Math.max(nextIid, Number(n) + 1);
-}
-
-function observeSnapshotIids(snap: MatchSnapshot): void {
-  for (const seat of snap.seats) {
-    for (const c of [...seat.deck, ...seat.hand, ...seat.board]) observeIid(c.iid);
-    for (const [iid] of seat.creatureLog) observeIid(iid);
-  }
-}
-
-/** Fisher–Yates com aleatoriedade do servidor (anti-cheat: não auditável pelo cliente). */
-function shuffle<T>(arr: T[]): void {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
-
-function buildDeck(factionId?: string, includeComeback = false): CardInstance[] {
-  const deck: CardInstance[] = [];
-  for (const [defId, copies] of deckComposition(factionId, includeComeback)) {
-    for (let i = 0; i < copies; i++) deck.push({ iid: newIid(), defId });
-  }
-  shuffle(deck);
-  return deck;
-}
 
 export class Match {
   readonly id: string;
@@ -147,13 +112,13 @@ export class Match {
       this.plays = state.plays;
       this.actions = state.actions;
       this.actionSeq = state.actionSeq;
-      observeSnapshotIids(restored);
+      cardInstances.observeSnapshot(restored);
     }
     this.seats = players.map((player, i) => hydrateSeat({
       player,
       snapshot: restored?.seats[i],
       restoringMatch: restored !== undefined,
-      buildDeck: () => buildDeck(
+      buildDeck: () => cardInstances.buildDeck(
         content.factions?.[player.id],
         content.comeback ?? false,
       ),
@@ -172,7 +137,7 @@ export class Match {
       damagePlayer: (seat, amount) => this.damagePlayer(seat, amount),
       addLog: (text) => this.addLog(text),
       creatureLabel: (seat, creature) => this.creatureLabel(seat, creature),
-      newInstanceId: () => newIid(),
+      newInstanceId: () => cardInstances.nextId(),
     });
     this.combat = new CombatResolver({
       seats: this.seats,
@@ -202,7 +167,7 @@ export class Match {
     // um bônus fixo. Antes a compensação era +1 carta (recurso, não tempo).
     this.seats.forEach((seat, i) => {
       for (let k = 0; k < STARTING_HAND; k++) this.draw(seat, true);
-      if (i !== 0) seat.hand.push({ iid: newIid(), defId: 't_moeda' });
+      if (i !== 0) seat.hand.push(cardInstances.create('t_moeda'));
     });
     this.addLog(`Partida iniciada: ${this.seats.map((s) => s.player.name).join(' vs ')}`);
     if (this.useMulligan) {
@@ -243,7 +208,7 @@ export class Match {
       // compra as substitutas ANTES de devolver as trocadas (não recompra a mesma)
       for (let k = 0; k < swapping.length; k++) this.draw(seat, true);
       for (const c of swapping) seat.deck.push(c);
-      shuffle(seat.deck);
+      cardInstances.shuffle(seat.deck);
     }
     seat.mulliganDone = true;
     this.addLog(
