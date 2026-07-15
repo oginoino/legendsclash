@@ -12,6 +12,11 @@ import { CombatResolver } from './combat/combat-resolver.js';
 import { ReconnectController } from './connection/reconnect-controller.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
+import {
+  createMatchSnapshot,
+  hydrateMatchState,
+  hydrateSeat,
+} from './snapshot/match-snapshot-mapper.js';
 import { TurnClock } from './timing/turn-clock.js';
 import type {
   CardInstance,
@@ -134,40 +139,25 @@ export class Match {
     this.id = restored?.id ?? 'm' + randomBytes(6).toString('hex');
     this.startedAt = restored?.startedAt ?? Date.now();
     if (restored) {
-      this.status = restored.status;
-      this.turnSeat = restored.turnSeat;
-      this.turnNumber = restored.turnNumber;
-      this.log = [...restored.log];
-      this.plays = [...restored.plays];
-      this.actions = [...(restored.actions ?? [])];
-      this.actionSeq = restored.actionSeq
-        ?? Math.max(0, ...this.actions.map((action) => action.seq));
+      const state = hydrateMatchState(restored);
+      this.status = state.status;
+      this.turnSeat = state.turnSeat;
+      this.turnNumber = state.turnNumber;
+      this.log = state.log;
+      this.plays = state.plays;
+      this.actions = state.actions;
+      this.actionSeq = state.actionSeq;
       observeSnapshotIids(restored);
     }
-    this.seats = players.map((player, i) => {
-      const snap = restored?.seats[i];
-      return {
-        player,
-        hp: snap?.hp ?? STARTING_HP,
-        shield: snap?.shield ?? 0,
-        energy: snap?.energy ?? 0,
-        maxEnergy: snap?.maxEnergy ?? 0,
-        deck: snap ? snap.deck.map((c) => ({ ...c })) : buildDeck(content.factions?.[player.id], content.comeback ?? false),
-        hand: snap ? snap.hand.map((c) => ({ ...c })) : [],
-        board: snap ? snap.board.map((c) => ({ ...c })) : [],
-        artifacts: snap ? [...snap.artifacts] : [],
-        attackBonus: snap?.attackBonus ?? 0,
-        spellBonus: snap?.spellBonus ?? 0,
-        regen: snap?.regen ?? 0,
-        shieldRegen: snap?.shieldRegen ?? 0,
-        fatigue: snap?.fatigue ?? 0,
-        connected: !restored,
-        out: snap?.out ?? false,
-        mulliganDone: snap?.mulliganDone ?? false,
-        stats: snap?.stats ? { ...snap.stats } : { creaturesSummoned: 0, spellsCast: 0, damageDealt: 0, shieldAbsorbed: 0 },
-        creatureLog: new Map(snap?.creatureLog ?? []),
-      };
-    });
+    this.seats = players.map((player, i) => hydrateSeat({
+      player,
+      snapshot: restored?.seats[i],
+      restoringMatch: restored !== undefined,
+      buildDeck: () => buildDeck(
+        content.factions?.[player.id],
+        content.comeback ?? false,
+      ),
+    }));
     this.clock = new TurnClock(restored?.tutorialOpenPlayerIds);
     this.reconnect = new ReconnectController((seat) => {
       if (this.status === 'finished' || seat.connected) return;
@@ -555,7 +545,7 @@ export class Match {
   /** Estado persistível — sem timers nem sockets; ver snapshot.ts. */
   toSnapshot(): MatchSnapshot {
     if (this.status === 'finished') throw new Error('Partida encerrada não deve ser serializada.');
-    return {
+    return createMatchSnapshot({
       id: this.id,
       startedAt: this.startedAt,
       status: this.status,
@@ -565,37 +555,15 @@ export class Match {
       turnTimeLeftMs: this.clock.view().timeLeftMs,
       tutorialOpenPlayerIds: this.clock.pausedBy,
       useMulligan: this.useMulligan,
-      botIds: [...this.botIds],
-      content: {
-        factions: this.content.factions ? { ...this.content.factions } : undefined,
-        comeback: this.content.comeback,
-      },
-      seats: this.seats.map((s) => ({
-        player: { ...s.player },
-        hp: s.hp,
-        shield: s.shield,
-        energy: s.energy,
-        maxEnergy: s.maxEnergy,
-        deck: s.deck.map((c) => ({ ...c })),
-        hand: s.hand.map((c) => ({ ...c })),
-        board: s.board.map((c) => ({ ...c })),
-        artifacts: [...s.artifacts],
-        attackBonus: s.attackBonus,
-        spellBonus: s.spellBonus,
-        regen: s.regen,
-        shieldRegen: s.shieldRegen,
-        fatigue: s.fatigue,
-        out: s.out,
-        mulliganDone: s.mulliganDone,
-        reconnectDeadline: this.reconnect.deadlineFor(s),
-        stats: { ...s.stats },
-        creatureLog: [...s.creatureLog.entries()],
-      })),
-      log: this.log.slice(-100),
-      plays: this.plays.slice(-12),
-      actions: this.actions.slice(-24),
+      botIds: this.botIds,
+      content: this.content,
+      seats: this.seats,
+      reconnectDeadlineFor: (seat) => this.reconnect.deadlineFor(seat),
+      log: this.log,
+      plays: this.plays,
+      actions: this.actions,
       actionSeq: this.actionSeq,
-    };
+    });
   }
 
   /**
