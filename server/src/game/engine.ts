@@ -4,9 +4,10 @@ import {
   RECONNECT_GRACE_MS, STARTING_HAND, STARTING_HP, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
-  CardDef, CardInHand, CombatAction, CreatureOnBoard, GameLogEntry, GameView,
+  CardInHand, CombatAction, CreatureOnBoard, GameLogEntry, GameView,
   MatchEndReason, MatchMvp, SeatView, Target,
 } from '@legendsclash/shared';
+import { BotTurnController } from './bot/bot-turn-controller.js';
 import { CombatResolver } from './combat/combat-resolver.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
@@ -21,6 +22,7 @@ import type {
 } from './types.js';
 
 export { GameError } from './errors.js';
+export { BOT_CADENCE_MS } from './bot/bot-turn-controller.js';
 export type {
   CardInstance,
   Creature,
@@ -51,25 +53,6 @@ const MULLIGAN_SECONDS = 30;
  * morte súbita por vantagem — garante encerramento previsível.
  */
 const MAX_TURNS = 40;
-/**
- * Cadência do Treinador IA. Cada etapa produz um estado autoritativo separado,
- * dando ao cliente tempo para revelar a carta, resolver o impacto e só então
- * avançar. O pior caso permanece bem abaixo dos 60s do turno.
- */
-export const BOT_CADENCE_MS = {
-  think: 900,
-  card: 1250,
-  combat: 1100,
-  attack: 900,
-  end: 650,
-} as const;
-type BotTurnPhase = 'cards' | 'combat' | 'end';
-interface BotTurnState {
-  playerId: string;
-  phase: BotTurnPhase;
-  cardActions: number;
-  attackActions: number;
-}
 /** Teto do escudo acumulável por artefato (Figura de Proa) — evita tartaruga infinita. */
 const MAX_ARTIFACT_SHIELD = 10;
 /** Folga mínima quando o prazo de reconexão vence durante o restart/deploy. */
@@ -121,12 +104,11 @@ export class Match {
   private turnPaused = false;
   private tutorialOpenPlayerIds = new Set<string>();
   private mulliganTimer: NodeJS.Timeout | null = null;
-  private botTimer: NodeJS.Timeout | null = null;
-  private botTurnState: BotTurnState | null = null;
   private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
   private readonly cardEffects: CardEffects;
   private readonly combat: CombatResolver;
+  private readonly bot: BotTurnController;
   private readonly startedAt: number;
   private log: GameLogEntry[] = [];
   private plays: Array<{ seat: number; cardId: string; at: number }> = [];
@@ -207,6 +189,17 @@ export class Match {
       addLog: (text) => this.addLog(text),
       creatureLabel: (seat, creature) => this.creatureLabel(seat, creature),
       recordAction: (action) => this.recordAction(action),
+    });
+    this.bot = new BotTurnController({
+      seats: this.seats,
+      seatOf: (playerId) => this.seatOf(playerId),
+      isTurnActive: (playerId) => {
+        const seatIdx = this.seatOf(playerId);
+        return seatIdx >= 0 && this.status === 'active' && this.turnSeat === seatIdx;
+      },
+      playCard: (playerId, iid, target) => this.playCard(playerId, iid, target),
+      attack: (playerId, attackerIid, target) => this.attack(playerId, attackerIid, target),
+      endTurn: (playerId) => this.endTurn(playerId),
     });
   }
 
@@ -328,7 +321,7 @@ export class Match {
     this.checkEnd();
     // modo treino: se a vez é da IA, agenda a jogada dela (após uma pausa legível)
     if (this.status === 'active' && this.botIds.includes(seat.player.id)) {
-      this.scheduleBotTurn(seat.player.id);
+      this.bot.scheduleTurn(seat.player.id);
     }
   }
 
@@ -398,7 +391,7 @@ export class Match {
   /** Fila circular: o próximo assento ativo, qualquer que seja N. */
   private advanceTurn(): void {
     if (this.status !== 'active') return;
-    this.clearBotSequence();
+    this.bot.clear();
     let next = this.turnSeat;
     do {
       next = (next + 1) % this.seats.length;
@@ -696,7 +689,7 @@ export class Match {
     } else if (m.status === 'active') {
       m.armTurnTimer(snap.turnTimeLeftMs ?? snap.turnSeconds * 1000);
       const current = m.seats[m.turnSeat];
-      if (current && m.botIds.includes(current.player.id)) m.scheduleBotTurn(current.player.id);
+      if (current && m.botIds.includes(current.player.id)) m.bot.scheduleTurn(current.player.id);
     }
     return m;
   }
@@ -758,7 +751,7 @@ export class Match {
 
     this.status = 'finished';
     this.clearTurnTimer();
-    this.clearBotSequence();
+    this.bot.clear();
     if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
     this.mulliganTimer = null;
     for (const seat of this.seats) {
@@ -788,172 +781,9 @@ export class Match {
   }
 
   // ─── Bot de treino (assento virtual, sem MMR) ──────────────────
-  // Heurística gananciosa que usa SÓ os métodos públicos validados — o bot não
-  // tem socket e não pode trapacear (taunt/escudo/energia são checados de toda forma).
-
-  private clearBotSequence(): void {
-    if (this.botTimer) clearTimeout(this.botTimer);
-    this.botTimer = null;
-    this.botTurnState = null;
-  }
-
-  private botTurnIsActive(playerId: string): boolean {
-    const idx = this.seatOf(playerId);
-    return idx >= 0 && this.status === 'active' && this.turnSeat === idx;
-  }
-
-  private scheduleBotStep(delayMs: number): void {
-    if (this.botTimer) clearTimeout(this.botTimer);
-    this.botTimer = setTimeout(() => {
-      this.botTimer = null;
-      const playerId = this.botTurnState?.playerId;
-      try {
-        this.runPacedBotStep();
-      } catch {
-        this.clearBotSequence();
-        if (playerId && this.botTurnIsActive(playerId)) {
-          try { this.endTurn(playerId); } catch { /* o cronômetro ainda garante progresso */ }
-        }
-      }
-    }, delayMs);
-  }
-
-  private scheduleBotTurn(playerId: string): void {
-    this.clearBotSequence();
-    this.botTurnState = { playerId, phase: 'cards', cardActions: 0, attackActions: 0 };
-    this.scheduleBotStep(BOT_CADENCE_MS.think);
-  }
-
-  /** Resolve exatamente uma etapa e agenda a próxima somente se a vez ainda for da IA. */
-  private runPacedBotStep(): void {
-    const state = this.botTurnState;
-    if (!state || !this.botTurnIsActive(state.playerId)) {
-      this.clearBotSequence();
-      return;
-    }
-
-    if (state.phase === 'cards') {
-      if (state.cardActions < 20 && this.botPlayOneCard(state.playerId)) {
-        state.cardActions++;
-        if (this.botTurnState === state && this.botTurnIsActive(state.playerId)) {
-          this.scheduleBotStep(BOT_CADENCE_MS.card);
-        } else {
-          this.clearBotSequence();
-        }
-        return;
-      }
-      state.phase = 'combat';
-      this.scheduleBotStep(BOT_CADENCE_MS.combat);
-      return;
-    }
-
-    if (state.phase === 'combat') {
-      if (state.attackActions < MAX_BOARD && this.botAttackOnce(state.playerId)) {
-        state.attackActions++;
-        if (this.botTurnState === state && this.botTurnIsActive(state.playerId)) {
-          this.scheduleBotStep(BOT_CADENCE_MS.attack);
-        } else {
-          this.clearBotSequence();
-        }
-        return;
-      }
-      state.phase = 'end';
-      this.scheduleBotStep(BOT_CADENCE_MS.end);
-      return;
-    }
-
-    const playerId = state.playerId;
-    this.botTurnState = null;
-    if (this.botTurnIsActive(playerId)) {
-      try { this.endTurn(playerId); } catch { /* o bot nunca derruba a partida */ }
-    }
-  }
-
-  /** Tenta jogar uma única carta válida, preservando a heurística gananciosa. */
-  private botPlayOneCard(playerId: string): boolean {
-    const idx = this.seatOf(playerId);
-    if (idx < 0 || this.status !== 'active' || this.turnSeat !== idx) return false;
-    const seat = this.seats[idx];
-    for (const card of [...seat.hand]) {
-      const def = CARDS[card.defId];
-      if (def.cost > seat.energy) continue;
-      const wants = def.target ?? 'none';
-      const target = wants === 'none' ? undefined : this.botTargetFor(idx, def);
-      if (wants !== 'none' && !target) continue;
-      try {
-        this.playCard(playerId, card.iid, target);
-        return true;
-      } catch { /* carta inválida agora; tenta a próxima */ }
-    }
-    return false;
-  }
-
-  /** Tenta resolver um único ataque válido. */
-  private botAttackOnce(playerId: string): boolean {
-    const idx = this.seatOf(playerId);
-    if (idx < 0 || this.status !== 'active' || this.turnSeat !== idx) return false;
-    const seat = this.seats[idx];
-    for (const live of seat.board) {
-      if (!live || !live.canAttack || live.attacked) continue;
-      const target = this.botAttackTarget(idx);
-      if (!target) return false;
-      try {
-        this.attack(playerId, live.iid, target);
-        return true;
-      } catch { /* alvo sumiu; tenta a próxima criatura */ }
-    }
-    return false;
-  }
-
-  /**
-   * Resolve imediatamente para simulações/testes do motor. A partida real usa
-   * `runPacedBotStep`, mas ambos compartilham as mesmas decisões e validações.
-   */
+  /** Resolve imediatamente para simulacoes e testes do motor. */
   runBotTurn(playerId: string): void {
-    this.clearBotSequence();
-    const idx = this.seatOf(playerId);
-    if (idx < 0 || this.status !== 'active' || this.turnSeat !== idx) return;
-
-    for (let guard = 0; guard < 20 && this.botTurnIsActive(playerId); guard++) {
-      if (!this.botPlayOneCard(playerId)) break;
-    }
-    for (let guard = 0; guard < MAX_BOARD && this.botTurnIsActive(playerId); guard++) {
-      if (!this.botAttackOnce(playerId)) break;
-    }
-    if (this.status === 'active' && this.turnSeat === idx) {
-      try { this.endTurn(playerId); } catch { /* ignore */ }
-    }
-  }
-
-  /** Alvo para uma carta com alvo (magia/tática), do ponto de vista do bot. */
-  private botTargetFor(casterIdx: number, def: CardDef): Target | undefined {
-    const enemyIdx = this.seats.findIndex((_, i) => i !== casterIdx && !this.seats[i].out);
-    const enemy = enemyIdx >= 0 ? this.seats[enemyIdx] : null;
-    if (def.target === 'friendly-creature') {
-      const mine = this.seats[casterIdx].board[0];
-      return mine ? { seat: casterIdx, iid: mine.iid } : undefined;
-    }
-    if (def.target === 'enemy-creature') {
-      if (!enemy || enemy.board.length === 0) return undefined;
-      return { seat: enemyIdx, iid: enemy.board[0].iid };
-    }
-    if (def.target === 'enemy-any') {
-      if (!enemy) return undefined;
-      // mira o comandante se a mesa permite (vazia ou a carta atravessa); senão a 1ª criatura
-      if (enemy.board.length === 0 || def.pierce) return { seat: enemyIdx };
-      return { seat: enemyIdx, iid: enemy.board[0].iid };
-    }
-    return undefined;
-  }
-
-  /** Alvo de ataque do bot: respeita Provocar e a proteção do comandante. */
-  private botAttackTarget(casterIdx: number): Target | undefined {
-    const enemyIdx = this.seats.findIndex((_, i) => i !== casterIdx && !this.seats[i].out);
-    if (enemyIdx < 0) return undefined;
-    const enemy = this.seats[enemyIdx];
-    if (enemy.board.length === 0) return { seat: enemyIdx }; // mesa livre → comandante
-    const taunt = enemy.board.find((c) => CARDS[c.defId].keywords?.includes('taunt'));
-    return { seat: enemyIdx, iid: (taunt ?? enemy.board[0]).iid };
+    this.bot.runImmediate(playerId);
   }
 
   // ─── Visões redigidas por jogador (anti-cheat) ─────────────────
@@ -1038,7 +868,7 @@ export class Match {
   dispose(): void {
     this.clearTurnTimer();
     if (this.mulliganTimer) clearTimeout(this.mulliganTimer);
-    this.clearBotSequence();
+    this.bot.clear();
     for (const seat of this.seats) {
       if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
       seat.reconnectTimer = null;
