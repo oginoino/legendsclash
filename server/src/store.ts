@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import {
   DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME, DEFAULT_PROFILE_COVER,
@@ -18,6 +18,7 @@ import type {
   UserRecord,
 } from './persistence/contracts.js';
 import { JsonPersistence } from './persistence/json-persistence.js';
+import { SessionRegistry } from './persistence/session-registry.js';
 import { SupabasePersistence } from './persistence/supabase-persistence.js';
 
 export type {
@@ -63,19 +64,13 @@ export function advanceStreak(
 
 // ─── Store: cache em memória + write-through ────────────────────
 
-/** Vida de uma sessão; renovada (deslizante) a cada uso espaçado. */
-const SESSION_TTL_MS = 30 * 24 * 3600_000;
-/** Convidados são efêmeros: sessão mais curta, só em memória. */
-const GUEST_SESSION_TTL_MS = 24 * 3600_000;
-/** Renovação grava no banco no máximo 1x/hora por sessão. */
-const SESSION_TOUCH_MS = 3600_000;
 /** Buffer de eventos em memória (debug/testes); a verdade é o banco. */
 const EVENTS_MEMORY_CAP = 500;
 
 export class Store {
   private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private byId = new Map<string, UserRecord>();
-  private sessions = new Map<string, SessionRecord>(); // tokenHash → sessão
+  private sessionRegistry!: SessionRegistry;
 
   private constructor(private persistence: Persistence) {}
 
@@ -94,76 +89,25 @@ export class Store {
     }
     const store = new Store(persistence);
     store.db = await persistence.load();
-    const now = Date.now();
-    store.db.sessions = store.db.sessions.filter((s) => s.expiresAt > now);
     for (const u of store.db.users) store.byId.set(u.id, u);
-    for (const s of store.db.sessions) store.sessions.set(s.tokenHash, s);
+    store.sessionRegistry = new SessionRegistry(store.db, store.byId, persistence);
     return store;
   }
 
   // ─── Sessões de login ───────────────────────────────────────────
 
-  private static hashToken(raw: string): string {
-    return createHash('sha256').update(raw).digest('hex');
-  }
-
   /** Cria uma sessão para o jogador e retorna o token bruto (vai só ao cliente). */
   createSession(playerId: string): string {
-    const guest = this.byId.get(playerId)?.guest ?? false;
-    const raw = randomBytes(32).toString('hex');
-    const now = Date.now();
-    const session: SessionRecord = {
-      tokenHash: Store.hashToken(raw),
-      playerId,
-      createdAt: now,
-      expiresAt: now + (guest ? GUEST_SESSION_TTL_MS : SESSION_TTL_MS),
-      lastSeenAt: now,
-    };
-    this.db.sessions.push(session);
-    this.sessions.set(session.tokenHash, session);
-    if (!guest) this.persistence.saveSession(session);
-    return raw;
+    return this.sessionRegistry.create(playerId);
   }
 
   /** Resolve um token de sessão; expirada → revogada. Uso renova a expiração. */
   userBySession(rawToken: string): UserRecord | undefined {
-    const session = this.sessions.get(Store.hashToken(rawToken));
-    if (!session) return undefined;
-    const now = Date.now();
-    if (session.expiresAt <= now) {
-      this.dropSession(session.tokenHash);
-      return undefined;
-    }
-    const user = this.byId.get(session.playerId);
-    if (now - session.lastSeenAt > SESSION_TOUCH_MS) {
-      session.lastSeenAt = now;
-      session.expiresAt = now + (user?.guest ? GUEST_SESSION_TTL_MS : SESSION_TTL_MS);
-      if (!user?.guest) this.persistence.saveSession(session);
-    }
-    return user;
+    return this.sessionRegistry.resolve(rawToken);
   }
 
   revokeSession(rawToken: string): void {
-    this.dropSession(Store.hashToken(rawToken));
-  }
-
-  /** Remove a sessão dos índices em memória (sem efeitos colaterais). */
-  private removeSessionRecord(tokenHash: string): boolean {
-    if (!this.sessions.delete(tokenHash)) return false;
-    this.db.sessions = this.db.sessions.filter((s) => s.tokenHash !== tokenHash);
-    return true;
-  }
-
-  private dropSession(tokenHash: string): void {
-    const session = this.sessions.get(tokenHash);
-    if (!this.removeSessionRecord(tokenHash)) return;
-    const user = session && this.byId.get(session.playerId);
-    if (user?.guest) {
-      // convidado sem sessão é inalcançável: libera a memória
-      this.byId.delete(user.id);
-      return;
-    }
-    this.persistence.deleteSession(tokenHash);
+    this.sessionRegistry.revoke(rawToken);
   }
 
   // ─── Contas e convidados ────────────────────────────────────────
@@ -353,7 +297,7 @@ export class Store {
     for (let i = target.history.length - 1; i >= 0; i--) {
       this.persistence.saveMatch(target.id, target.history[i]);
     }
-    this.removeSessionRecord(Store.hashToken(guestToken));
+    this.sessionRegistry.detach(guestToken);
     this.recordEvent('guest_to_account', {
       userId: target.id,
       props: { mmr: target.mmr, matches: target.wins + target.losses },
@@ -369,7 +313,7 @@ export class Store {
   exportGuests(): { users: UserRecord[]; sessions: SessionRecord[] } {
     const users = [...this.byId.values()].filter((u) => u.guest);
     const ids = new Set(users.map((u) => u.id));
-    const sessions = [...this.sessions.values()].filter((s) => ids.has(s.playerId));
+    const sessions = this.sessionRegistry.recordsForPlayerIds(ids);
     return { users, sessions };
   }
 
@@ -379,8 +323,7 @@ export class Store {
    * Retorna quantos convidados foram restaurados.
    */
   importGuests(users: UserRecord[], sessions: SessionRecord[]): number {
-    const now = Date.now();
-    const alive = sessions.filter((s) => s.expiresAt > now && !this.sessions.has(s.tokenHash));
+    const alive = this.sessionRegistry.restorable(sessions);
     const reachable = new Set(alive.map((s) => s.playerId));
     let restored = 0;
     for (const u of users) {
@@ -391,11 +334,7 @@ export class Store {
       this.byId.set(u.id, u);
       restored++;
     }
-    for (const s of alive) {
-      if (!this.byId.get(s.playerId)?.guest) continue;
-      this.sessions.set(s.tokenHash, s);
-      this.db.sessions.push(s);
-    }
+    this.sessionRegistry.restore(alive.filter((s) => this.byId.get(s.playerId)?.guest));
     return restored;
   }
 
