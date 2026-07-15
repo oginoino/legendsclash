@@ -127,6 +127,21 @@ describe('mulligan (troca da mão inicial)', () => {
     vi.advanceTimersByTime(31_000); // MULLIGAN_SECONDS = 30
     expect(m.viewFor('p0').status).toBe('active');
   });
+
+  it('restaura a fase de troca sem redistribuir a mão e rearma o tempo', () => {
+    vi.useFakeTimers();
+    const { m } = makeMatch(2, 60, true);
+    track(m).start();
+    const hands = m.seats.map((seat) => seat.hand.map((card) => card.iid));
+    const snapshot = m.toSnapshot();
+    m.dispose();
+
+    const restored = track(Match.restore(snapshot, () => {}, () => {}));
+    expect(restored.viewFor('p0').status).toBe('mulligan');
+    expect(restored.seats.map((seat) => seat.hand.map((card) => card.iid))).toEqual(hands);
+    vi.advanceTimersByTime(31_000);
+    expect(restored.viewFor('p0').status).toBe('active');
+  });
 });
 
 describe('validação autoritativa', () => {
