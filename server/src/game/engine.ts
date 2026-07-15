@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
-  CARDS, MAX_BOARD, MAX_ENERGY, MAX_HAND,
-  RECONNECT_GRACE_MS, STARTING_HP, TURN_SECONDS,
+  CARDS, MAX_BOARD, MAX_HAND, RECONNECT_GRACE_MS, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
   CombatAction, GameLogEntry, GameView, MatchEndReason, MatchMvp, Target,
@@ -13,6 +12,7 @@ import { ReconnectController } from './connection/reconnect-controller.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
 import { OpeningHandController } from './phases/opening-hand-controller.js';
+import { MAX_TURNS, TurnCycleController } from './phases/turn-cycle-controller.js';
 import {
   createMatchSnapshot,
   hydrateMatchState,
@@ -53,14 +53,6 @@ export type {
 
 // Tipos e erros continuam reexportados por esta fachada para preservar os imports existentes.
 
-/**
- * Teto de turnos (somados entre os assentos): backstop contra impasses que se
- * arrastam (board-lock simétrico). Atingido o teto, a partida é decidida por
- * morte súbita por vantagem — garante encerramento previsível.
- */
-const MAX_TURNS = 40;
-/** Teto do escudo acumulável por artefato (Figura de Proa) — evita tartaruga infinita. */
-const MAX_ARTIFACT_SHIELD = 10;
 /** Folga mínima quando o prazo de reconexão vence durante o restart/deploy. */
 const RESTORE_MIN_GRACE_MS = 15_000;
 
@@ -74,6 +66,7 @@ export class Match {
   private readonly clock: TurnClock;
   private readonly reconnect: ReconnectController<Seat>;
   private readonly openingHand: OpeningHandController;
+  private readonly turnCycle: TurnCycleController;
   private readonly cardEffects: CardEffects;
   private readonly combat: CombatResolver;
   private readonly bot: BotTurnController;
@@ -124,18 +117,6 @@ export class Match {
       ),
     }));
     this.clock = new TurnClock(restored?.tutorialOpenPlayerIds);
-    this.openingHand = new OpeningHandController({
-      seats: this.seats,
-      botIds: this.botIds,
-      clock: this.clock,
-      status: () => this.status,
-      setStatus: (status) => { this.status = status; },
-      seatOf: (playerId) => this.seatOf(playerId),
-      draw: (seat, silent) => this.draw(seat, silent),
-      addLog: (text) => this.addLog(text),
-      beginFirstTurn: () => this.beginTurn(0),
-      onUpdate: () => this.onUpdate(),
-    }, cardInstances);
     this.reconnect = new ReconnectController((seat) => {
       if (this.status === 'finished' || seat.connected) return;
       seat.out = true;
@@ -170,6 +151,35 @@ export class Match {
       attack: (playerId, attackerIid, target) => this.attack(playerId, attackerIid, target),
       endTurn: (playerId) => this.endTurn(playerId),
     });
+    this.turnCycle = new TurnCycleController({
+      seats: this.seats,
+      botIds: this.botIds,
+      clock: this.clock,
+      turnSeconds: this.turnSeconds,
+      isActive: () => this.status === 'active',
+      currentTurnSeat: () => this.turnSeat,
+      setTurnSeat: (seatIndex) => { this.turnSeat = seatIndex; },
+      nextTurnNumber: () => ++this.turnNumber,
+      draw: (seat) => this.draw(seat),
+      addLog: (text) => this.addLog(text),
+      resolveByTiebreak: () => this.resolveByTiebreak(),
+      checkEnd: () => this.checkEnd(),
+      clearBot: () => this.bot.clear(),
+      scheduleBot: (playerId) => this.bot.scheduleTurn(playerId),
+      onUpdate: () => this.onUpdate(),
+    });
+    this.openingHand = new OpeningHandController({
+      seats: this.seats,
+      botIds: this.botIds,
+      clock: this.clock,
+      status: () => this.status,
+      setStatus: (status) => { this.status = status; },
+      seatOf: (playerId) => this.seatOf(playerId),
+      draw: (seat, silent) => this.draw(seat, silent),
+      addLog: (text) => this.addLog(text),
+      beginFirstTurn: () => this.turnCycle.begin(0),
+      onUpdate: () => this.onUpdate(),
+    }, cardInstances);
   }
 
   start(): void {
@@ -180,61 +190,6 @@ export class Match {
 
   mulligan(playerId: string, iids: string[]): void {
     this.openingHand.confirm(playerId, iids);
-  }
-
-  // ─── Ciclo de turno (fases: Compra → Energia → Ação/Combate → Encerra) ──
-
-  private beginTurn(seatIdx: number): void {
-    this.turnSeat = seatIdx;
-    this.turnNumber++;
-    // Backstop de duração: passado o teto, decide por morte súbita (vantagem).
-    if (this.turnNumber > MAX_TURNS) {
-      this.resolveByTiebreak();
-      if (this.status !== 'active') return;
-    }
-    const seat = this.seats[seatIdx];
-
-    // Fase de Energia: +1 ponto, máx. 10 (energia incremental por design)
-    seat.maxEnergy = Math.min(MAX_ENERGY, seat.maxEnergy + 1);
-    seat.energy = seat.maxEnergy;
-
-    // Artefatos com efeito por turno (expansão Maré Sem Rei)
-    if (seat.regen > 0 && seat.hp > 0 && seat.hp < STARTING_HP) {
-      const healed = Math.min(STARTING_HP - seat.hp, seat.regen);
-      seat.hp += healed;
-      this.addLog(`${CARDS['a_relicario'].name} restaurou ${healed} de vida a ${seat.player.name}`);
-    }
-    if (seat.shieldRegen > 0 && seat.shield < MAX_ARTIFACT_SHIELD) {
-      const gained = Math.min(MAX_ARTIFACT_SHIELD - seat.shield, seat.shieldRegen);
-      seat.shield += gained;
-      this.addLog(`${CARDS['a_figura'].name} concedeu ${gained} de escudo a ${seat.player.name}`);
-    }
-
-    // Fase de Compra
-    this.draw(seat);
-    if (this.status !== 'active') return;
-
-    for (const c of seat.board) {
-      c.canAttack = true;
-      c.attacked = false;
-    }
-
-    this.addLog(`Turno ${this.turnNumber}: vez de ${seat.player.name}`);
-    this.armTurnTimer();
-    this.checkEnd();
-    // modo treino: se a vez é da IA, agenda a jogada dela (após uma pausa legível)
-    if (this.status === 'active' && this.botIds.includes(seat.player.id)) {
-      this.bot.scheduleTurn(seat.player.id);
-    }
-  }
-
-  private armTurnTimer(ms = this.turnSeconds * 1000): void {
-    this.clock.arm(ms, () => {
-      if (this.status !== 'active') return;
-      this.addLog(`${this.seats[this.turnSeat].player.name} ficou sem tempo — turno encerrado`);
-      this.advanceTurn();
-      this.onUpdate();
-    });
   }
 
   /**
@@ -251,17 +206,6 @@ export class Match {
     const changed = this.clock.setPausedBy(playerId, open);
     if (!changed) return;
     this.onUpdate();
-  }
-
-  /** Fila circular: o próximo assento ativo, qualquer que seja N. */
-  private advanceTurn(): void {
-    if (this.status !== 'active') return;
-    this.bot.clear();
-    let next = this.turnSeat;
-    do {
-      next = (next + 1) % this.seats.length;
-    } while (this.seats[next].out && next !== this.turnSeat);
-    this.beginTurn(next);
   }
 
   private draw(seat: Seat, silent = false): void {
@@ -414,7 +358,7 @@ export class Match {
 
   endTurn(playerId: string): void {
     this.requireTurn(playerId);
-    this.advanceTurn();
+    this.turnCycle.advance();
     this.onUpdate();
   }
 
@@ -512,9 +456,7 @@ export class Match {
     if (m.status === 'mulligan') {
       m.openingHand.restoreTimer();
     } else if (m.status === 'active') {
-      m.armTurnTimer(snap.turnTimeLeftMs ?? snap.turnSeconds * 1000);
-      const current = m.seats[m.turnSeat];
-      if (current && m.botIds.includes(current.player.id)) m.bot.scheduleTurn(current.player.id);
+      m.turnCycle.restoreTimer(snap.turnTimeLeftMs ?? snap.turnSeconds * 1000);
     }
     return m;
   }
