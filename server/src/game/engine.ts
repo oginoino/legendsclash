@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import {
-  CARDS, MAX_BOARD, MAX_HAND, RECONNECT_GRACE_MS, TURN_SECONDS,
+  CARDS, MAX_HAND, RECONNECT_GRACE_MS, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
   CombatAction, GameLogEntry, GameView, Target,
 } from '@legendsclash/shared';
 import { BotTurnController } from './bot/bot-turn-controller.js';
+import { CardPlayController } from './cards/card-play-controller.js';
 import { cardInstances } from './cards/card-instance-factory.js';
 import { CombatResolver } from './combat/combat-resolver.js';
 import { ReconnectController } from './connection/reconnect-controller.js';
@@ -70,6 +71,7 @@ export class Match {
   private readonly openingHand: OpeningHandController;
   private readonly turnCycle: TurnCycleController;
   private readonly cardEffects: CardEffects;
+  private readonly cardPlay: CardPlayController;
   private readonly combat: CombatResolver;
   private readonly bot: BotTurnController;
   private readonly startedAt: number;
@@ -133,6 +135,13 @@ export class Match {
       addLog: (text) => this.addLog(text),
       creatureLabel: (seat, creature) => this.creatureLabel(seat, creature),
       newInstanceId: () => cardInstances.nextId(),
+    });
+    this.cardPlay = new CardPlayController({
+      seats: this.seats,
+      effects: this.cardEffects,
+      addLog: (text) => this.addLog(text),
+      recordPlay: (seat, cardId) => this.plays.push({ seat, cardId, at: Date.now() }),
+      recordAction: (action) => this.recordAction(action),
     });
     this.combat = new CombatResolver({
       seats: this.seats,
@@ -296,71 +305,8 @@ export class Match {
   }
 
   playCard(playerId: string, iid: string, target?: Target): void {
-    const { seat, idx } = this.requireTurn(playerId);
-    const handIdx = seat.hand.findIndex((c) => c.iid === iid);
-    if (handIdx < 0) throw new GameError('Carta não está na sua mão.');
-    const card = seat.hand[handIdx];
-    const def = CARDS[card.defId];
-    if (seat.energy < def.cost) throw new GameError('Energia insuficiente.');
-
-    switch (def.type) {
-      case 'creature': {
-        if (seat.board.length >= MAX_BOARD) throw new GameError('Mesa cheia (máx. 6 criaturas).');
-        const keywords = def.keywords ?? [];
-        seat.board.push({
-          iid: card.iid,
-          defId: card.defId,
-          attack: def.attack!,
-          health: def.health!,
-          baseHealth: def.health!,
-          // Investida (charge) ataca já; senão, enjoo de invocação até o próximo turno.
-          canAttack: keywords.includes('charge'),
-          attacked: false,
-          ward: keywords.includes('ward') || undefined,
-        });
-        this.addLog(`${seat.player.name} invocou ${def.name}`);
-        if (keywords.includes('battlecry')) this.cardEffects.triggerBattlecry(idx, def.id, card.iid);
-        break;
-      }
-      case 'spell':
-      case 'tactic':
-        this.cardEffects.resolve(idx, def.id, target);
-        break;
-      case 'artifact': {
-        if (def.id === 'a_escudo') {
-          seat.shield += 4;
-        } else if (def.id === 'a_estandarte') {
-          seat.attackBonus += 1;
-          seat.artifacts.push(def.id);
-        } else if (def.id === 'a_relicario') {
-          seat.regen += 1;
-          seat.artifacts.push(def.id);
-        } else if (def.id === 'a_orbe') {
-          seat.spellBonus += 1;
-          seat.artifacts.push(def.id);
-        } else if (def.id === 'a_figura') {
-          seat.shieldRegen += 1;
-          seat.artifacts.push(def.id);
-        }
-        this.addLog(`${seat.player.name} equipou ${def.name}`);
-        break;
-      }
-    }
-
-    if (def.type === 'creature') seat.stats.creaturesSummoned++;
-    else if (def.type === 'spell') seat.stats.spellsCast++;
-
-    seat.energy -= def.cost;
-    seat.hand.splice(handIdx, 1);
-    // jogada concluída é informação pública — alimenta a revelação no cliente
-    this.plays.push({ seat: idx, cardId: def.id, at: Date.now() });
-    this.recordAction({
-      seat: idx,
-      kind: 'card',
-      sourceDefId: def.id,
-      sourceIid: card.iid,
-      target: target ? { ...target } : undefined,
-    });
+    const { idx } = this.requireTurn(playerId);
+    this.cardPlay.play(idx, iid, target);
     this.outcome.check();
     this.onUpdate();
   }
