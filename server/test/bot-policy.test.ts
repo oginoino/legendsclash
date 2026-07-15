@@ -44,8 +44,6 @@ function seat(id: string, board: Creature[] = []): Seat {
     connected: true,
     out: false,
     mulliganDone: true,
-    reconnectTimer: null,
-    reconnectDeadline: null,
     stats: { creaturesSummoned: 0, spellsCast: 0, damageDealt: 0, shieldAbsorbed: 0 },
     creatureLog: new Map(),
   };

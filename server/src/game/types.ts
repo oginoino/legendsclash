@@ -55,8 +55,6 @@ export interface Seat {
   connected: boolean;
   out: boolean;
   mulliganDone: boolean;
-  reconnectTimer: NodeJS.Timeout | null;
-  reconnectDeadline: number | null;
   stats: MatchStats;
   creatureLog: Map<string, { defId: string; dmg: number; kills: number }>;
 }
