@@ -7,6 +7,7 @@ import type {
   CardDef, CardInHand, CombatAction, CreatureOnBoard, GameLogEntry, GameView,
   MatchEndReason, MatchMvp, SeatView, Target,
 } from '@legendsclash/shared';
+import { CombatResolver } from './combat/combat-resolver.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
 import type {
@@ -125,6 +126,7 @@ export class Match {
   private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
   private readonly cardEffects: CardEffects;
+  private readonly combat: CombatResolver;
   private readonly startedAt: number;
   private log: GameLogEntry[] = [];
   private plays: Array<{ seat: number; cardId: string; at: number }> = [];
@@ -198,14 +200,14 @@ export class Match {
       creatureLabel: (seat, creature) => this.creatureLabel(seat, creature),
       newInstanceId: () => newIid(),
     });
-  }
-
-  /** Acumula dano/abates de uma atacante para eleger o MVP (sobrevive à morte). */
-  private bumpCreature(seat: Seat, creature: Creature, dmg: number, kills: number): void {
-    const e = seat.creatureLog.get(creature.iid) ?? { defId: creature.defId, dmg: 0, kills: 0 };
-    e.dmg += dmg;
-    e.kills += kills;
-    seat.creatureLog.set(creature.iid, e);
+    this.combat = new CombatResolver({
+      seats: this.seats,
+      cardEffects: this.cardEffects,
+      damagePlayer: (seat, amount) => this.damagePlayer(seat, amount),
+      addLog: (text) => this.addLog(text),
+      creatureLabel: (seat, creature) => this.creatureLabel(seat, creature),
+      recordAction: (action) => this.recordAction(action),
+    });
   }
 
   start(): void {
@@ -546,80 +548,8 @@ export class Match {
   }
 
   attack(playerId: string, attackerIid: string, target: Target): void {
-    const { seat, idx } = this.requireTurn(playerId);
-    const attacker = seat.board.find((c) => c.iid === attackerIid);
-    if (!attacker) throw new GameError('Criatura não encontrada.');
-    if (!attacker.canAttack) throw new GameError('Essa criatura ainda não pode atacar.');
-    if (attacker.attacked) throw new GameError('Essa criatura já atacou neste turno.');
-    if (target.seat === idx) throw new GameError('Não é possível atacar a si mesmo.');
-    const enemy = this.seats[target.seat];
-    if (!enemy || enemy.out) throw new GameError('Alvo inválido.');
-
-    // Dinâmica Yu-Gi-Oh: criaturas em campo protegem os pontos de vida —
-    // o comandante só pode ser atacado com a mesa inimiga vazia.
-    if (!target.iid && enemy.board.length > 0) {
-      throw new GameError('As criaturas inimigas protegem o comandante — derrote-as primeiro.');
-    }
-
-    // Provocar: define a prioridade entre criaturas — a que tem a
-    // palavra-chave precisa ser atacada antes das demais.
-    const taunts = enemy.board.filter((c) => CARDS[c.defId].keywords?.includes('taunt'));
-    if (target.iid && taunts.length > 0 && !taunts.some((c) => c.iid === target.iid)) {
-      throw new GameError('Provocar: ataque primeiro a criatura com Provocar.');
-    }
-
-    const power = attacker.attack + seat.attackBonus;
-    const attackerName = this.creatureLabel(seat, attacker);
-
-    if (target.iid) {
-      const defender = enemy.board.find((c) => c.iid === target.iid);
-      if (!defender) throw new GameError('Alvo inválido.');
-      // rótulos fixados antes da limpeza, quando as posições ainda valem
-      const defenderName = this.creatureLabel(enemy, defender);
-      const wasLast = enemy.board.length === 1;
-      const excess = power - defender.health;
-      // Combate simultâneo: cada criatura causa seu ataque na outra.
-      // O Escudo Arcano (ward) pode anular qualquer um dos dois lados.
-      const retaliation = defender.attack + enemy.attackBonus;
-      this.addLog(`${attackerName} atacou ${defenderName}`);
-      const dealtToDefender = this.cardEffects.hurtCreature(enemy, defender, power);
-      const dealtToAttacker = this.cardEffects.hurtCreature(seat, attacker, retaliation);
-      const defenderDied = defender.health <= 0;
-      this.bumpCreature(seat, attacker, dealtToDefender, defenderDied ? 1 : 0);
-      if (dealtToAttacker > 0) {
-        this.addLog(`${defenderName} revidou: ${attackerName} sofreu ${dealtToAttacker} de dano`);
-      }
-      // Drenar (lifesteal): cada lado cura o próprio dono pelo dano que causou.
-      this.lifestealHeal(seat, attacker, dealtToDefender);
-      this.lifestealHeal(enemy, defender, dealtToAttacker);
-      this.cardEffects.cleanupBoard(seat);
-      this.cardEffects.cleanupBoard(enemy);
-      // Dano excedente: ao destruir a última criatura em campo, o saldo do
-      // golpe (não a retaliação) desconta dos pontos de vida do comandante.
-      // (Ward anulou o golpe ⇒ defenderDied é falso ⇒ sem excedente.)
-      // (O Drenar não cura de novo aqui: a cura pelo poder cheio do golpe já
-      // inclui a parcela que excedeu — somar o excedente contaria em dobro.)
-      if (wasLast && defenderDied && excess > 0) {
-        this.damagePlayer(enemy, excess);
-        seat.stats.damageDealt += excess;
-        this.addLog(`O dano excedente atingiu ${enemy.player.name} (−${excess})`);
-      }
-    } else {
-      this.damagePlayer(enemy, power);
-      seat.stats.damageDealt += power;
-      this.bumpCreature(seat, attacker, power, 0);
-      this.addLog(`${attackerName} causou ${power} de dano em ${enemy.player.name}`);
-      this.lifestealHeal(seat, attacker, power);
-    }
-
-    attacker.attacked = true;
-    this.recordAction({
-      seat: idx,
-      kind: 'attack',
-      sourceDefId: attacker.defId,
-      sourceIid: attacker.iid,
-      target: { ...target },
-    });
+    const { idx } = this.requireTurn(playerId);
+    this.combat.resolveAttack(idx, attackerIid, target);
     this.checkEnd();
     this.onUpdate();
   }
@@ -778,16 +708,6 @@ export class Match {
     seat.shield -= absorbed;
     seat.hp -= amount - absorbed;
     seat.stats.shieldAbsorbed += absorbed;
-  }
-
-  /** Drenar (lifesteal): a criatura cura o dono pelo dano que causou (máx. 30). */
-  private lifestealHeal(owner: Seat, creature: Creature, dealt: number): void {
-    if (dealt <= 0 || !CARDS[creature.defId].keywords?.includes('lifesteal')) return;
-    if (owner.out || owner.hp <= 0) return; // não ressuscita quem já caiu
-    const healed = Math.min(STARTING_HP - owner.hp, dealt);
-    if (healed <= 0) return;
-    owner.hp += healed;
-    this.addLog(`Drenar: ${CARDS[creature.defId].name} restaurou ${healed} de vida a ${owner.player.name}`);
   }
 
   /**
