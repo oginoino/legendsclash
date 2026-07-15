@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   CARDS, MAX_BOARD, MAX_ENERGY, MAX_HAND,
-  RECONNECT_GRACE_MS, STARTING_HAND, STARTING_HP, TURN_SECONDS,
+  RECONNECT_GRACE_MS, STARTING_HP, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
   CombatAction, GameLogEntry, GameView, MatchEndReason, MatchMvp, Target,
@@ -12,6 +12,7 @@ import { CombatResolver } from './combat/combat-resolver.js';
 import { ReconnectController } from './connection/reconnect-controller.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
+import { OpeningHandController } from './phases/opening-hand-controller.js';
 import {
   createMatchSnapshot,
   hydrateMatchState,
@@ -52,8 +53,6 @@ export type {
 
 // Tipos e erros continuam reexportados por esta fachada para preservar os imports existentes.
 
-/** Segundos da fase de mulligan (troca de mão inicial) antes do turno 1. */
-const MULLIGAN_SECONDS = 30;
 /**
  * Teto de turnos (somados entre os assentos): backstop contra impasses que se
  * arrastam (board-lock simétrico). Atingido o teto, a partida é decidida por
@@ -74,6 +73,7 @@ export class Match {
   private result: EngineResult | null = null;
   private readonly clock: TurnClock;
   private readonly reconnect: ReconnectController<Seat>;
+  private readonly openingHand: OpeningHandController;
   private readonly cardEffects: CardEffects;
   private readonly combat: CombatResolver;
   private readonly bot: BotTurnController;
@@ -124,6 +124,18 @@ export class Match {
       ),
     }));
     this.clock = new TurnClock(restored?.tutorialOpenPlayerIds);
+    this.openingHand = new OpeningHandController({
+      seats: this.seats,
+      botIds: this.botIds,
+      clock: this.clock,
+      status: () => this.status,
+      setStatus: (status) => { this.status = status; },
+      seatOf: (playerId) => this.seatOf(playerId),
+      draw: (seat, silent) => this.draw(seat, silent),
+      addLog: (text) => this.addLog(text),
+      beginFirstTurn: () => this.beginTurn(0),
+      onUpdate: () => this.onUpdate(),
+    }, cardInstances);
     this.reconnect = new ReconnectController((seat) => {
       if (this.status === 'finished' || seat.connected) return;
       seat.out = true;
@@ -161,76 +173,13 @@ export class Match {
   }
 
   start(): void {
-    // Mão inicial. Quem joga depois recebe a "moeda": tempo (1 de energia) no
-    // lugar de uma carta extra — devolve a iniciativa que o seat 0 ganha por agir
-    // primeiro, e o jogador decide quando gastá-la (pode segurar), ao contrário de
-    // um bônus fixo. Antes a compensação era +1 carta (recurso, não tempo).
-    this.seats.forEach((seat, i) => {
-      for (let k = 0; k < STARTING_HAND; k++) this.draw(seat, true);
-      if (i !== 0) seat.hand.push(cardInstances.create('t_moeda'));
-    });
-    this.addLog(`Partida iniciada: ${this.seats.map((s) => s.player.name).join(' vs ')}`);
-    if (this.useMulligan) {
-      // Fase de troca: cada jogador ajusta a mão inicial antes do turno 1.
-      this.status = 'mulligan';
-      this.armMulliganTimer();
-      this.addLog('Fase de troca: ajuste a mão inicial');
-      // o bot de treino não troca cartas — confirma a mão na hora
-      for (const id of this.botIds) {
-        try { this.mulligan(id, []); } catch { /* ignore */ }
-      }
-      this.onUpdate();
-      return;
-    }
-    this.beginTurn(0);
-    this.onUpdate();
-  }
-
-  private armMulliganTimer(ms = MULLIGAN_SECONDS * 1000): void {
-    this.clock.arm(ms, () => this.forceFinishMulligan());
+    this.openingHand.start(this.useMulligan);
   }
 
   // ─── Mulligan (troca da mão inicial, antes do turno 1) ──────────
 
   mulligan(playerId: string, iids: string[]): void {
-    if (this.status !== 'mulligan') throw new GameError('Não é a fase de troca de mão.');
-    const idx = this.seatOf(playerId);
-    if (idx < 0) throw new GameError('Você não está nesta partida.');
-    const seat = this.seats[idx];
-    if (seat.mulliganDone) throw new GameError('Você já confirmou sua mão.');
-
-    const swapIds = new Set(iids);
-    // a Moeda do Tempo (token) nunca é trocada
-    const swapping = seat.hand.filter((c) => swapIds.has(c.iid) && !CARDS[c.defId].token);
-    if (swapping.length) {
-      const swappingIds = new Set(swapping.map((c) => c.iid));
-      seat.hand = seat.hand.filter((c) => !swappingIds.has(c.iid));
-      // compra as substitutas ANTES de devolver as trocadas (não recompra a mesma)
-      for (let k = 0; k < swapping.length; k++) this.draw(seat, true);
-      for (const c of swapping) seat.deck.push(c);
-      cardInstances.shuffle(seat.deck);
-    }
-    seat.mulliganDone = true;
-    this.addLog(
-      `${seat.player.name} confirmou a mão${swapping.length ? ` (trocou ${swapping.length})` : ''}`,
-    );
-    if (this.seats.every((s) => s.out || s.mulliganDone)) this.finishMulligan();
-    else this.onUpdate();
-  }
-
-  /** Tempo de troca esgotado: confirma as mãos como estão e começa a partida. */
-  private forceFinishMulligan(): void {
-    if (this.status !== 'mulligan') return;
-    for (const s of this.seats) s.mulliganDone = true;
-    this.addLog('Tempo de troca esgotado — mãos confirmadas');
-    this.finishMulligan();
-  }
-
-  private finishMulligan(): void {
-    this.clock.clear();
-    this.status = 'active';
-    this.beginTurn(0);
-    this.onUpdate();
+    this.openingHand.confirm(playerId, iids);
   }
 
   // ─── Ciclo de turno (fases: Compra → Energia → Ação/Combate → Encerra) ──
@@ -561,7 +510,7 @@ export class Match {
         : Math.max(RESTORE_MIN_GRACE_MS, deadline - Date.now()));
     }
     if (m.status === 'mulligan') {
-      m.armMulliganTimer();
+      m.openingHand.restoreTimer();
     } else if (m.status === 'active') {
       m.armTurnTimer(snap.turnTimeLeftMs ?? snap.turnSeconds * 1000);
       const current = m.seats[m.turnSeat];
