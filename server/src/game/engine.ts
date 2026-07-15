@@ -4,8 +4,7 @@ import {
   RECONNECT_GRACE_MS, STARTING_HAND, STARTING_HP, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
-  CardInHand, CombatAction, CreatureOnBoard, GameLogEntry, GameView,
-  MatchEndReason, MatchMvp, SeatView, Target,
+  CombatAction, GameLogEntry, GameView, MatchEndReason, MatchMvp, Target,
 } from '@legendsclash/shared';
 import { BotTurnController } from './bot/bot-turn-controller.js';
 import { CombatResolver } from './combat/combat-resolver.js';
@@ -18,6 +17,7 @@ import {
   hydrateSeat,
 } from './snapshot/match-snapshot-mapper.js';
 import { TurnClock } from './timing/turn-clock.js';
+import { createGameView } from './view/game-view-mapper.js';
 import type {
   CardInstance,
   Creature,
@@ -696,57 +696,18 @@ export class Match {
   // dos oponentes, apenas contagens.
 
   viewFor(playerId: string): GameView {
-    const yourSeat = this.seatOf(playerId);
-    const seats: SeatView[] = this.seats.map((s) => ({
-      playerId: s.player.id,
-      name: s.player.name,
-      avatar: s.player.avatar,
-      commander: s.player.commander,
-      accent: s.player.accent,
-      photo: s.player.photo,
-      frame: s.player.frame,
-      accentStyle: s.player.accentStyle,
-      mmr: s.player.mmr,
-      hp: Math.max(0, s.hp),
-      shield: s.shield,
-      energy: s.energy,
-      maxEnergy: s.maxEnergy,
-      deckCount: s.deck.length,
-      handCount: s.hand.length,
-      board: s.board.map((c): CreatureOnBoard => ({
-        iid: c.iid,
-        defId: c.defId,
-        attack: c.attack,
-        health: c.health,
-        baseHealth: c.baseHealth,
-        canAttack: c.canAttack && !c.attacked,
-        ward: c.ward || undefined,
-      })),
-      artifacts: s.artifacts,
-      attackBonus: s.attackBonus,
-      fatigue: s.fatigue,
-      connected: s.connected,
-      out: s.out,
-      mulliganDone: s.mulliganDone,
-    }));
-    const hand: CardInHand[] =
-      yourSeat >= 0 ? this.seats[yourSeat].hand.map((c) => ({ iid: c.iid, defId: c.defId })) : [];
-    const clock = this.clock.view();
-    return {
+    return createGameView({
       matchId: this.id,
-      yourSeat,
+      playerId,
       turnSeat: this.turnSeat,
       turnNumber: this.turnNumber,
-      turnEndsAt: clock.endsAt,
-      turnPaused: clock.paused,
-      turnTimeLeftMs: clock.timeLeftMs,
-      seats,
-      hand,
+      clock: this.clock.view(),
+      seats: this.seats,
       status: this.status,
-      log: this.log.slice(-30),
-      plays: this.plays.slice(-12),
-      actions: this.actions.slice(-24),
-    };
+      log: this.log,
+      plays: this.plays,
+      actions: this.actions,
+    });
   }
 
   get finished(): boolean {
