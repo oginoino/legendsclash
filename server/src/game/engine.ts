@@ -3,7 +3,7 @@ import {
   CARDS, MAX_BOARD, MAX_HAND, RECONNECT_GRACE_MS, TURN_SECONDS,
 } from '@legendsclash/shared';
 import type {
-  CombatAction, GameLogEntry, GameView, MatchEndReason, MatchMvp, Target,
+  CombatAction, GameLogEntry, GameView, Target,
 } from '@legendsclash/shared';
 import { BotTurnController } from './bot/bot-turn-controller.js';
 import { cardInstances } from './cards/card-instance-factory.js';
@@ -11,6 +11,7 @@ import { CombatResolver } from './combat/combat-resolver.js';
 import { ReconnectController } from './connection/reconnect-controller.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
+import { MatchOutcomeController } from './outcome/match-outcome-controller.js';
 import { OpeningHandController } from './phases/opening-hand-controller.js';
 import { MAX_TURNS, TurnCycleController } from './phases/turn-cycle-controller.js';
 import {
@@ -65,6 +66,7 @@ export class Match {
   private result: EngineResult | null = null;
   private readonly clock: TurnClock;
   private readonly reconnect: ReconnectController<Seat>;
+  private readonly outcome: MatchOutcomeController;
   private readonly openingHand: OpeningHandController;
   private readonly turnCycle: TurnCycleController;
   private readonly cardEffects: CardEffects;
@@ -121,7 +123,7 @@ export class Match {
       if (this.status === 'finished' || seat.connected) return;
       seat.out = true;
       this.addLog(`${seat.player.name} não voltou a tempo`);
-      this.checkEnd('timeout');
+      this.outcome.check('timeout');
       this.onUpdate();
     });
     this.cardEffects = new CardEffects({
@@ -151,6 +153,20 @@ export class Match {
       attack: (playerId, attackerIid, target) => this.attack(playerId, attackerIid, target),
       endTurn: (playerId) => this.endTurn(playerId),
     });
+    this.outcome = new MatchOutcomeController({
+      seats: this.seats,
+      maxTurns: MAX_TURNS,
+      startedAt: this.startedAt,
+      status: () => this.status,
+      setStatus: (status) => { this.status = status; },
+      turnNumber: () => this.turnNumber,
+      setResult: (result) => { this.result = result; },
+      clearClock: () => this.clock.clear(),
+      clearBot: () => this.bot.clear(),
+      clearReconnect: () => this.reconnect.clear(),
+      addLog: (text) => this.addLog(text),
+      onFinish: (result) => this.onFinish(result),
+    });
     this.turnCycle = new TurnCycleController({
       seats: this.seats,
       botIds: this.botIds,
@@ -162,8 +178,8 @@ export class Match {
       nextTurnNumber: () => ++this.turnNumber,
       draw: (seat) => this.draw(seat),
       addLog: (text) => this.addLog(text),
-      resolveByTiebreak: () => this.resolveByTiebreak(),
-      checkEnd: () => this.checkEnd(),
+      resolveByTiebreak: () => this.outcome.resolveByTiebreak(),
+      checkEnd: () => this.outcome.check(),
       clearBot: () => this.bot.clear(),
       scheduleBot: (playerId) => this.bot.scheduleTurn(playerId),
       onUpdate: () => this.onUpdate(),
@@ -219,7 +235,7 @@ export class Match {
           `${seat.player.name} tentou comprar, mas o baralho acabou: fadiga ${seat.fatigue} causou ${seat.fatigue} de dano`,
         );
       }
-      this.checkEnd('fatigue');
+      this.outcome.check('fatigue');
       return;
     }
     if (seat.hand.length >= MAX_HAND) {
@@ -345,14 +361,14 @@ export class Match {
       sourceIid: card.iid,
       target: target ? { ...target } : undefined,
     });
-    this.checkEnd();
+    this.outcome.check();
     this.onUpdate();
   }
 
   attack(playerId: string, attackerIid: string, target: Target): void {
     const { idx } = this.requireTurn(playerId);
     this.combat.resolveAttack(idx, attackerIid, target);
-    this.checkEnd();
+    this.outcome.check();
     this.onUpdate();
   }
 
@@ -368,7 +384,7 @@ export class Match {
     if (idx < 0) return;
     this.seats[idx].out = true;
     this.addLog(`${this.seats[idx].player.name} desistiu da partida`);
-    this.checkEnd('surrender');
+    this.outcome.check('surrender');
     this.onUpdate();
   }
 
@@ -468,77 +484,6 @@ export class Match {
     seat.shield -= absorbed;
     seat.hp -= amount - absorbed;
     seat.stats.shieldAbsorbed += absorbed;
-  }
-
-  /**
-   * Morte súbita por tempo (teto de turnos): vence quem tem mais vida; empate
-   * decide pela maior soma de ataque em campo; persistindo o empate, o assento de
-   * menor índice. Usa o motivo 'hp' (sem novo enum nem migração de banco).
-   */
-  private resolveByTiebreak(): void {
-    const alive = this.seats.map((s, i) => ({ s, i })).filter(({ s }) => !s.out);
-    if (alive.length <= 1) return;
-    const score = (s: Seat) => s.hp * 1000 + s.board.reduce((sum, c) => sum + c.attack, 0);
-    alive.sort((a, b) => score(b.s) - score(a.s));
-    for (let k = 1; k < alive.length; k++) alive[k].s.out = true; // só o líder sobrevive
-    this.addLog(`Limite de ${MAX_TURNS} turnos atingido — vitória por vantagem (morte súbita)`);
-    this.checkEnd();
-  }
-
-  /** Resistência (comeback): liga/desliga o +2 de ataque conforme a vida do dono
-   *  cruza 10, de forma idempotente (não acumula). Concede Investida ao ligar. */
-  private refreshComeback(): void {
-    for (const seat of this.seats) {
-      const active = seat.hp <= 10 && !seat.out;
-      for (const c of seat.board) {
-        if (!CARDS[c.defId].keywords?.includes('comeback')) continue;
-        if (active && !c.comebackOn) {
-          c.attack += 2;
-          c.comebackOn = true;
-          if (!c.attacked) c.canAttack = true; // Investida enquanto resiste
-        } else if (!active && c.comebackOn) {
-          c.attack -= 2;
-          c.comebackOn = false;
-        }
-      }
-    }
-  }
-
-  private checkEnd(reasonHint?: MatchEndReason): void {
-    if (this.status === 'finished') return;
-    if (this.status === 'active') this.refreshComeback(); // reavalia a Resistência a cada mudança de estado
-    for (const seat of this.seats) {
-      if (!seat.out && seat.hp <= 0) {
-        seat.out = true;
-        this.addLog(`${seat.player.name} ficou sem vida`);
-      }
-    }
-    const alive = this.seats.map((s, i) => ({ s, i })).filter(({ s }) => !s.out);
-    if (alive.length > 1) return;
-
-    this.status = 'finished';
-    this.clock.clear();
-    this.bot.clear();
-    this.reconnect.clear();
-    const winnerSeat = alive.length === 1 ? alive[0].i : 0;
-    this.result = {
-      winnerSeat,
-      reason: reasonHint ?? 'hp',
-      turns: this.turnNumber,
-      durationMs: Date.now() - this.startedAt,
-      stats: this.seats.map((s) => ({ ...s.stats })),
-      mvp: this.seats.map((s) => {
-        let best: MatchMvp | null = null;
-        for (const e of s.creatureLog.values()) {
-          if (!best || e.dmg > best.damage || (e.dmg === best.damage && e.kills > best.kills)) {
-            best = { defId: e.defId, damage: e.dmg, kills: e.kills };
-          }
-        }
-        return best;
-      }),
-    };
-    this.addLog(`Vitória de ${this.seats[winnerSeat].player.name}!`);
-    this.onFinish(this.result);
   }
 
   // ─── Bot de treino (assento virtual, sem MMR) ──────────────────
