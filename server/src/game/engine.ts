@@ -9,6 +9,7 @@ import type {
 } from '@legendsclash/shared';
 import { BotTurnController } from './bot/bot-turn-controller.js';
 import { CombatResolver } from './combat/combat-resolver.js';
+import { ReconnectController } from './connection/reconnect-controller.js';
 import { CardEffects } from './effects/card-effects.js';
 import { GameError } from './errors.js';
 import { TurnClock } from './timing/turn-clock.js';
@@ -102,6 +103,7 @@ export class Match {
   private status: 'mulligan' | 'active' | 'finished' = 'active';
   private result: EngineResult | null = null;
   private readonly clock: TurnClock;
+  private readonly reconnect: ReconnectController<Seat>;
   private readonly cardEffects: CardEffects;
   private readonly combat: CombatResolver;
   private readonly bot: BotTurnController;
@@ -162,13 +164,18 @@ export class Match {
         connected: !restored,
         out: snap?.out ?? false,
         mulliganDone: snap?.mulliganDone ?? false,
-        reconnectTimer: null,
-        reconnectDeadline: null,
         stats: snap?.stats ? { ...snap.stats } : { creaturesSummoned: 0, spellsCast: 0, damageDealt: 0, shieldAbsorbed: 0 },
         creatureLog: new Map(snap?.creatureLog ?? []),
       };
     });
     this.clock = new TurnClock(restored?.tutorialOpenPlayerIds);
+    this.reconnect = new ReconnectController((seat) => {
+      if (this.status === 'finished' || seat.connected) return;
+      seat.out = true;
+      this.addLog(`${seat.player.name} não voltou a tempo`);
+      this.checkEnd('timeout');
+      this.onUpdate();
+    });
     this.cardEffects = new CardEffects({
       seats: this.seats,
       draw: (seat) => this.draw(seat),
@@ -529,33 +536,15 @@ export class Match {
     // Uma aba fechada nunca pode manter o onboarding dos demais congelado.
     this.clock.setPausedBy(playerId, false);
     this.addLog(`${seat.player.name} desconectou — ${RECONNECT_GRACE_MS / 60000} min para reconectar`);
-    this.armReconnectTimer(seat, RECONNECT_GRACE_MS);
+    this.reconnect.disconnect(seat, RECONNECT_GRACE_MS);
     this.onUpdate();
-  }
-
-  /** Agenda a derrota por ausência e registra o prazo persistível. */
-  private armReconnectTimer(seat: Seat, ms: number): void {
-    if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
-    seat.connected = false;
-    seat.reconnectDeadline = Date.now() + ms;
-    seat.reconnectTimer = setTimeout(() => {
-      if (this.status === 'finished' || seat.connected) return;
-      seat.out = true;
-      this.addLog(`${seat.player.name} não voltou a tempo`);
-      this.checkEnd('timeout');
-      this.onUpdate();
-    }, ms);
   }
 
   handleReconnect(playerId: string): void {
     const idx = this.seatOf(playerId);
     if (idx < 0) return;
     const seat = this.seats[idx];
-    if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
-    seat.reconnectTimer = null;
-    seat.reconnectDeadline = null;
-    if (!seat.connected) {
-      seat.connected = true;
+    if (this.reconnect.reconnect(seat)) {
       this.addLog(`${seat.player.name} reconectou`);
       this.onUpdate();
     }
@@ -598,7 +587,7 @@ export class Match {
         fatigue: s.fatigue,
         out: s.out,
         mulliganDone: s.mulliganDone,
-        reconnectDeadline: s.connected ? null : s.reconnectDeadline,
+        reconnectDeadline: this.reconnect.deadlineFor(s),
         stats: { ...s.stats },
         creatureLog: [...s.creatureLog.entries()],
       })),
@@ -634,7 +623,7 @@ export class Match {
     for (const [i, seat] of m.seats.entries()) {
       if (seat.out) continue;
       const deadline = snap.seats[i].reconnectDeadline;
-      m.armReconnectTimer(seat, deadline === null
+      m.reconnect.disconnect(seat, deadline === null
         ? RECONNECT_GRACE_MS
         : Math.max(RESTORE_MIN_GRACE_MS, deadline - Date.now()));
     }
@@ -706,11 +695,7 @@ export class Match {
     this.status = 'finished';
     this.clock.clear();
     this.bot.clear();
-    for (const seat of this.seats) {
-      if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
-      seat.reconnectTimer = null;
-      seat.reconnectDeadline = null;
-    }
+    this.reconnect.clear();
     const winnerSeat = alive.length === 1 ? alive[0].i : 0;
     this.result = {
       winnerSeat,
@@ -821,10 +806,6 @@ export class Match {
   dispose(): void {
     this.clock.clear();
     this.bot.clear();
-    for (const seat of this.seats) {
-      if (seat.reconnectTimer) clearTimeout(seat.reconnectTimer);
-      seat.reconnectTimer = null;
-      seat.reconnectDeadline = null;
-    }
+    this.reconnect.clear();
   }
 }
