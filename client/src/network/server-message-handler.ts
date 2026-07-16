@@ -1,5 +1,6 @@
 import type { ClientMsg, ServerMsg } from '@legendsclash/shared';
 import type { AppState, AppStateAction } from '../state/app-state';
+import { preloadProfilePhoto } from '../preload';
 
 export interface ServerMessageHandlerDependencies {
   getState(): AppState;
@@ -32,6 +33,8 @@ export function createServerMessageHandler(dependencies: ServerMessageHandlerDep
         });
         dependencies.send({ t: 'leaderboard:get' });
         dependencies.send({ t: 'history:get' });
+        // Pre-carrega a foto do avatar para evitar flash na tela inicial
+        preloadProfilePhoto(message.profile.photo);
         // Migra uma escolha antiga do dispositivo para o perfil persistido.
         if (!persistedFaction && legacyFaction) {
           dependencies.send({ t: 'faction:pick', factionId: legacyFaction });
@@ -55,6 +58,7 @@ export function createServerMessageHandler(dependencies: ServerMessageHandlerDep
           profile: message.profile,
           faction: message.profile.faction ?? '',
         });
+        preloadProfilePhoto(message.profile.photo);
         break;
       case 'queue:status':
         dependencies.dispatch({

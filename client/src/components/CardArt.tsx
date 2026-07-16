@@ -188,17 +188,43 @@ export function CardArt({
   const imageUrl = cardImageUrl(defId);
   const fallbackUrl = cardFallbackImageUrl(defId);
   const [src, setSrc] = useState(imageUrl);
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>(imageUrl ? 'loading' : 'loaded');
+  const [imgStatus, setImgStatus] = useState<'loading' | 'loaded' | 'failed'>(imageUrl ? 'loading' : 'loaded');
 
   useEffect(() => {
     setSrc(imageUrl);
-    setStatus(imageUrl ? 'loading' : 'loaded');
+    setImgStatus(imageUrl ? 'loading' : 'loaded');
   }, [imageUrl]);
 
-  if (src && status !== 'failed') {
-    const priorityProps = { fetchPriority } as unknown as ImgHTMLAttributes<HTMLImageElement>;
+  const art = ART[defId];
+  const showImage = !!(src && imgStatus !== 'failed');
+
+  // No art and no image — emoji fallback from catalog
+  if (!art) {
     return (
-      <span className={`card-art-frame image-art image-${status} ${className ?? ''}`}>
+      <span className={`card-art-frame ${className ?? ''}`}>
+        {CARDS[defId]?.art}
+      </span>
+    );
+  }
+
+  const frameClass = [
+    'card-art-frame',
+    showImage ? 'image-art' : '',
+    imgStatus === 'loaded' ? 'image-loaded' : '',
+    className ?? '',
+  ].filter(Boolean).join(' ');
+
+  const artBg = {
+    background: `radial-gradient(80% 75% at 50% 38%, ${art.fg}2e 0%, transparent 70%), ${art.bg}`,
+  };
+
+  const priorityProps = { fetchPriority } as unknown as ImgHTMLAttributes<HTMLImageElement>;
+
+  return (
+    <span className={frameClass} style={artBg}>
+      {/* Fallback icon — visible while image loads, fades out when image appears */}
+      <art.Icon className="card-art-fallback" style={{ color: art.fg }} aria-hidden />
+      {showImage && (
         <img
           key={src}
           src={src}
@@ -207,35 +233,19 @@ export function CardArt({
           decoding="async"
           draggable={false}
           className="card-art-img"
-          onLoad={() => setStatus('loaded')}
+          onLoad={() => setImgStatus('loaded')}
           onError={(event) => {
             if (fallbackUrl && event.currentTarget.dataset.fallback !== '1') {
               event.currentTarget.dataset.fallback = '1';
-              setStatus('loading');
+              setImgStatus('loading');
               setSrc(fallbackUrl);
               return;
             }
-            setStatus('failed');
+            setImgStatus('failed');
           }}
           {...priorityProps}
         />
-      </span>
-    );
-  }
-
-  const art = ART[defId];
-  if (!art) {
-    return <span className={`card-art-frame ${className ?? ''}`}>{CARDS[defId]?.art}</span>;
-  }
-  return (
-    <span
-      className={`card-art-frame ${className ?? ''}`}
-      // luz de palco atrás do ícone + halo na cor da arte dão profundidade à vinheta
-      style={{
-        background: `radial-gradient(80% 75% at 50% 38%, ${art.fg}2e 0%, transparent 70%), ${art.bg}`,
-      }}
-    >
-      <art.Icon style={{ color: art.fg }} aria-hidden />
+      )}
     </span>
   );
 }

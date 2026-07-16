@@ -50,6 +50,58 @@
   object-fit: cover;
 }
 
+/* Wrapper que empilha o ícone fallback e a imagem real (crossfade no carregamento) */
+.lc-cosmetic-wrapper {
+  display: grid;
+  width: 100%;
+  height: 100%;
+}
+
+.lc-cosmetic-wrapper > * {
+  grid-area: 1 / 1;
+}
+
+.lc-cosmetic-wrapper .lc-cosmetic-fallback {
+  width: 62%;
+  height: 62%;
+  place-self: center;
+  transition: opacity .28s ease;
+}
+
+.lc-cosmetic-ready .lc-cosmetic-fallback {
+  opacity: 0;
+}
+
+/* Photo wrapper (Avatar): empilha fallback + foto com crossfade */
+.lc-avatar-photo-wrap,
+.lc-inline-photo-wrap {
+  display: grid;
+  width: 100%;
+  height: 100%;
+}
+
+.lc-avatar-photo-wrap > *,
+.lc-inline-photo-wrap > * {
+  grid-area: 1 / 1;
+}
+
+.lc-avatar-fallback,
+.lc-inline-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  transition: opacity .28s ease;
+}
+
+.lc-photo-ready .lc-avatar-fallback,
+.lc-photo-ready .lc-inline-fallback {
+  opacity: 0;
+}
+
+.lc-avatar-photo-wrap .lc-avatar-fallback .lc-cosmetic-img {
+  border-radius: 50%;
+}
+
 .lc-avatar-face .lc-cosmetic-img,
 .lc-inline .lc-cosmetic-img {
   border-radius: 50%;

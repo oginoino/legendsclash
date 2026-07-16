@@ -382,6 +382,16 @@
   filter: drop-shadow(0 3px 5px #000c);
 }
 
+/* Fallback icon — visible while image loads, fades out when image appears */
+.card-art-fallback {
+  filter: drop-shadow(0 3px 5px #000c);
+  transition: opacity .28s ease;
+}
+
+.image-loaded .card-art-fallback {
+  opacity: 0;
+}
+
 .card-art.card-art-frame {
   width: 100%;
   height: var(--card-art-h);

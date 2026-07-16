@@ -6,6 +6,7 @@
  * react-icons; este arquivo é a ponte.
  */
 import type { CSSProperties } from 'react';
+import { useState } from 'react';
 import type { IconType } from 'react-icons';
 import {
   GiBroadDagger, GiCrenelCrown, GiCrossedSwords, GiCrystalBall, GiDragonHead,
@@ -131,20 +132,25 @@ export function CosmeticPortrait({
   id, className = '', alt = '',
 }: { id: string; className?: string; alt?: string }) {
   const src = portraitImageFor(id);
+  const [imgLoaded, setImgLoaded] = useState(false);
   if (src) {
     return (
-      <img
-        src={src}
-        alt={alt}
-        loading="lazy"
-        decoding="async"
-        className={`lc-cosmetic-img ${className}`.trim()}
-        onError={(event) => {
-          if (event.currentTarget.dataset.fallback === '1') return;
-          event.currentTarget.dataset.fallback = '1';
-          event.currentTarget.src = pngFallback(src);
-        }}
-      />
+      <span className={`lc-cosmetic-wrapper ${imgLoaded ? 'lc-cosmetic-ready' : ''} ${className}`.trim()}>
+        <CosmeticIcon id={id} size="100%" className="lc-cosmetic-fallback" />
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          className="lc-cosmetic-img"
+          onLoad={() => setImgLoaded(true)}
+          onError={(event) => {
+            if (event.currentTarget.dataset.fallback === '1') return;
+            event.currentTarget.dataset.fallback = '1';
+            event.currentTarget.src = pngFallback(src);
+          }}
+        />
+      </span>
     );
   }
   return <CosmeticIcon id={id} size="100%" className={className} />;
@@ -176,10 +182,22 @@ export function accentVars(accent: string, accentStyle?: string): CSSProperties 
 export function InlineAvatar({
   iconId, photo, size = 20, className = '',
 }: { iconId: string; photo?: string | null; size?: number; className?: string }) {
+  const [photoReady, setPhotoReady] = useState(false);
   return (
     <span className={`lc-inline ${className}`.trim()} style={{ width: size, height: size }}>
       {photo
-        ? <img src={photo} alt="" decoding="async" className="lc-inline-photo" />
+        ? (
+          <span className={`lc-inline-photo-wrap ${photoReady ? 'lc-photo-ready' : ''}`}>
+            <CosmeticPortrait id={iconId} className="lc-inline-fallback" />
+            <img
+              src={photo}
+              alt=""
+              decoding="async"
+              className="lc-inline-photo"
+              onLoad={() => setPhotoReady(true)}
+            />
+          </span>
+        )
         : <CosmeticPortrait id={iconId} />}
     </span>
   );
@@ -205,6 +223,7 @@ export function Avatar({
   className?: string;
   alt?: string;
 }) {
+  const [photoReady, setPhotoReady] = useState(false);
   const style: CSSProperties = {
     ...accentVars(accent, accentStyle),
     ...(fill ? { width: '100%', height: '100%' } : { width: size, height: size }),
@@ -216,7 +235,18 @@ export function Avatar({
       <span className="lc-avatar-ring">
         <span className="lc-avatar-face">
           {photo
-            ? <img src={photo} alt={alt ?? ''} decoding="async" className="lc-avatar-photo" />
+            ? (
+              <span className={`lc-avatar-photo-wrap ${photoReady ? 'lc-photo-ready' : ''}`}>
+                <CosmeticPortrait id={iconId} alt={alt ?? ''} className="lc-avatar-fallback" />
+                <img
+                  src={photo}
+                  alt={alt ?? ''}
+                  decoding="async"
+                  className="lc-avatar-photo"
+                  onLoad={() => setPhotoReady(true)}
+                />
+              </span>
+            )
             : <CosmeticPortrait id={iconId} alt={alt ?? ''} />}
         </span>
       </span>

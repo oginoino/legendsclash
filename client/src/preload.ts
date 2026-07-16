@@ -248,7 +248,7 @@ export function primeVisualAssets(options: PrimeVisualAssetsOptions = {}): Promi
 
   return withTimeout(
     Promise.all([fontLoad, criticalLoad, interfaceLoad]).then(() => undefined),
-    mobile ? 2400 : 1600,
+    mobile ? 8000 : 5000,
   ).then(() => {
     done = total;
     emit('Arena pronta');
@@ -257,4 +257,10 @@ export function primeVisualAssets(options: PrimeVisualAssetsOptions = {}): Promi
 
 export function allCardImageIds(): string[] {
   return Object.keys(CARDS).filter((id) => !!cardImageUrl(id));
+}
+
+/** Pre-carrega a foto de perfil do usuário assim que a sessão é retomada. */
+export function preloadProfilePhoto(url: string | null | undefined): void {
+  if (!url || !canUseDom()) return;
+  preloadImageUrls([url], { priority: 'high', decode: true });
 }
