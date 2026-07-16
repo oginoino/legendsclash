@@ -577,14 +577,17 @@
 }
 
 .cod-popup-card {
-  flex: 0 0 220px;
+  flex: 0 0 240px;
   display: flex;
   justify-content: center;
 }
 
 .cod-popup-card .card {
-  width: 220px;
-  aspect-ratio: 3 / 4;
+  --card-w: 240px;
+  --card-h: 430px;
+  --card-art-h: 200px;
+  width: var(--card-w);
+  height: var(--card-h);
   pointer-events: none;
 }
 
@@ -624,7 +627,11 @@
   }
 
   .cod-popup-card .card {
-    width: 180px;
+    --card-w: 200px;
+    --card-h: 360px;
+    --card-art-h: 168px;
+    width: var(--card-w);
+    height: var(--card-h);
   }
 }
 
