@@ -109,7 +109,7 @@
   background: linear-gradient(180deg, #24304a, #1a2438);
 }
 
-.go-header > p {
+.go-header>p {
   margin: 0;
   color: #d9e2ef;
 }
@@ -137,11 +137,11 @@
   box-shadow: 0 -12px 30px #07101c88;
 }
 
-.go-footer > .go-actions:first-child {
+.go-footer>.go-actions:first-child {
   margin-top: 0;
 }
 
-.go-footer > .btn.big {
+.go-footer>.btn.big {
   width: 100%;
 }
 
@@ -223,6 +223,10 @@
 .go-reason-surrender,
 .go-reason-timeout {
   border-left: 3px solid var(--gold);
+}
+
+.go-reason-turns {
+  border-left: 3px solid var(--accent);
 }
 
 .go-lesson {

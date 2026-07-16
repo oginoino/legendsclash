@@ -58,7 +58,8 @@ export class MatchOutcomeController {
 
   /**
    * No teto de turnos, prioriza vida, ataque em campo e por fim o assento mais
-   * antigo. O motivo publico continua sendo `hp` para preservar o protocolo.
+   * antigo. O motivo `turns` indica que a partida acabou por esgotamento de
+   * jogadas, e não por perda de vida.
    */
   resolveByTiebreak(): void {
     const alive = this.aliveSeats();
@@ -72,9 +73,9 @@ export class MatchOutcomeController {
     ));
     for (let index = 1; index < alive.length; index++) alive[index].seat.out = true;
     this.context.addLog(
-      `Limite de ${this.context.maxTurns} turnos atingido — vitória por vantagem (morte súbita)`,
+      `Limite de ${this.context.maxTurns} turnos atingido — vitória por vantagem`,
     );
-    this.check();
+    this.check('turns');
   }
 
   /** Resistência alterna o bonus sem acumular e concede Investida ao ativar. */
