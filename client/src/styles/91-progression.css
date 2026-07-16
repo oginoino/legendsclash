@@ -495,17 +495,22 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--panel-2);
   border: 1px solid var(--gold-soft);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .cod-art.card-art-frame {
   width: 48px;
-  height: 38px;
-  font-size: 26px;
+  height: 64px;
+  font-size: 28px;
   flex-shrink: 0;
+  border-radius: 6px;
+}
+
+.cod-art.card-art-frame .card-art-img {
+  object-position: center 32%;
 }
 
 .cod-info {
