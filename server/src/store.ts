@@ -2,9 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import {
   DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME, DEFAULT_PROFILE_COVER,
-  FACTION_TILTS,
-  isValidAccent, isValidAccentStyle, isValidAvatar, isValidCommander, isValidFrame, isValidProfileCover,
-  achievementsOf, accentStyleUnlocked, accentUnlocked, commanderUnlocked, frameUnlocked, profileCoverUnlocked,
+  isValidAvatar, isValidCommander,
   normalizeIconId,
 } from '@legendsclash/shared';
 import { BASE_MMR, leagueOf } from './elo.js';
@@ -18,6 +16,7 @@ import type {
   UserRecord,
 } from './persistence/contracts.js';
 import { JsonPersistence } from './persistence/json-persistence.js';
+import { ProfileManager, epochDay, type CosmeticsPatch } from './persistence/profile-manager.js';
 import { SessionRegistry } from './persistence/session-registry.js';
 import { SupabasePersistence } from './persistence/supabase-persistence.js';
 
@@ -28,10 +27,7 @@ export type {
   UserRecord,
 } from './persistence/contracts.js';
 
-/** Dia epoch UTC (base do cálculo da sequência diária). */
-export function epochDay(ts: number): number {
-  return Math.floor(ts / 86_400_000);
-}
+export { epochDay };
 
 /**
  * Avança a sequência diária ao jogar: +1 se foi no dia seguinte ao último,
@@ -70,6 +66,7 @@ const EVENTS_MEMORY_CAP = 500;
 export class Store {
   private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private byId = new Map<string, UserRecord>();
+  private profileManager!: ProfileManager;
   private sessionRegistry!: SessionRegistry;
 
   private constructor(private persistence: Persistence) {}
@@ -90,6 +87,7 @@ export class Store {
     const store = new Store(persistence);
     store.db = await persistence.load();
     for (const u of store.db.users) store.byId.set(u.id, u);
+    store.profileManager = new ProfileManager(store.byId, persistence);
     store.sessionRegistry = new SessionRegistry(store.db, store.byId, persistence);
     return store;
   }
@@ -198,12 +196,7 @@ export class Store {
   }
 
   updateProfile(userId: string, name: string, avatar: string): UserRecord | undefined {
-    const u = this.byId.get(userId);
-    if (!u) return undefined;
-    u.name = name.trim().slice(0, 24);
-    if (avatar && isValidAvatar(avatar)) u.avatar = normalizeIconId(avatar);
-    if (!u.guest) this.persistence.saveUser(u);
-    return u;
+    return this.profileManager.updateProfile(userId, name, avatar);
   }
 
   /**
@@ -213,35 +206,9 @@ export class Store {
    */
   updateCosmetics(
     userId: string,
-    patch: { name?: string; avatar?: string; commander?: string; accent?: string; frame?: string; accentStyle?: string; profileCover?: string },
+    patch: CosmeticsPatch,
   ): UserRecord | undefined {
-    const u = this.byId.get(userId);
-    if (!u) return undefined;
-    if (patch.name !== undefined) {
-      const name = patch.name.trim().slice(0, 24);
-      if (name) u.name = name;
-    }
-    // cosméticos por mérito: comandante/cor/moldura/estilo podem exigir uma conquista
-    // (anti-abuso: só aplica se o jogador realmente desbloqueou — derivado de V/partidas).
-    const earned = achievementsOf(u.wins, u.wins + u.losses);
-    if (patch.avatar && isValidAvatar(patch.avatar)) u.avatar = normalizeIconId(patch.avatar);
-    if (patch.commander && isValidCommander(patch.commander) && commanderUnlocked(normalizeIconId(patch.commander), earned)) {
-      u.commander = normalizeIconId(patch.commander);
-    }
-    if (patch.accent && isValidAccent(patch.accent) && accentUnlocked(patch.accent, earned)) {
-      u.accent = patch.accent;
-    }
-    if (patch.frame && isValidFrame(patch.frame) && frameUnlocked(patch.frame, earned)) {
-      u.frame = patch.frame;
-    }
-    if (patch.accentStyle && isValidAccentStyle(patch.accentStyle) && accentStyleUnlocked(patch.accentStyle, earned)) {
-      u.accentStyle = patch.accentStyle;
-    }
-    if (patch.profileCover && isValidProfileCover(patch.profileCover) && profileCoverUnlocked(patch.profileCover, earned)) {
-      u.profileCover = patch.profileCover;
-    }
-    if (!u.guest) this.persistence.saveUser(u);
-    return u;
+    return this.profileManager.updateCosmetics(userId, patch);
   }
 
   /**
@@ -250,16 +217,12 @@ export class Store {
    * grava no registro e persiste.
    */
   setPhoto(userId: string, photo: string | null): UserRecord | undefined {
-    const u = this.byId.get(userId);
-    if (!u) return undefined;
-    u.photo = photo;
-    if (!u.guest) this.persistence.saveUser(u);
-    return u;
+    return this.profileManager.setPhoto(userId, photo);
   }
 
   /** Sobe a foto ao backend de persistência e devolve a URL pública. */
   uploadAvatar(userId: string, bytes: Buffer, contentType: string): Promise<string> {
-    return this.persistence.uploadAvatar(userId, bytes, contentType);
+    return this.profileManager.uploadAvatar(userId, bytes, contentType);
   }
 
   /**
@@ -344,11 +307,7 @@ export class Store {
 
   /** Persiste a tradição como identidade pública e fonte da composição do deck. */
   setFaction(userId: string, factionId: string): UserRecord | undefined {
-    const u = this.byId.get(userId);
-    if (!u || (factionId !== '' && !FACTION_TILTS[factionId])) return undefined;
-    u.faction = factionId;
-    if (!u.guest) this.persistence.saveUser(u);
-    return u;
+    return this.profileManager.setFaction(userId, factionId);
   }
 
   /**
@@ -452,51 +411,12 @@ export class Store {
   }
 
   profileOf(u: UserRecord): Profile {
-    return {
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      avatar: u.avatar,
-      commander: u.commander,
-      accent: u.accent,
-      photo: u.photo,
-      frame: u.frame,
-      accentStyle: u.accentStyle,
-      profileCover: u.profileCover,
-      faction: u.faction,
-      guest: u.guest,
-      mmr: u.mmr,
-      league: u.league ?? leagueOf(u.mmr) as League,
-      wins: u.wins,
-      losses: u.losses,
-      streak: u.streak,
-      playedToday: u.lastPlayDay === epochDay(Date.now()),
-      achievements: achievementsOf(u.wins, u.wins + u.losses),
-      muted: u.muted,
-      friends: u.friends,
-    };
+    return this.profileManager.profileOf(u);
   }
 
   /** Card de perfil público (oponente) — sem e-mail nem lista de silenciados. */
   publicProfileOf(u: UserRecord): PublicProfile {
-    return {
-      id: u.id,
-      name: u.name,
-      avatar: u.avatar,
-      commander: u.commander,
-      accent: u.accent,
-      photo: u.photo,
-      frame: u.frame,
-      accentStyle: u.accentStyle,
-      profileCover: u.profileCover,
-      faction: u.faction,
-      league: u.league ?? leagueOf(u.mmr) as League,
-      mmr: u.mmr,
-      wins: u.wins,
-      losses: u.losses,
-      achievements: achievementsOf(u.wins, u.wins + u.losses),
-      streak: u.streak,
-    };
+    return this.profileManager.publicProfileOf(u);
   }
 
   /** Adiciona/remove um amigo (cap defensivo). Convidado guarda só em memória. */
