@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
-import type { ClientMsg, ServerMsg } from '@legendsclash/shared';
+import type { ClientMsg } from '@legendsclash/shared';
 import { accountApi } from './api/account-api';
 import type { SessionResponse } from './api/account-api';
 import { createRealtimeConnection } from './network/realtime-connection';
+import { createServerMessageHandler } from './network/server-message-handler';
 import { appStateReducer, createInitialAppState } from './state/app-state';
 import type { AppState, AppStateAction } from './state/app-state';
 
@@ -73,6 +74,21 @@ function showToast(message: string): void {
   toastTimer = window.setTimeout(() => setState({ toast: null }), 4000);
 }
 
+function persistFaction(factionId: string): void {
+  try { localStorage.setItem('lc_faction', factionId); } catch { /* armazenamento opcional */ }
+}
+
+const handleServerMsg = createServerMessageHandler({
+  getState: () => state,
+  dispatch,
+  send: (message) => send(message),
+  showToast,
+  logout: () => logout(),
+  rememberActiveMatch,
+  persistFaction,
+  joinPendingRoom: () => joinPendingRoom(),
+});
+
 const realtimeConnection = createRealtimeConnection({
   getSession: () => ({
     token: state.token,
@@ -101,96 +117,6 @@ export function connect(): void {
 export function resumeHere(): void {
   setState({ replaced: false });
   realtimeConnection.reconnectNow();
-}
-
-function handleServerMsg(msg: ServerMsg): void {
-  switch (msg.t) {
-    case 'hello:ok': {
-      const persistedFaction = msg.profile.faction ?? '';
-      const legacyFaction = state.faction;
-      const faction = persistedFaction || legacyFaction;
-      try { localStorage.setItem('lc_faction', faction); } catch { /* ignore */ }
-      dispatch({
-        type: 'server/hello',
-        profile: msg.profile,
-        factionsEnabled: !!msg.content?.factions,
-        cosmeticsEnabled: !!msg.content?.cosmetics,
-        faction,
-      });
-      send({ t: 'leaderboard:get' });
-      send({ t: 'history:get' });
-      // Migra uma escolha antiga do dispositivo para o perfil persistido.
-      if (!persistedFaction && legacyFaction) send({ t: 'faction:pick', factionId: legacyFaction });
-      joinPendingRoom();
-      break;
-    }
-    case 'pong':
-      break; // o onmessage já registrou o sinal de vida
-    case 'error':
-      if (msg.message === 'Sessão expirada. Entre novamente.') return logout();
-      showToast(msg.message);
-      break;
-    case 'profile':
-      try { localStorage.setItem('lc_faction', msg.profile.faction ?? ''); } catch { /* ignore */ }
-      dispatch({ type: 'server/profile', profile: msg.profile, faction: msg.profile.faction ?? '' });
-      break;
-    case 'queue:status':
-      dispatch({
-        type: 'server/queue-status', inQueue: msg.inQueue,
-        queueSize: msg.size, waitingAlone: !!msg.waitingAlone,
-      });
-      break;
-    case 'room:state':
-      dispatch({ type: 'server/room-state', room: msg.room });
-      break;
-    case 'game:state': {
-      if (!msg.view) {
-        // verdade do servidor: não há partida. Destrava a batalha fantasma
-        // que sobra quando o servidor reinicia no meio do jogo — exceto se a
-        // tela de resultado está aberta (o jogador fecha quando quiser).
-        const interrupted = !!state.game && !state.gameOver;
-        rememberActiveMatch(null);
-        dispatch({ type: 'server/game-state', game: null });
-        if (interrupted) showToast('A partida anterior foi encerrada no servidor.');
-        break;
-      }
-      rememberActiveMatch(msg.view.status === 'finished' ? null : msg.view.matchId);
-      dispatch({ type: 'server/game-state', game: msg.view });
-      break;
-    }
-    case 'game:over':
-      rememberActiveMatch(null);
-      dispatch({ type: 'server/game-over', result: msg.result });
-      send({ t: 'leaderboard:get' });
-      send({ t: 'history:get' });
-      break;
-    case 'chat:message':
-      dispatch({ type: 'server/chat-message', message: msg.message });
-      break;
-    case 'chat:report:ok':
-      dispatch({ type: 'server/report-sent' });
-      showToast('Denúncia registrada. Obrigado por ajudar a manter a comunidade saudável.');
-      break;
-    case 'leaderboard':
-      dispatch({
-        type: 'server/leaderboard', entries: msg.entries,
-        myRank: msg.myRank ?? null, around: msg.around ?? [],
-      });
-      break;
-    case 'history':
-      dispatch({ type: 'server/history', entries: msg.entries });
-      break;
-    case 'rematch:state':
-      dispatch({
-        type: 'server/rematch', rematch: { status: msg.status, from: msg.from },
-      });
-      if (msg.status === 'unavailable') showToast('Oponente indisponível para a revanche.');
-      if (msg.status === 'declined') showToast('O oponente recusou a revanche.');
-      break;
-    case 'profile:view':
-      dispatch({ type: 'server/profile-view', profile: msg.profile });
-      break;
-  }
 }
 
 // ─── Convite por link (/room/CODIGO) ────────────────────────────
@@ -383,7 +309,7 @@ export function closeProfile(): void {
 }
 
 export function pickFaction(factionId: string): void {
-  try { localStorage.setItem('lc_faction', factionId); } catch { /* ignore */ }
+  persistFaction(factionId);
   setState({ faction: factionId });
   send({ t: 'faction:pick', factionId });
 }
