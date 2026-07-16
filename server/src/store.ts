@@ -2,7 +2,6 @@ import type { MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/sh
 import type {
   DbShape,
   EventRecord,
-  Persistence,
   RankingSnapshot,
   ReportRecord,
   SessionRecord,
@@ -15,6 +14,7 @@ import { ProfileManager, epochDay, type CosmeticsPatch } from './persistence/pro
 import { ProgressionManager, advanceStreak } from './persistence/progression-manager.js';
 import { SessionRegistry } from './persistence/session-registry.js';
 import { SupabasePersistence } from './persistence/supabase-persistence.js';
+import { TelemetryManager, type TelemetryEventOptions } from './persistence/telemetry-manager.js';
 
 export type {
   EventRecord,
@@ -30,8 +30,8 @@ export { advanceStreak };
  * Persistência do servidor autoritativo.
  *
  * O jogo é tempo real: as leituras precisam ser síncronas e em memória.
- * O Store mantém o estado em memória e faz write-through assíncrono para o
- * backend de persistência escolhido:
+ * O Store compõe o estado em memória e os responsáveis pelo write-through
+ * assíncrono para o backend de persistência escolhido:
  *
  * - PostgreSQL no Supabase (produção): defina SUPABASE_URL e
  *   SUPABASE_SERVICE_ROLE_KEY. Schema em supabase/migrations/. RLS fica
@@ -41,10 +41,7 @@ export { advanceStreak };
  *   desenvolver sem tocar o banco de produção mesmo com .env preenchido).
  */
 
-// ─── Store: cache em memória + write-through ────────────────────
-
-/** Buffer de eventos em memória (debug/testes); a verdade é o banco. */
-const EVENTS_MEMORY_CAP = 500;
+// ─── Store: composição + fachada pública ─────────────────────────
 
 export class Store {
   private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
@@ -54,8 +51,9 @@ export class Store {
   private profileManager!: ProfileManager;
   private progressionManager!: ProgressionManager;
   private sessionRegistry!: SessionRegistry;
+  private telemetryManager!: TelemetryManager;
 
-  private constructor(private persistence: Persistence) {}
+  private constructor() {}
 
   /** Escolhe o backend pela configuração do ambiente e carrega o estado. */
   static async create(jsonPath?: string): Promise<Store> {
@@ -70,10 +68,11 @@ export class Store {
     if (!useSupabase) {
       console.log('[store] modo local — snapshot JSON (sem SUPABASE_* no ambiente, ou LC_LOCAL=1)');
     }
-    const store = new Store(persistence);
+    const store = new Store();
     store.db = await persistence.load();
     for (const u of store.db.users) store.byId.set(u.id, u);
     store.sessionRegistry = new SessionRegistry(store.db, store.byId, persistence);
+    store.telemetryManager = new TelemetryManager(store.db, persistence);
     store.identityManager = new IdentityManager(
       store.db,
       store.byId,
@@ -196,23 +195,14 @@ export class Store {
    */
   recordEvent(
     type: string,
-    opts: { userId?: string | null; matchId?: string | null; props?: Record<string, unknown> } = {},
+    opts: TelemetryEventOptions = {},
   ): void {
-    const event: EventRecord = {
-      type,
-      userId: opts.userId ?? null,
-      matchId: opts.matchId ?? null,
-      props: opts.props ?? {},
-      at: Date.now(),
-    };
-    this.db.events.push(event);
-    if (this.db.events.length > EVENTS_MEMORY_CAP) this.db.events.shift();
-    this.persistence.saveEvent(event);
+    this.telemetryManager.recordEvent(type, opts);
   }
 
   /** Buffer recente de eventos em memória (debug/testes). */
   recentEvents(): EventRecord[] {
-    return this.db.events;
+    return this.telemetryManager.recentEvents();
   }
 
   recordMatch(userId: string, entry: MatchHistoryEntry, newMmr: number, won: boolean): void {
