@@ -17,6 +17,7 @@ import type {
 } from './persistence/contracts.js';
 import { JsonPersistence } from './persistence/json-persistence.js';
 import { ProfileManager, epochDay, type CosmeticsPatch } from './persistence/profile-manager.js';
+import { ProgressionManager, advanceStreak } from './persistence/progression-manager.js';
 import { SessionRegistry } from './persistence/session-registry.js';
 import { SupabasePersistence } from './persistence/supabase-persistence.js';
 
@@ -28,20 +29,7 @@ export type {
 } from './persistence/contracts.js';
 
 export { epochDay };
-
-/**
- * Avança a sequência diária ao jogar: +1 se foi no dia seguinte ao último,
- * reinicia em 1 se houve intervalo, inalterada se já jogou hoje. Função pura
- * (testável sem relógio).
- */
-export function advanceStreak(
-  streak: number,
-  lastPlayDay: number,
-  today: number,
-): { streak: number; lastPlayDay: number } {
-  if (lastPlayDay === today) return { streak, lastPlayDay };
-  return { streak: lastPlayDay === today - 1 ? streak + 1 : 1, lastPlayDay: today };
-}
+export { advanceStreak };
 
 /**
  * Persistência do servidor autoritativo.
@@ -67,6 +55,7 @@ export class Store {
   private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private byId = new Map<string, UserRecord>();
   private profileManager!: ProfileManager;
+  private progressionManager!: ProgressionManager;
   private sessionRegistry!: SessionRegistry;
 
   private constructor(private persistence: Persistence) {}
@@ -88,6 +77,7 @@ export class Store {
     store.db = await persistence.load();
     for (const u of store.db.users) store.byId.set(u.id, u);
     store.profileManager = new ProfileManager(store.byId, persistence);
+    store.progressionManager = new ProgressionManager(store.db, store.byId, persistence);
     store.sessionRegistry = new SessionRegistry(store.db, store.byId, persistence);
     return store;
   }
@@ -337,21 +327,7 @@ export class Store {
   }
 
   recordMatch(userId: string, entry: MatchHistoryEntry, newMmr: number, won: boolean): void {
-    const u = this.byId.get(userId);
-    if (!u) return;
-    u.mmr = newMmr;
-    u.league = leagueOf(newMmr) as League;
-    if (won) u.wins++; else u.losses++;
-    u.history.unshift(entry);
-    u.history = u.history.slice(0, 50);
-    // sequência diária: jogar uma partida mantém/avança a sequência (gancho D7)
-    const adv = advanceStreak(u.streak, u.lastPlayDay, epochDay(Date.now()));
-    u.streak = adv.streak;
-    u.lastPlayDay = adv.lastPlayDay;
-    // convidado acumula só em memória: vira conta (promoção) ou se perde
-    if (u.guest) return;
-    this.persistence.saveUser(u);
-    this.persistence.saveMatch(userId, entry);
+    this.progressionManager.recordMatch(userId, entry, newMmr, won);
   }
 
   setMuted(userId: string, targetId: string, muted: boolean): void {
@@ -368,10 +344,7 @@ export class Store {
   }
 
   leaderboard(limit = 20): UserRecord[] {
-    return [...this.db.users]
-      .filter((u) => u.wins + u.losses > 0)
-      .sort((a, b) => b.mmr - a.mmr)
-      .slice(0, limit);
+    return this.progressionManager.leaderboard(limit);
   }
 
   /**
@@ -380,12 +353,7 @@ export class Store {
    * pontua (convidado ou sem partidas).
    */
   rankView(userId: string, span = 3): { rank: number; around: UserRecord[] } | null {
-    const ranked = [...this.db.users]
-      .filter((u) => u.wins + u.losses > 0)
-      .sort((a, b) => b.mmr - a.mmr);
-    const idx = ranked.findIndex((u) => u.id === userId);
-    if (idx < 0) return null;
-    return { rank: idx + 1, around: ranked.slice(Math.max(0, idx - span), idx + span + 1) };
+    return this.progressionManager.rankView(userId, span);
   }
 
   /**
@@ -395,19 +363,7 @@ export class Store {
    * falhar, cai no cache em memória para não quebrar a UX.
    */
   async rankingSnapshot(userId: string, limit = 20, span = 3): Promise<RankingSnapshot> {
-    if (this.persistence.loadRanking) {
-      try {
-        return await this.persistence.loadRanking(userId, limit, span);
-      } catch (err) {
-        console.error('[store] ranking persistido indisponível; usando cache:', err);
-      }
-    }
-    const rv = this.rankView(userId, span);
-    return {
-      entries: this.leaderboard(limit),
-      myRank: rv?.rank,
-      around: rv?.around,
-    };
+    return this.progressionManager.rankingSnapshot(userId, limit, span);
   }
 
   profileOf(u: UserRecord): Profile {
