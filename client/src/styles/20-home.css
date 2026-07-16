@@ -42,6 +42,11 @@
   margin-bottom: 20px;
 }
 
+.home-logo {
+  height: 32px;
+  width: auto;
+}
+
 /* wrap: as ações de perfil/conta caem p/ outra linha em telas estreitas em
    vez de transbordar a viewport */
 .profile-chip {

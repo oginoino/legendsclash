@@ -124,9 +124,7 @@ export function HomeView() {
   return (
     <div className="home-screen">
       <header className="home-header">
-        <h1 className="logo small">
-          LEGENDS<span>CLASH</span>
-        </h1>
+        <img className="home-logo" src="/assets/logos/logo-horizontal-branca.png" alt="Legends Clash" />
         <div className="profile-chip profile-chip-cover" style={profileCoverVars(p.profileCover)}>
           <Avatar
             className="avatar-lg"

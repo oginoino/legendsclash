@@ -100,7 +100,7 @@ export function ProfileView({ onClose }: { onClose: () => void }) {
         <button type="button" className="btn ghost profile-back" onClick={onClose}>
           <IcoBack className="ic" /> Voltar
         </button>
-        <span className="logo small" aria-label="Legends Clash">LEGENDS<span>CLASH</span></span>
+        <img className="profile-logo" src="/assets/logos/logo-horizontal-branca.png" alt="Legends Clash" />
         <span className="profile-device-note"><IcoCheck className="ic" /> Preferências salvas neste dispositivo</span>
       </header>
 

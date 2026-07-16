@@ -54,6 +54,14 @@
   margin: 4px 0 24px;
 }
 
+.login-logo {
+  display: block;
+  width: min(200px, 52vw);
+  height: auto;
+  margin: 0 auto;
+  filter: drop-shadow(0 0 16px rgba(227, 179, 65, 0.18));
+}
+
 .login-card form {
   display: flex;
   flex-direction: column;

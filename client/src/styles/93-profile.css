@@ -44,8 +44,10 @@
   border-bottom: 1px solid #ffffff1c;
 }
 
-.profile-page-header .logo {
+.profile-logo {
   justify-self: center;
+  height: 32px;
+  width: auto;
 }
 
 .profile-back {
@@ -109,8 +111,8 @@
 
 .profile-page-kicker,
 .profile-section-label,
-.profile-section-heading > div > span,
-.preference-section-heading > div > span {
+.profile-section-heading>div>span,
+.preference-section-heading>div>span {
   display: block;
   margin-bottom: 3px;
   color: var(--gold-2);
@@ -143,7 +145,7 @@
   font-size: 14px;
 }
 
-.profile-page-byline span + span::before {
+.profile-page-byline span+span::before {
   content: '•';
   margin-right: 14px;
   color: var(--gold);
@@ -153,7 +155,7 @@
   margin-top: 14px;
 }
 
-.profile-page-badges > span {
+.profile-page-badges>span {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
@@ -231,7 +233,7 @@
   border-bottom: 0;
 }
 
-.profile-overview-grid .profile-page-section + .profile-page-section {
+.profile-overview-grid .profile-page-section+.profile-page-section {
   border-left: 1px solid #ffffff1b;
 }
 
@@ -278,7 +280,7 @@
   margin-top: 24px;
 }
 
-.profile-rank-line > span:last-child {
+.profile-rank-line>span:last-child {
   justify-self: end;
   color: var(--dim);
   font-size: 12px;
@@ -329,7 +331,7 @@
   margin: 20px 0;
 }
 
-.profile-loadout-list > div {
+.profile-loadout-list>div {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -427,7 +429,7 @@
   min-height: 44px;
 }
 
-.preference-section-heading > .btn {
+.preference-section-heading>.btn {
   margin-left: auto;
 }
 
@@ -437,7 +439,7 @@
 }
 
 .preference-row,
-.preference-rows > .audio-level-control {
+.preference-rows>.audio-level-control {
   min-height: 78px;
   display: grid;
   align-items: center;
@@ -449,16 +451,16 @@
   grid-template-columns: 42px minmax(0, 1fr) auto;
 }
 
-.preference-rows > .audio-level-control {
+.preference-rows>.audio-level-control {
   grid-template-columns: 38px minmax(190px, .9fr) minmax(160px, 1fr) 46px;
 }
 
 .preference-row:last-child,
-.preference-rows > .audio-level-control:last-child {
+.preference-rows>.audio-level-control:last-child {
   border-bottom: 0;
 }
 
-.preference-row > .preference-leading {
+.preference-row>.preference-leading {
   width: 34px;
   height: 34px;
   flex-basis: 34px;
@@ -466,7 +468,7 @@
   color: var(--dim-strong);
 }
 
-.preference-row > .preference-leading svg {
+.preference-row>.preference-leading svg {
   width: 17px;
   height: 17px;
 }
@@ -531,7 +533,7 @@
   background: #080f1a99;
 }
 
-.preferences-reset-line > div {
+.preferences-reset-line>div {
   display: flex;
   flex-direction: column;
 }
@@ -546,6 +548,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .profile-page-tabs button:hover,
   .audio-level-mute:hover,
   .preference-switch:hover {
@@ -564,7 +567,7 @@
     grid-template-columns: 1fr auto;
   }
 
-  .profile-page-header .logo {
+  .profile-logo {
     justify-self: end;
   }
 
@@ -601,7 +604,7 @@
     display: block;
   }
 
-  .profile-page-byline span + span::before {
+  .profile-page-byline span+span::before {
     display: none;
   }
 
@@ -620,7 +623,7 @@
     grid-template-columns: 1fr;
   }
 
-  .profile-overview-grid .profile-page-section + .profile-page-section {
+  .profile-overview-grid .profile-page-section+.profile-page-section {
     border-top: 1px solid #ffffff1b;
     border-left: 0;
   }
@@ -643,22 +646,22 @@
     width: 100%;
   }
 
-  .preference-rows > .audio-level-control {
+  .preference-rows>.audio-level-control {
     grid-template-columns: 36px minmax(0, 1fr) 42px;
     gap: 10px;
     padding: 12px 0;
   }
 
-  .preference-rows > .audio-level-control input[type='range'] {
+  .preference-rows>.audio-level-control input[type='range'] {
     grid-column: 2 / -1;
   }
 
-  .preference-rows > .audio-level-control output {
+  .preference-rows>.audio-level-control output {
     grid-column: 3;
     grid-row: 1;
   }
 
-  .preference-rows > .audio-level-control .audio-level-mute {
+  .preference-rows>.audio-level-control .audio-level-mute {
     grid-column: 1;
     grid-row: 1;
   }
@@ -684,7 +687,7 @@
     transform-origin: left bottom;
   }
 
-  .profile-page-badges > span {
+  .profile-page-badges>span {
     min-height: 27px;
     padding: 3px 8px;
     font-size: 11px;
@@ -705,7 +708,7 @@
     align-items: flex-start;
   }
 
-  .preference-section-heading > .btn {
+  .preference-section-heading>.btn {
     align-self: center;
     padding-inline: 10px;
   }
