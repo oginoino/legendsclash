@@ -1,11 +1,4 @@
-import { randomBytes } from 'node:crypto';
-import type { League, MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
-import {
-  DEFAULT_ACCENT, DEFAULT_ACCENT_STYLE, DEFAULT_AVATAR, DEFAULT_COMMANDER, DEFAULT_FRAME, DEFAULT_PROFILE_COVER,
-  isValidAvatar, isValidCommander,
-  normalizeIconId,
-} from '@legendsclash/shared';
-import { BASE_MMR, leagueOf } from './elo.js';
+import type { MatchHistoryEntry, Profile, PublicProfile } from '@legendsclash/shared';
 import type {
   DbShape,
   EventRecord,
@@ -16,6 +9,7 @@ import type {
   UserRecord,
 } from './persistence/contracts.js';
 import { JsonPersistence } from './persistence/json-persistence.js';
+import { IdentityManager } from './persistence/identity-manager.js';
 import { ProfileManager, epochDay, type CosmeticsPatch } from './persistence/profile-manager.js';
 import { ProgressionManager, advanceStreak } from './persistence/progression-manager.js';
 import { SessionRegistry } from './persistence/session-registry.js';
@@ -54,6 +48,7 @@ const EVENTS_MEMORY_CAP = 500;
 export class Store {
   private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private byId = new Map<string, UserRecord>();
+  private identityManager!: IdentityManager;
   private profileManager!: ProfileManager;
   private progressionManager!: ProgressionManager;
   private sessionRegistry!: SessionRegistry;
@@ -76,9 +71,16 @@ export class Store {
     const store = new Store(persistence);
     store.db = await persistence.load();
     for (const u of store.db.users) store.byId.set(u.id, u);
+    store.sessionRegistry = new SessionRegistry(store.db, store.byId, persistence);
+    store.identityManager = new IdentityManager(
+      store.db,
+      store.byId,
+      persistence,
+      store.sessionRegistry,
+      (userId, props) => store.recordEvent('guest_to_account', { userId, props }),
+    );
     store.profileManager = new ProfileManager(store.byId, persistence);
     store.progressionManager = new ProgressionManager(store.db, store.byId, persistence);
-    store.sessionRegistry = new SessionRegistry(store.db, store.byId, persistence);
     return store;
   }
 
@@ -106,47 +108,7 @@ export class Store {
    * Conta nova nasce com nome vazio = onboarding pendente (needsProfile).
    */
   findOrCreatePlayerByAuth(email: string, authUserId: string | null): { user: UserRecord; isNew: boolean } {
-    const normEmail = email.trim().toLowerCase();
-    let user = authUserId
-      ? this.db.users.find((u) => u.authUserId === authUserId)
-      : undefined;
-    user ??= this.db.users.find((u) => u.email === normEmail);
-    if (user) {
-      if (authUserId && user.authUserId !== authUserId) {
-        user.authUserId = authUserId;
-        this.persistence.saveUser(user);
-      }
-      return { user, isNew: false };
-    }
-    user = {
-      id: randomBytes(8).toString('hex'),
-      email: normEmail,
-      name: '',
-      avatar: DEFAULT_AVATAR,
-      commander: DEFAULT_COMMANDER,
-      accent: DEFAULT_ACCENT,
-      photo: null,
-      frame: DEFAULT_FRAME,
-      accentStyle: DEFAULT_ACCENT_STYLE,
-      profileCover: DEFAULT_PROFILE_COVER,
-      faction: '',
-      authUserId,
-      guest: false,
-      mmr: BASE_MMR,
-      league: leagueOf(BASE_MMR) as League,
-      wins: 0,
-      losses: 0,
-      muted: [],
-      friends: [],
-      history: [],
-      createdAt: Date.now(),
-      streak: 0,
-      lastPlayDay: 0,
-    };
-    this.db.users.push(user);
-    this.byId.set(user.id, user);
-    this.persistence.saveUser(user);
-    return { user, isNew: true };
+    return this.identityManager.findOrCreatePlayerByAuth(email, authUserId);
   }
 
   /**
@@ -154,35 +116,7 @@ export class Store {
    * então nunca persiste nem aparece no ranking; some com a sessão.
    */
   createGuest(name: string, avatar: string): UserRecord {
-    // o avatar vem do cliente (picker) — aceita id válido (ou legado), senão padrão
-    const id = isValidAvatar(avatar) ? normalizeIconId(avatar) : DEFAULT_AVATAR;
-    const user: UserRecord = {
-      id: randomBytes(8).toString('hex'),
-      email: '',
-      name: name.trim().slice(0, 24),
-      avatar: id,
-      commander: isValidCommander(id) ? id : DEFAULT_COMMANDER,
-      accent: DEFAULT_ACCENT,
-      photo: null,
-      frame: DEFAULT_FRAME,
-      accentStyle: DEFAULT_ACCENT_STYLE,
-      profileCover: DEFAULT_PROFILE_COVER,
-      faction: '',
-      authUserId: null,
-      guest: true,
-      mmr: BASE_MMR,
-      league: leagueOf(BASE_MMR) as League,
-      wins: 0,
-      losses: 0,
-      muted: [],
-      friends: [],
-      history: [],
-      createdAt: Date.now(),
-      streak: 0,
-      lastPlayDay: 0,
-    };
-    this.byId.set(user.id, user);
-    return user;
+    return this.identityManager.createGuest(name, avatar);
   }
 
   updateProfile(userId: string, name: string, avatar: string): UserRecord | undefined {
@@ -222,40 +156,7 @@ export class Store {
    * fica em memória até expirar, caso uma partida ainda o referencie.
    */
   adoptGuestProgress(targetId: string, guestToken: string): boolean {
-    const guest = this.userBySession(guestToken);
-    if (!guest?.guest) return false;
-    const target = this.byId.get(targetId);
-    if (!target || target.guest || target.id === guest.id) return false;
-
-    target.name = guest.name;
-    target.avatar = guest.avatar;
-    target.commander = guest.commander;
-    target.accent = guest.accent;
-    target.photo = guest.photo;
-    target.frame = guest.frame;
-    target.accentStyle = guest.accentStyle;
-    target.profileCover = guest.profileCover;
-    target.faction = guest.faction;
-    target.mmr = guest.mmr;
-    target.league = guest.league ?? leagueOf(guest.mmr) as League;
-    target.wins = guest.wins;
-    target.losses = guest.losses;
-    target.muted = [...guest.muted];
-    target.friends = [...guest.friends];
-    target.history = [...guest.history];
-    target.streak = guest.streak;
-    target.lastPlayDay = guest.lastPlayDay;
-    this.persistence.saveUser(target);
-    // partidas da sessão entram no histórico persistido, em ordem cronológica
-    for (let i = target.history.length - 1; i >= 0; i--) {
-      this.persistence.saveMatch(target.id, target.history[i]);
-    }
-    this.sessionRegistry.detach(guestToken);
-    this.recordEvent('guest_to_account', {
-      userId: target.id,
-      props: { mmr: target.mmr, matches: target.wins + target.losses },
-    });
-    return true;
+    return this.identityManager.adoptGuestProgress(targetId, guestToken);
   }
 
   // ─── Snapshot de runtime (convidados sobrevivem a restarts) ──────
@@ -264,10 +165,7 @@ export class Store {
 
   /** Convidados vivos + suas sessões, para o snapshot de runtime. */
   exportGuests(): { users: UserRecord[]; sessions: SessionRecord[] } {
-    const users = [...this.byId.values()].filter((u) => u.guest);
-    const ids = new Set(users.map((u) => u.id));
-    const sessions = this.sessionRegistry.recordsForPlayerIds(ids);
-    return { users, sessions };
+    return this.identityManager.exportGuests();
   }
 
   /**
@@ -276,23 +174,11 @@ export class Store {
    * Retorna quantos convidados foram restaurados.
    */
   importGuests(users: UserRecord[], sessions: SessionRecord[]): number {
-    const alive = this.sessionRegistry.restorable(sessions);
-    const reachable = new Set(alive.map((s) => s.playerId));
-    let restored = 0;
-    for (const u of users) {
-      if (!u.guest || this.byId.has(u.id) || !reachable.has(u.id)) continue;
-      u.profileCover ??= DEFAULT_PROFILE_COVER;
-      u.faction ??= '';
-      u.league ??= leagueOf(u.mmr) as League;
-      this.byId.set(u.id, u);
-      restored++;
-    }
-    this.sessionRegistry.restore(alive.filter((s) => this.byId.get(s.playerId)?.guest));
-    return restored;
+    return this.identityManager.importGuests(users, sessions);
   }
 
   userById(id: string): UserRecord | undefined {
-    return this.byId.get(id);
+    return this.identityManager.userById(id);
   }
 
   /** Persiste a tradição como identidade pública e fonte da composição do deck. */
