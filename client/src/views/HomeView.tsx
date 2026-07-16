@@ -358,7 +358,8 @@ export function HomeView() {
                   const reason = h.reason === 'hp' ? 'Vida zerada'
                     : h.reason === 'surrender' ? 'Desistência'
                       : h.reason === 'fatigue' ? 'Fadiga / baralho esgotado'
-                        : 'Tempo esgotado / desconexão';
+                        : h.reason === 'turns' ? 'Limite de turnos'
+                          : 'Tempo esgotado / desconexão';
                   return (
                     <li key={key} className={`${h.won ? 'won' : 'lost'} ${open ? 'open' : ''}`}>
                       <button

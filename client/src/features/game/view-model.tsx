@@ -46,6 +46,11 @@ function gameOverLesson(reason: string, won: boolean): string {
       ? 'Boa leitura de dano: continue contando escudo, mesa e vida antes de comprometer a mão.'
       : 'Revise os turnos em que a mesa ficou aberta. Criaturas em campo protegem o comandante e reduzem dano direto.';
   }
+  if (reason === 'turns') {
+    return won
+      ? 'O jogo terminou por limite de turnos. Sua vantagem de vida e presença de mesa garantiram a vitória — em partidas mais longas, buscar dano direto ajuda a fechar antes do teto.'
+      : 'A partida acabou no limite de turnos. Para evitar depender do desempate, tente aplicar pressão mais cedo: priorize criaturas de ataque alto e reduza a vida do oponente antes que os turnos se esgotem.';
+  }
   if (reason === 'surrender') {
     return won
       ? 'O oponente reconheceu que a posição estava perdida. Use a revanche para testar outra linha de abertura.'

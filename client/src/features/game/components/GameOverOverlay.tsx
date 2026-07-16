@@ -35,12 +35,16 @@ function GameOverOverlay() {
     fatigue: won
       ? 'O baralho do oponente acabou e a fadiga consumiu a última vida.'
       : 'Seu baralho acabou e a fadiga consumiu sua última vida.',
+    turns: won
+      ? 'O limite de turnos foi atingido! Você venceu por ter mais vida e ataque em campo.'
+      : 'O limite de turnos foi atingido. Seu oponente tinha mais vantagem no campo.',
   };
   const reasonLabel: Record<string, string> = {
     hp: 'Vida zerada',
     surrender: 'Desistência',
     timeout: 'Tempo / reconexão',
     fatigue: 'Fadiga',
+    turns: 'Limite de turnos',
   };
 
   return (

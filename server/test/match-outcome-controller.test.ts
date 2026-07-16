@@ -191,10 +191,10 @@ describe('MatchOutcomeController', () => {
     harness.controller.resolveByTiebreak();
 
     expect(harness.result?.winnerSeat).toBe(1);
-    expect(harness.result?.reason).toBe('hp');
+    expect(harness.result?.reason).toBe('turns');
     expect(seats.map((candidate) => candidate.out)).toEqual([true, false, true]);
     expect(harness.logs).toContain(
-      'Limite de 55 turnos atingido — vitória por vantagem (morte súbita)',
+      'Limite de 55 turnos atingido — vitória por vantagem',
     );
 
     const tied = setup();

@@ -109,7 +109,7 @@ export interface RoomState {
 
 // ─── Estado de jogo (visão redigida por jogador) ────────────────
 
-export type MatchEndReason = 'hp' | 'surrender' | 'timeout' | 'fatigue';
+export type MatchEndReason = 'hp' | 'surrender' | 'timeout' | 'fatigue' | 'turns';
 
 export interface CardInHand {
   iid: string; // id da instância
