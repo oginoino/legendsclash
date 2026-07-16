@@ -20,10 +20,12 @@ import {
 } from '../icons';
 import { LeagueBadge } from '../components/LeagueBadge';
 import { CardArt } from '../components/CardArt';
+import { CardView } from '../components/CardView';
 import { RulesModal } from '../components/RulesModal';
 import { CodexView } from './CodexView';
 import { ProfileView } from './ProfileView';
 import { CARD_LORE, FACTIONS, WORLD } from '../lore';
+import { IcoClose } from '../icons';
 
 /** Progresso até a próxima liga — a "sensação de progresso" que o Xavier busca. */
 function leagueProgress(mmr: number): { label: string; pct: number } | null {
@@ -86,6 +88,7 @@ export function HomeView() {
   const [showCodex, setShowCodex] = useState(false);
   const [codexInitialFaction, setCodexInitialFaction] = useState<string | null>(null);
   const [openMatch, setOpenMatch] = useState<string | null>(null);
+  const [showCardOfDayPopup, setShowCardOfDayPopup] = useState(false);
   const p = s.profile;
 
   useEffect(() => {
@@ -199,258 +202,285 @@ export function HomeView() {
 
       <main className="home-main">
         <div className="home-main-column home-main-column-play">
-        <section className="panel play-panel home-play-panel">
-          <h2>Jogar</h2>
-          {dailyCard ? (
-            <div className="card-of-day" title={dailyCard.text}>
-              <CardArt defId={dailyCardId} className="cod-art" loading="eager" fetchPriority="high" />
-              <div className="cod-info">
-                <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
-                <span className="cod-name">{dailyCard.name}</span>
+          <section className="panel play-panel home-play-panel">
+            <h2>Jogar</h2>
+            {dailyCard ? (
+              <button
+                type="button"
+                className="card-of-day"
+                title="Clique para ver os detalhes da carta"
+                onClick={() => setShowCardOfDayPopup(true)}
+              >
+                <CardArt defId={dailyCardId} className="cod-art" loading="eager" fetchPriority="high" />
+                <div className="cod-info">
+                  <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
+                  <span className="cod-name">{dailyCard.name}</span>
+                </div>
+              </button>
+            ) : null}
+            {!p.guest && (
+              <div className="daily-strip">
+                <span className="streak" title="Dias seguidos com partida">
+                  <IcoStreak className="ic" /> {p.streak} {p.streak === 1 ? 'dia' : 'dias'} de sequência
+                </span>
+                <span className={`daily-mission ${p.playedToday ? 'done' : ''}`}>
+                  {p.playedToday ? <><IcoCheck className="ic" /> Missão de hoje feita</> : <><IcoUnchecked className="ic" /> Missão: jogue 1 partida hoje</>}
+                </span>
               </div>
-            </div>
-          ) : null}
-          {!p.guest && (
-            <div className="daily-strip">
-              <span className="streak" title="Dias seguidos com partida">
-                <IcoStreak className="ic" /> {p.streak} {p.streak === 1 ? 'dia' : 'dias'} de sequência
-              </span>
-              <span className={`daily-mission ${p.playedToday ? 'done' : ''}`}>
-                {p.playedToday ? <><IcoCheck className="ic" /> Missão de hoje feita</> : <><IcoUnchecked className="ic" /> Missão: jogue 1 partida hoje</>}
-              </span>
-            </div>
-          )}
-          {s.inQueue ? (
-            <div className="queue-status">
-              <div className="spinner" />
-              <p>Buscando oponente do seu nível… ({s.queueSize} na fila)</p>
-              {s.waitingAlone && (
-                <div className="queue-thin">
-                  <p className="hint">
-                    Você é o único na fila agora. Chame alguém para jogar já — crie uma sala
-                    e mande o link de convite.
-                  </p>
-                  <button className="btn" onClick={() => send({ t: 'room:create' })}>
-                    Criar sala e convidar
+            )}
+            {s.inQueue ? (
+              <div className="queue-status">
+                <div className="spinner" />
+                <p>Buscando oponente do seu nível… ({s.queueSize} na fila)</p>
+                {s.waitingAlone && (
+                  <div className="queue-thin">
+                    <p className="hint">
+                      Você é o único na fila agora. Chame alguém para jogar já — crie uma sala
+                      e mande o link de convite.
+                    </p>
+                    <button className="btn" onClick={() => send({ t: 'room:create' })}>
+                      Criar sala e convidar
+                    </button>
+                  </div>
+                )}
+                <button className="btn ghost" onClick={() => send({ t: 'queue:leave' })}>
+                  Cancelar busca
+                </button>
+              </div>
+            ) : (
+              <>
+                {s.factionsEnabled && (
+                  <div className="faction-pick">
+                    <span className="faction-label">Sua facção (deck inclinado, simétrico):</span>
+                    <div className="faction-options">
+                      <button type="button" className={`faction-chip ${s.faction === '' ? 'sel' : ''}`} onClick={() => pickFaction('')}>
+                        Neutro
+                      </button>
+                      {Object.values(FACTIONS).map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          className={`faction-chip ${s.faction === f.id ? 'sel' : ''}`}
+                          onClick={() => pickFaction(f.id)}
+                          title={f.motto}
+                        >
+                          <Sigil id={f.sigil} className="ic" /> {f.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button className="btn primary big" onClick={() => send({ t: 'queue:join' })}>
+                  <IcoAttack className="ic" /> Partida ranqueada
+                </button>
+                <p className="hint">Matchmaking por MMR: você enfrenta gente do seu nível.</p>
+                {progress && (
+                  <div className="league-progress" title={progress.label}>
+                    <div className="league-progress-bar">
+                      <span style={{ width: `${progress.pct}%` }} />
+                    </div>
+                    <span className="hint">{progress.label}</span>
+                  </div>
+                )}
+                {!progress && <p className="hint"><IcoGold className="ic" /> Você está na liga máxima — defenda o topo!</p>}
+                <button className="btn practice-btn" onClick={() => send({ t: 'practice:start' })}>
+                  <IcoBot className="ic" /> Treino (vs CPU)
+                </button>
+                <p className="hint">Aprenda e teste jogadas contra a IA — não afeta seu MMR.</p>
+                <div className="home-secondary">
+                  <button className="btn ghost" onClick={() => setShowRules(true)}>
+                    <IcoRules className="ic" /> Como jogar
+                  </button>
+                  <button className="btn ghost" onClick={() => openCodex()}>
+                    <IcoCodex className="ic" /> Arquivo de Aurélia
                   </button>
                 </div>
-              )}
-              <button className="btn ghost" onClick={() => send({ t: 'queue:leave' })}>
-                Cancelar busca
-              </button>
-            </div>
-          ) : (
-            <>
-              {s.factionsEnabled && (
-                <div className="faction-pick">
-                  <span className="faction-label">Sua facção (deck inclinado, simétrico):</span>
-                  <div className="faction-options">
-                    <button type="button" className={`faction-chip ${s.faction === '' ? 'sel' : ''}`} onClick={() => pickFaction('')}>
-                      Neutro
-                    </button>
-                    {Object.values(FACTIONS).map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        className={`faction-chip ${s.faction === f.id ? 'sel' : ''}`}
-                        onClick={() => pickFaction(f.id)}
-                        title={f.motto}
-                      >
-                        <Sigil id={f.sigil} className="ic" /> {f.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <button className="btn primary big" onClick={() => send({ t: 'queue:join' })}>
-                <IcoAttack className="ic" /> Partida ranqueada
-              </button>
-              <p className="hint">Matchmaking por MMR: você enfrenta gente do seu nível.</p>
-              {progress && (
-                <div className="league-progress" title={progress.label}>
-                  <div className="league-progress-bar">
-                    <span style={{ width: `${progress.pct}%` }} />
-                  </div>
-                  <span className="hint">{progress.label}</span>
-                </div>
-              )}
-              {!progress && <p className="hint"><IcoGold className="ic" /> Você está na liga máxima — defenda o topo!</p>}
-              <button className="btn practice-btn" onClick={() => send({ t: 'practice:start' })}>
-                <IcoBot className="ic" /> Treino (vs CPU)
-              </button>
-              <p className="hint">Aprenda e teste jogadas contra a IA — não afeta seu MMR.</p>
-              <div className="home-secondary">
-                <button className="btn ghost" onClick={() => setShowRules(true)}>
-                  <IcoRules className="ic" /> Como jogar
+                <div className="divider">ou jogue com amigos</div>
+                <button className="btn" onClick={() => send({ t: 'room:create' })}>
+                  Criar sala privada
                 </button>
-                <button className="btn ghost" onClick={() => openCodex()}>
-                  <IcoCodex className="ic" /> Arquivo de Aurélia
-                </button>
-              </div>
-              <div className="divider">ou jogue com amigos</div>
-              <button className="btn" onClick={() => send({ t: 'room:create' })}>
-                Criar sala privada
-              </button>
-              <form
-                className="join-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (joinCode.trim()) send({ t: 'room:join', code: joinCode.trim() });
-                }}
-              >
-                <input
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  placeholder="CÓDIGO"
-                  maxLength={6}
-                />
-                <button className="btn" disabled={!joinCode.trim()}>Entrar</button>
-              </form>
-            </>
-          )}
-        </section>
+                <form
+                  className="join-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (joinCode.trim()) send({ t: 'room:join', code: joinCode.trim() });
+                  }}
+                >
+                  <input
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    placeholder="CÓDIGO"
+                    maxLength={6}
+                  />
+                  <button className="btn" disabled={!joinCode.trim()}>Entrar</button>
+                </form>
+              </>
+            )}
+          </section>
         </div>
 
         <div className="home-main-column home-main-column-story">
-        <section className="panel lore-panel home-lore-panel">
-          <h2>Jornada do Comandante</h2>
-          <div className="home-story-beats">
-            {WORLD.storyBeats.map((beat, i) => (
-              <button key={beat.title} type="button" className="home-story-beat" onClick={() => openCodex()}>
-                <span className="home-story-index">{i + 1}</span>
-                <span>
-                  <em>{beat.kicker}</em>
-                  <strong>{beat.title}</strong>
-                  <small>{beat.text}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-          <button className="btn ghost lore-panel-cta" onClick={() => openCodex()}>
-            <IcoCodex className="ic" /> Explorar história e cartas
-          </button>
-        </section>
+          <section className="panel lore-panel home-lore-panel">
+            <h2>Jornada do Comandante</h2>
+            <div className="home-story-beats">
+              {WORLD.storyBeats.map((beat, i) => (
+                <button key={beat.title} type="button" className="home-story-beat" onClick={() => openCodex()}>
+                  <span className="home-story-index">{i + 1}</span>
+                  <span>
+                    <em>{beat.kicker}</em>
+                    <strong>{beat.title}</strong>
+                    <small>{beat.text}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button className="btn ghost lore-panel-cta" onClick={() => openCodex()}>
+              <IcoCodex className="ic" /> Explorar história e cartas
+            </button>
+          </section>
 
-        <section className="panel home-history-panel">
-          <h2>Histórico de partidas</h2>
-          {p.guest && (
-            <p className="account-cta">
-              <IcoHourglass className="ic" /> Histórico de convidado vale só nesta sessão.{' '}
-              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
-              para levar seu progresso com você.
-            </p>
-          )}
-          {s.history.length === 0 ? (
-            <p className="hint">Suas partidas aparecerão aqui.</p>
-          ) : (
-            <ul className="history-list">
-              {s.history.slice(0, 10).map((h) => {
-                const key = h.matchId + h.endedAt;
-                const open = openMatch === key;
-                const reason = h.reason === 'hp' ? 'Vida zerada'
-                  : h.reason === 'surrender' ? 'Desistência'
-                  : h.reason === 'fatigue' ? 'Fadiga / baralho esgotado'
-                  : 'Tempo esgotado / desconexão';
-                return (
-                  <li key={key} className={`${h.won ? 'won' : 'lost'} ${open ? 'open' : ''}`}>
-                    <button
-                      type="button"
-                      className="history-row"
-                      onClick={() => setOpenMatch(open ? null : key)}
-                      aria-expanded={open}
-                    >
-                      <span className="result">{h.won ? 'Vitória' : 'Derrota'}</span>
-                      <span>vs {h.opponentName}</span>
-                      <span className="dim">{h.turns} turnos · {Math.round(h.durationMs / 60000)} min</span>
-                      <span className={h.mmrDelta >= 0 ? 'delta up' : 'delta down'}>
-                        {h.mmrDelta >= 0 ? '+' : ''}{h.mmrDelta}
-                      </span>
-                    </button>
-                    {open && (
-                      <div className="history-detail">
-                        {h.won ? 'Você venceu' : 'Você perdeu'} · {reason} ·{' '}
-                        {new Date(h.endedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+          <section className="panel home-history-panel">
+            <h2>Histórico de partidas</h2>
+            {p.guest && (
+              <p className="account-cta">
+                <IcoHourglass className="ic" /> Histórico de convidado vale só nesta sessão.{' '}
+                <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+                para levar seu progresso com você.
+              </p>
+            )}
+            {s.history.length === 0 ? (
+              <p className="hint">Suas partidas aparecerão aqui.</p>
+            ) : (
+              <ul className="history-list">
+                {s.history.slice(0, 10).map((h) => {
+                  const key = h.matchId + h.endedAt;
+                  const open = openMatch === key;
+                  const reason = h.reason === 'hp' ? 'Vida zerada'
+                    : h.reason === 'surrender' ? 'Desistência'
+                      : h.reason === 'fatigue' ? 'Fadiga / baralho esgotado'
+                        : 'Tempo esgotado / desconexão';
+                  return (
+                    <li key={key} className={`${h.won ? 'won' : 'lost'} ${open ? 'open' : ''}`}>
+                      <button
+                        type="button"
+                        className="history-row"
+                        onClick={() => setOpenMatch(open ? null : key)}
+                        aria-expanded={open}
+                      >
+                        <span className="result">{h.won ? 'Vitória' : 'Derrota'}</span>
+                        <span>vs {h.opponentName}</span>
+                        <span className="dim">{h.turns} turnos · {Math.round(h.durationMs / 60000)} min</span>
+                        <span className={h.mmrDelta >= 0 ? 'delta up' : 'delta down'}>
+                          {h.mmrDelta >= 0 ? '+' : ''}{h.mmrDelta}
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="history-detail">
+                          {h.won ? 'Você venceu' : 'Você perdeu'} · {reason} ·{' '}
+                          {new Date(h.endedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
 
         <div className="home-main-column home-main-column-ranking">
-        <section className="panel home-ranking-panel">
-          <h2>Ranking · Ligas</h2>
-          {p.guest && (
-            <p className="account-cta">
-              <IcoLock className="ic" /> Convidados não pontuam no ranking.{' '}
-              <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
-              para disputar as ligas.
-            </p>
-          )}
-          {!p.guest && s.myRank != null && (() => {
-            const meIdx = s.around.findIndex((e) => e.id === p.id);
-            const above = meIdx > 0 ? s.around[meIdx - 1] : null;
-            return (
-              <div className="my-rank">
-                <p className="my-rank-pos">Sua posição: <strong>#{s.myRank}</strong> · {p.mmr} MMR</p>
-                {above ? (
-                  <p className="hint">
-                    Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar <InlineAvatar iconId={above.avatar} photo={above.photo} size={18} /> {above.name}.
-                  </p>
-                ) : (
-                  <p className="hint"><IcoGold className="ic" /> Você lidera o ranking — defenda o topo!</p>
-                )}
-              </div>
-            );
-          })()}
-          {s.leaderboard.length === 0 ? (
-            <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
-          ) : (
-            <table className="board-table">
-              <tbody>
-                {s.leaderboard.map((e, i) => {
-                  const faction = e.faction ? FACTIONS[e.faction] : null;
-                  const identityStyle = {
-                    ...profileCoverVars(e.profileCover),
-                    '--tradition-color': faction?.color ?? '#7183a1',
-                  } as CSSProperties;
-                  return (
-                    <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
-                      <td className="pos">{i + 1}</td>
-                      <td className="board-player">
-                        <button
-                          type="button"
-                          className="board-player-button"
-                          style={identityStyle}
-                          onClick={e.id === p.id ? openProfile : () => viewProfile(e.id)}
-                          aria-label={`Ver perfil de ${e.name}`}
-                        >
-                          <InlineAvatar iconId={e.avatar} photo={e.photo} size={24} />
-                          <span className="board-player-copy">
-                            <strong>{e.name}</strong>
-                            <small>
-                              {faction ? <><Sigil id={faction.sigil} className="ic" /> {faction.name.replace(/^(A |O |Os )/, '')}</> : 'Tradição livre'}
-                            </small>
-                          </span>
-                        </button>
-                      </td>
-                      <td><LeagueBadge league={e.league} /></td>
-                      <td className="num">{e.mmr}</td>
-                      <td className="num dim">{e.wins}V {e.losses}D</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </section>
+          <section className="panel home-ranking-panel">
+            <h2>Ranking · Ligas</h2>
+            {p.guest && (
+              <p className="account-cta">
+                <IcoLock className="ic" /> Convidados não pontuam no ranking.{' '}
+                <button className="link-btn" onClick={openAccountPrompt}>Crie uma conta</button>{' '}
+                para disputar as ligas.
+              </p>
+            )}
+            {!p.guest && s.myRank != null && (() => {
+              const meIdx = s.around.findIndex((e) => e.id === p.id);
+              const above = meIdx > 0 ? s.around[meIdx - 1] : null;
+              return (
+                <div className="my-rank">
+                  <p className="my-rank-pos">Sua posição: <strong>#{s.myRank}</strong> · {p.mmr} MMR</p>
+                  {above ? (
+                    <p className="hint">
+                      Faltam <strong>{above.mmr - p.mmr + 1}</strong> MMR para ultrapassar <InlineAvatar iconId={above.avatar} photo={above.photo} size={18} /> {above.name}.
+                    </p>
+                  ) : (
+                    <p className="hint"><IcoGold className="ic" /> Você lidera o ranking — defenda o topo!</p>
+                  )}
+                </div>
+              );
+            })()}
+            {s.leaderboard.length === 0 ? (
+              <p className="hint">Ninguém jogou ainda. Seja a primeira lenda do ranking!</p>
+            ) : (
+              <table className="board-table">
+                <tbody>
+                  {s.leaderboard.map((e, i) => {
+                    const faction = e.faction ? FACTIONS[e.faction] : null;
+                    const identityStyle = {
+                      ...profileCoverVars(e.profileCover),
+                      '--tradition-color': faction?.color ?? '#7183a1',
+                    } as CSSProperties;
+                    return (
+                      <tr key={e.id} className={e.id === p.id ? 'me' : ''}>
+                        <td className="pos">{i + 1}</td>
+                        <td className="board-player">
+                          <button
+                            type="button"
+                            className="board-player-button"
+                            style={identityStyle}
+                            onClick={e.id === p.id ? openProfile : () => viewProfile(e.id)}
+                            aria-label={`Ver perfil de ${e.name}`}
+                          >
+                            <InlineAvatar iconId={e.avatar} photo={e.photo} size={24} />
+                            <span className="board-player-copy">
+                              <strong>{e.name}</strong>
+                              <small>
+                                {faction ? <><Sigil id={faction.sigil} className="ic" /> {faction.name.replace(/^(A |O |Os )/, '')}</> : 'Tradição livre'}
+                              </small>
+                            </span>
+                          </button>
+                        </td>
+                        <td><LeagueBadge league={e.league} /></td>
+                        <td className="num">{e.mmr}</td>
+                        <td className="num dim">{e.wins}V {e.losses}D</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </section>
         </div>
       </main>
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {showCodex && <CodexView initialFaction={codexInitialFaction} onClose={() => setShowCodex(false)} />}
+      {showCardOfDayPopup && dailyCard && (
+        <div className="overlay" onClick={() => setShowCardOfDayPopup(false)}>
+          <div className="card-of-day-popup" onClick={(e) => e.stopPropagation()}>
+            <button className="cod-popup-close" onClick={() => setShowCardOfDayPopup(false)} aria-label="Fechar">
+              <IcoClose />
+            </button>
+            <div className="cod-popup-card">
+              <CardView defId={dailyCardId} as="div" />
+            </div>
+            <div className="cod-popup-info">
+              <span className="cod-label"><IcoStar className="ic" /> Carta do dia</span>
+              <p className="cod-popup-flavor">{dailyCard.text}</p>
+              {dailyLore && (
+                <p className="cod-popup-lore">
+                  <em>{dailyLore.epithet}</em>
+                  {dailyLore.story && <> — {dailyLore.story.slice(0, 200)}{dailyLore.story.length > 200 ? '…' : ''}</>}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
