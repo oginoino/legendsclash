@@ -138,6 +138,9 @@ export function CosmeticPortrait({
       <span className={`lc-cosmetic-wrapper ${imgLoaded ? 'lc-cosmetic-ready' : ''} ${className}`.trim()}>
         <CosmeticIcon id={id} size="100%" className="lc-cosmetic-fallback" />
         <img
+          ref={(el) => {
+            if (el && el.complete && el.naturalWidth > 0) setImgLoaded(true);
+          }}
           src={src}
           alt={alt}
           loading="lazy"
@@ -190,6 +193,9 @@ export function InlineAvatar({
           <span className={`lc-inline-photo-wrap ${photoReady ? 'lc-photo-ready' : ''}`}>
             <CosmeticPortrait id={iconId} className="lc-inline-fallback" />
             <img
+              ref={(el) => {
+                if (el && el.complete && el.naturalWidth > 0) setPhotoReady(true);
+              }}
               src={photo}
               alt=""
               decoding="async"
@@ -239,6 +245,9 @@ export function Avatar({
               <span className={`lc-avatar-photo-wrap ${photoReady ? 'lc-photo-ready' : ''}`}>
                 <CosmeticPortrait id={iconId} alt={alt ?? ''} className="lc-avatar-fallback" />
                 <img
+                  ref={(el) => {
+                    if (el && el.complete && el.naturalWidth > 0) setPhotoReady(true);
+                  }}
                   src={photo}
                   alt={alt ?? ''}
                   decoding="async"

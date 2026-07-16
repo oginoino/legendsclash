@@ -227,6 +227,13 @@ export function CardArt({
       {showImage && (
         <img
           key={src}
+          ref={(el) => {
+            // Imagem já estava em cache (preload/decode) → onLoad sintético
+            // do React não dispara. Verificamos via ref callback.
+            if (el && el.complete && el.naturalWidth > 0) {
+              setImgStatus('loaded');
+            }
+          }}
           src={src}
           alt={CARDS[defId]?.name}
           loading={loading}
