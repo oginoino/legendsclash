@@ -8,6 +8,7 @@ import type {
   SessionRecord,
   UserRecord,
 } from './persistence/contracts.js';
+import { CommunityManager } from './persistence/community-manager.js';
 import { JsonPersistence } from './persistence/json-persistence.js';
 import { IdentityManager } from './persistence/identity-manager.js';
 import { ProfileManager, epochDay, type CosmeticsPatch } from './persistence/profile-manager.js';
@@ -48,6 +49,7 @@ const EVENTS_MEMORY_CAP = 500;
 export class Store {
   private db: DbShape = { users: [], reports: [], sessions: [], events: [] };
   private byId = new Map<string, UserRecord>();
+  private communityManager!: CommunityManager;
   private identityManager!: IdentityManager;
   private profileManager!: ProfileManager;
   private progressionManager!: ProgressionManager;
@@ -79,6 +81,7 @@ export class Store {
       store.sessionRegistry,
       (userId, props) => store.recordEvent('guest_to_account', { userId, props }),
     );
+    store.communityManager = new CommunityManager(store.db, store.byId, persistence);
     store.profileManager = new ProfileManager(store.byId, persistence);
     store.progressionManager = new ProgressionManager(store.db, store.byId, persistence);
     return store;
@@ -217,16 +220,11 @@ export class Store {
   }
 
   setMuted(userId: string, targetId: string, muted: boolean): void {
-    const u = this.byId.get(userId);
-    if (!u) return;
-    if (muted && !u.muted.includes(targetId) && u.muted.length < 500) u.muted.push(targetId);
-    if (!muted) u.muted = u.muted.filter((id) => id !== targetId);
-    if (!u.guest) this.persistence.saveUser(u);
+    this.communityManager.setMuted(userId, targetId, muted);
   }
 
   addReport(report: ReportRecord): void {
-    this.db.reports.push(report);
-    this.persistence.saveReport(report);
+    this.communityManager.addReport(report);
   }
 
   leaderboard(limit = 20): UserRecord[] {
@@ -263,10 +261,6 @@ export class Store {
 
   /** Adiciona/remove um amigo (cap defensivo). Convidado guarda só em memória. */
   setFriend(userId: string, friendId: string, add: boolean): void {
-    const u = this.byId.get(userId);
-    if (!u || userId === friendId) return;
-    if (add && !u.friends.includes(friendId) && u.friends.length < 500) u.friends.push(friendId);
-    if (!add) u.friends = u.friends.filter((id) => id !== friendId);
-    if (!u.guest) this.persistence.saveUser(u);
+    this.communityManager.setFriend(userId, friendId, add);
   }
 }
