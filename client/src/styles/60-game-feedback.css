@@ -384,12 +384,18 @@
 
 /* Fallback icon — visible while image loads, fades out when image appears */
 .card-art-fallback {
+  grid-area: 1 / 1;
   filter: drop-shadow(0 3px 5px #000c);
   transition: opacity .28s ease;
 }
 
 .image-loaded .card-art-fallback {
   opacity: 0;
+}
+
+/* Garante que o <img> também fique na mesma célula do grid que o ícone */
+.image-art .card-art-img {
+  grid-area: 1 / 1;
 }
 
 .card-art.card-art-frame {
