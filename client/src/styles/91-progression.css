@@ -591,6 +591,10 @@
   pointer-events: none;
 }
 
+.cod-popup-card .card .card-art.card-art-frame {
+  height: var(--card-art-h);
+}
+
 .cod-popup-info {
   flex: 1;
   min-width: 240px;
@@ -632,6 +636,10 @@
     --card-art-h: 210px;
     width: var(--card-w);
     height: var(--card-h);
+  }
+
+  .cod-popup-card .card .card-art.card-art-frame {
+    height: var(--card-art-h);
   }
 }
 
