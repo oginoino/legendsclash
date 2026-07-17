@@ -707,7 +707,7 @@
   }
 
   .hand-focus-card .focus-preview-card .card-art-img {
-    object-fit: contain;
+    object-fit: cover;
     object-position: center center;
     transform: none;
   }
