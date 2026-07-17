@@ -585,7 +585,7 @@
 .cod-popup-card .card {
   --card-w: 240px;
   --card-h: 430px;
-  --card-art-h: 200px;
+  --card-art-h: 250px;
   width: var(--card-w);
   height: var(--card-h);
   pointer-events: none;
@@ -628,8 +628,8 @@
 
   .cod-popup-card .card {
     --card-w: 200px;
-    --card-h: 360px;
-    --card-art-h: 168px;
+    --card-h: 380px;
+    --card-art-h: 210px;
     width: var(--card-w);
     height: var(--card-h);
   }
