@@ -396,6 +396,11 @@
 /* Garante que o <img> também fique na mesma célula do grid que o ícone */
 .image-art .card-art-img {
   grid-area: 1 / 1;
+  /* iOS WebKit fix: position absolute evita bug com object-fit: cover em
+     crianças de grid dentro de overflow: hidden */
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .card-art.card-art-frame {
