@@ -145,18 +145,18 @@
   }
 
   .creature {
-    width: clamp(74px, 21vw, 100px);
+    width: clamp(68px, 18vw, 88px);
     padding: 4px 4px 11px;
     font-size: 11px;
   }
 
   .creature-name {
-    max-width: 84px;
+    max-width: 74px;
     font-size: 9.5px;
   }
 
   .creature-art.card-art-frame {
-    height: 36px;
+    height: 44px;
     font-size: 24px;
   }
 
@@ -448,7 +448,7 @@
   }
 
   .creature {
-    width: 78px;
+    width: 72px;
     padding: 3px 3px 9px;
     font-size: 10px;
   }
@@ -469,7 +469,7 @@
   }
 
   .creature-art.card-art-frame {
-    height: 26px;
+    height: 32px;
     font-size: 18px;
   }
 
