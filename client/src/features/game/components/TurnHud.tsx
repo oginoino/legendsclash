@@ -145,6 +145,17 @@ export function TurnHud({
         <span className="pace-turn" style={PACE_CHIP_TIGHT_STYLE} aria-label={`Turno ${game.turnNumber}`}>
           <span style={PACE_CHIP_TEXT_STYLE}>Turno {game.turnNumber}</span>
         </span>
+        {player.fatigue > 0 && (
+          <span
+            className="pace-fatigue pace-fatigue-active"
+            style={PACE_CHIP_STYLE}
+            aria-label={`Fadiga ativa! Cada compra causa ${player.fatigue + 1} de dano.`}
+          >
+            <IcoDeath className="ic" />
+            <span style={PACE_CHIP_TEXT_STYLE}>Fadiga ativa</span>
+            <strong>{player.fatigue}</strong>
+          </span>
+        )}
         {player.fatigue === 0 && player.deckCount <= 3 && (
           <span
             className="pace-fatigue"

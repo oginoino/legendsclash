@@ -132,7 +132,7 @@ function HeroPlate({ seat, seatIdx, isEnemy, onFaceClick, targetable, blocked, d
   const title = commanderTitle(seat.commander);
   const deckRisk = seat.fatigue > 0 || seat.deckCount <= 3;
   return (
-    <div className={`hero-plate ${isEnemy ? 'enemy' : ''} ${hit ? 'hit-received' : ''} ${shielded ? 'shield-absorbed' : ''} ${impact ? `has-impact impact-${impact.severity}` : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
+    <div className={`hero-plate ${isEnemy ? 'enemy' : ''} ${hit ? 'hit-received' : ''} ${shielded ? 'shield-absorbed' : ''} ${seat.fatigue > 0 ? 'fatigued' : ''} ${impact ? `has-impact impact-${impact.severity}` : ''}`} style={accentVars(seat.accent, seat.accentStyle)}>
       {bubble && (
         <div className={`taunt-bubble ${isEnemy ? 'down' : 'up'}`} key={bubble.id}>{bubble.text}</div>
       )}

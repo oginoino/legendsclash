@@ -43,12 +43,12 @@ function GameOverOverlay() {
     hp: 'Vida zerada',
     surrender: 'Desistência',
     timeout: 'Tempo / reconexão',
-    fatigue: 'Fadiga',
+    fatigue: 'Baralho esgotado — Fadiga',
     turns: 'Limite de turnos',
   };
 
   return (
-    <div className="overlay game-over-overlay">
+    <div className={`overlay game-over-overlay ${result.reason === 'fatigue' ? 'game-over-fatigue' : ''}`}>
       {won && (
         <div className="confetti">
           {Array.from({ length: 18 }, (_, i) => (

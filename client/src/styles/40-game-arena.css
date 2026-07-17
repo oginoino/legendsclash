@@ -466,6 +466,24 @@
   box-shadow: 0 8px 24px #0009, 0 0 24px #6fd3e62e, inset 0 1px 0 #ffffff12;
 }
 
+.hero-plate.fatigued {
+  border-color: #b083f0aa;
+  box-shadow: 0 8px 24px #0009, 0 0 24px #b083f040, inset 0 1px 0 #ffffff12;
+  animation: fatigue-breathe 2s ease-in-out infinite;
+}
+
+@keyframes fatigue-breathe {
+
+  0%,
+  100% {
+    box-shadow: 0 8px 24px #0009, 0 0 20px #b083f030, inset 0 1px 0 #ffffff12;
+  }
+
+  50% {
+    box-shadow: 0 8px 24px #0009, 0 0 36px #b083f055, 0 0 60px #b083f015, inset 0 1px 0 #ffffff14;
+  }
+}
+
 /* anel da cor de destaque do comandante (some durante a mira p/ não competir) */
 .portrait::before {
   content: '';
@@ -687,6 +705,19 @@
 .meta-chip.warn {
   color: var(--red);
   border-color: #f8514955;
+  animation: warn-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes warn-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .meta-chip.deck-risk {
@@ -1136,6 +1167,7 @@
 }
 
 @keyframes timer-paused-breathe {
+
   0%,
   100% {
     opacity: .72;

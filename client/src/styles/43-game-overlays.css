@@ -15,6 +15,10 @@
   z-index: 80;
 }
 
+.game-over-fatigue {
+  background: radial-gradient(ellipse at 50% 40%, #b083f014 0%, transparent 70%);
+}
+
 .player-profile-overlay {
   z-index: 85;
 }
@@ -218,6 +222,8 @@
 
 .go-reason-fatigue {
   border-left: 3px solid var(--purple);
+  background: linear-gradient(90deg, #b083f012, #0a0e1699 40%);
+  box-shadow: 0 0 18px #b083f018;
 }
 
 .go-reason-surrender,
