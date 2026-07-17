@@ -527,6 +527,20 @@
     padding: 7px 9px;
     font-size: 12px;
   }
+
+  /* No mobile a roda de provocações usa position: fixed centralizada
+     para nunca ser cortada pelo overflow da arena ou sair da tela.
+     margin auto no lugar de transform: evita conflito com a animação pop-in */
+  .taunt-wheel {
+    position: fixed;
+    bottom: calc(120px + env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    margin-left: auto;
+    margin-right: auto;
+    width: max-content;
+    max-width: min(280px, calc(100vw - 20px));
+  }
 }
 
 @media (max-height: 500px) {
